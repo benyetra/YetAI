@@ -1,8 +1,9 @@
-name: NBA Daily Scorecard
+name: Daily Model Review
 
 # Read-only. Replays this season's NBA totals against final scores and the
 # lines, and audits stored player-prop projections against results, then posts
-# the numbers to the run summary so drift shows up without anyone asking.
+# the numbers to the run summary so drift shows up without anyone asking. The
+# final step appends the full model review (bets, all sports, record gate).
 
 on:
   schedule:
@@ -48,3 +49,18 @@ jobs:
             PYTHONPATH=. python3 scripts/nba_props_audit.py
             echo '```'
           } | tee scorecard.md | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Daily model review
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          DEBUG: "false"
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          {
+            echo "## Daily model review"
+            echo '```'
+            PYTHONPATH=. python3 scripts/model_review.py
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

@@ -32,6 +32,7 @@ from app.services.auto_pick.candidate import (
 )
 from app.services.auto_pick.config_loader import load_scoring_config
 from app.services.auto_pick.context_builder import build_scoring_context
+from app.services.auto_pick.record_gate import key_label, record_key
 from app.services.auto_pick.scorer import ConfidenceScorer
 from app.services.auto_pick.parlay_selector import ParlaySelector, ScoredParlayPick
 from app.services.auto_pick.selector import (
@@ -235,10 +236,12 @@ class AutoPickOrchestrator:
         self.providers = providers
         self.now = now
         self.scorer = scorer or ConfidenceScorer()
+        self._records: dict = {}
 
     async def run(self) -> OrchestratorResult:
         cfg = load_scoring_config(self.db)
         ctx = build_scoring_context(self.db, cfg, self.now)
+        self._records = ctx.records
         auto_publish = _env_flag("AUTO_YETAI_PICKS_AUTO_PUBLISH", "true")
         parlay_enabled = _env_flag("AUTO_YETAI_PARLAY_ENABLED", "false")
 
@@ -333,7 +336,7 @@ class AutoPickOrchestrator:
             fails=provider_failures,
             n_providers=len(self.providers),
         )
-        dropped = self._summarize_drops(scored)
+        dropped = self._summarize_drops(scored, self._records)
 
         if self.dry_run:
             return OrchestratorResult(
@@ -418,6 +421,9 @@ class AutoPickOrchestrator:
         if reason:
             return reason
         c = sc.candidate
+        rec = self._records.get(record_key(c))
+        if rec is not None and rec.withheld:
+            return "losing_record"
         stat = (
             c.projection_metadata.get("stat")
             if c.market_type == MarketType.PLAYER_PROP
@@ -441,7 +447,9 @@ class AutoPickOrchestrator:
         )
 
     @staticmethod
-    def _summarize_drops(scored: list[ScoredCandidate]) -> dict:
+    def _summarize_drops(
+        scored: list[ScoredCandidate], records: Optional[dict] = None
+    ) -> dict:
         counts: dict[str, int] = {}
         dropped = [sc for sc in scored if sc.drop_reason]
         for sc in dropped:
@@ -458,7 +466,18 @@ class AutoPickOrchestrator:
             }
             for sc in dropped[:15]
         ]
-        return {"counts": counts, "top_rejected": top}
+        withheld = {}
+        for k in {record_key(sc.candidate) for sc in scored}:
+            rec = (records or {}).get(k)
+            if rec is not None and rec.withheld:
+                withheld[key_label(rec.key)] = {
+                    "n_eff": round(rec.n_eff, 1),
+                    "shrunk_roi": round(rec.shrunk_roi, 4),
+                    "bet_n": rec.bet_n,
+                    "proj_n": rec.proj_n,
+                    "proj_hits": rec.proj_hits,
+                }
+        return {"counts": counts, "top_rejected": top, "withheld_keys": withheld}
 
     async def _safe_get(
         self, provider, date_range: DateRange
@@ -593,6 +612,7 @@ class AutoPickOrchestrator:
                 ),
                 "reasoning": leg.score.reasoning or "",
                 "grading": grading_block(c),
+                "projection_ref": c.projection_metadata.get("projection_ref"),
             }
         )
 
@@ -705,6 +725,7 @@ class AutoPickOrchestrator:
             "away_team",
             "commence_time",
             "prediction_factors",
+            "model_version",
         ):
             setattr(bet, field, getattr(fresh, field))
 
@@ -763,11 +784,14 @@ class AutoPickOrchestrator:
             home_team=c.home_team,
             away_team=c.away_team,
             commence_time=c.commence_time,
+            model_version=str(c.projection_metadata.get("model_version") or "")[:100]
+            or None,
             prediction_factors=_json_safe(
                 {
                     "market_line": c.market_line,
                     "our_projection": c.our_projection,
                     "projection_metadata": c.projection_metadata,
+                    "projection_ref": c.projection_metadata.get("projection_ref"),
                     "event_id": c.event_id,
                     "grading": grading_block(c),
                     "slate_date": c.game_date.isoformat() if c.game_date else None,

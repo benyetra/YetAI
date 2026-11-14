@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+from app.services.etl.nba.totals_baseline import recommend
 from app.services.ml.model_store import S3Object
 
 logger = logging.getLogger(__name__)
@@ -157,15 +158,14 @@ def _recompute_market_fields(projection: dict[str, Any]) -> None:
         return
     edge = float(projected_total) - float(market_total)
     projection["edge"] = round(edge, 1)
-    if edge > 2:
-        projection["recommendation"] = "OVER"
-        projection["confidence_score"] = round(min(0.5 + (abs(edge) * 0.05), 0.85), 2)
-    elif edge < -2:
-        projection["recommendation"] = "UNDER"
-        projection["confidence_score"] = round(min(0.5 + (abs(edge) * 0.05), 0.85), 2)
-    else:
-        projection["recommendation"] = "NO_PLAY"
-        projection["confidence_score"] = 0.5
+    factors = dict(projection.get("factors") or {})
+    # Same gate as the heuristic path: MIN_EDGE and the measured record.
+    hits, picks = factors.get("pick_record") or (0, 0)
+    rec, confidence, note = recommend(edge, (hits, picks))
+    projection["recommendation"] = rec
+    projection["confidence_score"] = round(confidence, 2)
+    factors["recommendation_note"] = note
+    projection["factors"] = factors
 
 
 def enrich_projection(projection: dict[str, Any]) -> dict[str, Any]:

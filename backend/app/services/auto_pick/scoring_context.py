@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -19,4 +19,6 @@ class ScoringContext:
     score_threshold: float
     historical_hit_rates: dict[tuple[str, str], float] = field(default_factory=dict)
     line_movement: dict[str, dict] = field(default_factory=dict)
+    # record_gate.KeyRecord per (league, market, stat); empty = gate open.
+    records: dict[tuple, Any] = field(default_factory=dict)
     now: Optional[datetime] = None

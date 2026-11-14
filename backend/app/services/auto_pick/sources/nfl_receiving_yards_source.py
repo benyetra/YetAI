@@ -11,7 +11,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import RecvYdsPredictions
-from app.services.auto_pick.candidate import DateRange, to_naive_utc
+from app.services.auto_pick.candidate import DateRange, projection_ref, to_naive_utc
 from app.services.auto_pick.sources._nfl_lines import (
     find_line,
     line_event_id,
@@ -61,6 +61,10 @@ class NFLReceivingYardsSource:
                     "game_date": day,
                     "player": r.player_name,
                     "stat": "receiving_yards",
+                    "projection_ref": projection_ref(
+                        r, game_date=r.game_date, player_id=r.player_id
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "line": float(r.ou_line),
                     "odds": int(odds),
                     "projection": float(r.predicted_receiving_yards),

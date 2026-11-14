@@ -1,5 +1,11 @@
 from app.services.auto_pick.candidate import BetCandidate
 from app.services.auto_pick.confidence_score import ConfidenceScore
+from app.services.auto_pick.record_gate import (
+    key_label,
+    min_picks,
+    record_key,
+    window_days,
+)
 from app.services.auto_pick.scoring_context import ScoringContext
 from app.services.auto_pick.sub_scores import (
     edge_sub_score,
@@ -45,8 +51,14 @@ class ConfidenceScorer:
             f"{c.selection}: projection {c.our_projection} vs line {c.market_line} (edge {sign}{delta:.2f}).",
             f"Edge {b['edge']:.0f}, historical {b['historical']:.0f}, freshness {b['freshness']:.0f}.",
         ]
+        rec = ctx.records.get(record_key(c))
         hist = ctx.historical_hit_rates.get((c.market_type.value, c.league))
-        if hist is not None:
+        if rec is not None and rec.n_eff >= min_picks():
+            parts.append(
+                f"{key_label(rec.key)} L{window_days()}d record {rec.n_eff:.0f} picks, "
+                f"shrunk ROI {rec.shrunk_roi*100:+.1f}%."
+            )
+        elif hist is not None:
             parts.append(
                 f"{c.market_type.value} {c.league} L90d hit rate {hist*100:.0f}%."
             )

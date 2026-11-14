@@ -55,6 +55,8 @@ class PlayerPropCandidateProvider:
                             "injury_flag": r.get("injury_flag", False),
                             "stat": r["stat"],
                             "side": r["side"],
+                            "projection_ref": r.get("projection_ref"),
+                            "model_version": r.get("model_version"),
                             "player": r.get("player"),
                             "team": r.get("team"),
                             "opponent": opponent,
