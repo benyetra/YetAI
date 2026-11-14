@@ -112,7 +112,10 @@ def test_scratched_goalie_is_not_graded_but_stays_as_no_play(db):
     assert graded == (1, 1)  # only the real starter's hit; no relief-saves miss
 
 
-def test_board_marks_scratched_goalie_with_no_pick_or_tier(db):
+def test_board_marks_scratched_goalie_with_no_pick_or_tier(db, monkeypatch):
+    # Scratch handling alone: with NHL prove-in on (default) and no saves record,
+    # every pick label is withheld (tests/auto_pick/test_nhl_prove_in.py).
+    monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")
     _goalie(db, 1, d=eastern_today(), was_scratch=True)
     _goalie(db, 2, d=eastern_today())
     out = p.nhl_predictions(

@@ -403,10 +403,10 @@ def test_gate_report_lists_no_data_keys_with_state(sqlite_db, monkeypatch, capsy
     from app.services.auto_pick import __main__ as cli
 
     rows = {r["key"]: r for r in rg.gate_report(sqlite_db, NOW)}
-    assert rows["NHL/player_prop/saves"]["state"].startswith("unproven (would be")
+    assert rows["NBA/moneyline"]["state"].startswith("unproven (would be")
     monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "true")
     rows = {r["key"]: r for r in rg.gate_report(sqlite_db, NOW)}
-    assert rows["NHL/player_prop/saves"]["state"] == "WITHHELD unproven"
+    assert rows["NBA/moneyline"]["state"] == "WITHHELD unproven"
     cli.print_gate_report(list(rows.values()))
     assert "WITHHELD unproven" in capsys.readouterr().out
 
