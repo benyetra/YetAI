@@ -319,6 +319,12 @@ def rollback(
         _copy(s3, bucket, _join(prefix, name), _join(current_arch, name))
     for name in present:
         _copy(s3, bucket, _join(arch, name), _join(prefix, name))
+    # A model archived before manifests existed has none: drop the live one so
+    # the restored model is not stamped with the replaced model's version.
+    mname = names[-1]
+    if mname not in present:
+        _copy(s3, bucket, _join(prefix, mname), _join(current_arch, mname))
+        s3.delete_object(Bucket=bucket, Key=_join(prefix, mname))
     result["archived_current_as"] = current
     logger.info("rolled %s back to %s (previous live: %s)", model_key, stamp, current)
     return result

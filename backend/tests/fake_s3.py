@@ -47,6 +47,10 @@ class FakeS3:
             raise ClientError("NoSuchKey")
         self.put(Key, self.objects[src], self.etags[src])
 
+    def delete_object(self, Bucket, Key):
+        self.calls.append(("delete", Key))
+        self.objects.pop(Key, None)
+
     def list_objects_v2(self, Bucket, Prefix, Delimiter, **_):
         prefixes = {
             Prefix + k[len(Prefix) :].split("/", 1)[0] + "/"

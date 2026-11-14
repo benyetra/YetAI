@@ -186,6 +186,8 @@ def test_rollback_dry_run_vs_apply(s3):
 
     done = ms.rollback(KEY, "20260101T000000", dry_run=False)
     assert s3.objects[KEY] == b"V1"
+    # V1 predates manifests: the replaced model's manifest must not stay live
+    assert ms.manifest_key(KEY) not in s3.objects
     # the replaced live copy is itself archived, so rollback is undoable
     assert (
         s3.objects[f"nba/ml_models/archive/{done['archived_current_as']}/xgb_points.pkl"]
