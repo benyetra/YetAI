@@ -423,3 +423,37 @@ def test_overview_item_from_markets_full_sample_and_empty():
     none = ash.overview_item_from_markets(sport="nba", label="NBA", markets={})
     assert none["primary"] == "No graded projections yet"
     assert none["has_data"] is False and none["markets"] == []
+
+
+def test_ou_record_at_stored_price():
+    from pytest import approx
+
+    from app.services.accuracy_shared import ou_call_bucket, ou_call_graded_record
+
+    rows = [
+        {"line": 10.5, "pick": "o", "actual": 12, "price": -125},  # hit +0.8
+        {"line": 10.5, "pick": "o", "actual": 9, "price": -125},  # miss -1
+        {"line": 4.5, "pick": "u", "actual": 3, "price": None},  # hit at -110 +0.909
+        {"line": 4.5, "pick": "u", "actual": 4.5, "price": 150},  # push: 0
+        {"line": None, "pick": "o", "actual": 3, "price": 150},  # no line: not a call
+    ]
+    hits, graded, units, priced = ou_call_graded_record(
+        rows,
+        line_field="line",
+        pick_field="pick",
+        actual_field="actual",
+        price_field="price",
+    )
+    assert (hits, graded, priced) == (2, 3, 2)
+    assert units == approx(0.8 - 1 + 100 / 110)
+    bucket = ou_call_bucket(
+        rows,
+        line_field="line",
+        pick_field="pick",
+        actual_field="actual",
+        projected_field="actual",
+        label="x",
+        key="x",
+        price_field="price",
+    )
+    assert bucket.secondary.startswith("+0.7u")

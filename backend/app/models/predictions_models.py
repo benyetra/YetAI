@@ -8,6 +8,7 @@ with the alembic baseline migration (Development-b0j).
 
 from datetime import datetime, date
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     Column,
     Date,
@@ -1258,6 +1259,13 @@ class PointsProjections(Base):
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
     fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
+    # Best quote for the stored side across books (see app/services/odds_math.best_quote)
+    best_book = Column(String(64), nullable=True)
+    best_line = Column(Float, nullable=True)
+    best_price = Column(Integer, nullable=True)
+    projected_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, last write by the generator
 
 
 class PointsActuals(Base):
@@ -1285,6 +1293,13 @@ class ThreePointProjections(Base):
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String, nullable=True)
     fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
+    # Best quote for the stored side across books (see app/services/odds_math.best_quote)
+    best_book = Column(String(64), nullable=True)
+    best_line = Column(Float, nullable=True)
+    best_price = Column(Integer, nullable=True)
+    projected_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, last write by the generator
 
     def __repr__(self):
         return f"<ThreePointProjections Player ID: {self.player_id}, Date: {self.date}, Projected 3PT Made: {self.projected_three_pt_made}>"
@@ -1420,6 +1435,13 @@ class StealsProjections(Base):
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
     fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
+    # Best quote for the stored side across books (see app/services/odds_math.best_quote)
+    best_book = Column(String(64), nullable=True)
+    best_line = Column(Float, nullable=True)
+    best_price = Column(Integer, nullable=True)
+    projected_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, last write by the generator
 
 
 class StealsActuals(Base):
@@ -1445,6 +1467,16 @@ class BlocksProjections(Base):
     opponent_team_name = Column(String(100), nullable=False)
     projected_blocks = Column(Float, nullable=False)
     model_version = Column(String(64), nullable=True)
+    fanduel_line = Column(Float, nullable=True)
+    fanduel_over_under = Column(String(7), nullable=True)
+    fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
+    # Best quote for the stored side across books (see app/services/odds_math.best_quote)
+    best_book = Column(String(64), nullable=True)
+    best_line = Column(Float, nullable=True)
+    best_price = Column(Integer, nullable=True)
+    projected_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, last write by the generator
 
 
 class BlocksActuals(Base):
@@ -1473,6 +1505,13 @@ class AssistsProjections(Base):
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
     fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
+    # Best quote for the stored side across books (see app/services/odds_math.best_quote)
+    best_book = Column(String(64), nullable=True)
+    best_line = Column(Float, nullable=True)
+    best_price = Column(Integer, nullable=True)
+    projected_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, last write by the generator
 
 
 class AssistsActuals(Base):
@@ -1503,6 +1542,13 @@ class ReboundsProjections(Base):
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
     fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
+    # Best quote for the stored side across books (see app/services/odds_math.best_quote)
+    best_book = Column(String(64), nullable=True)
+    best_line = Column(Float, nullable=True)
+    best_price = Column(Integer, nullable=True)
+    projected_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, last write by the generator
 
 
 class ReboundsActuals(Base):
@@ -1566,6 +1612,13 @@ class PRAProjections(Base):
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
     fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
+    # Best quote for the stored side across books (see app/services/odds_math.best_quote)
+    best_book = Column(String(64), nullable=True)
+    best_line = Column(Float, nullable=True)
+    best_price = Column(Integer, nullable=True)
+    projected_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, last write by the generator
 
     def __repr__(self):
         return f"<PRAProjections {self.player_name}: {self.projected_pra:.1f} PRA vs {self.opponent_team_name}>"
@@ -3848,3 +3901,72 @@ class YetAIHits(Base):
             f"<YetAIHits {self.sport} {self.stat_type} {self.entity_name} "
             f"{self.game_date}: {self.pick} {self.market_line} ({self.value_tier})>"
         )
+
+
+class OddsLineSnapshot(Base):
+    """One book's quote for one market as observed by an Odds API fetch (append-only).
+
+    Identity (event_id, market, player_key, book); a fetch that sees the same values as the
+    identity's latest observation only moves last_seen_at. Written by
+    app/services/odds_snapshots.record_response; schema notes in
+    .factory/edge-odds-capture/artifacts/plan.md. Times are naive UTC.
+    """
+
+    __tablename__ = "odds_line_snapshots"
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    sport = Column(String(64), nullable=False)
+    event_id = Column(String(64), nullable=False)
+    commence_time = Column(DateTime, nullable=True)
+    game_date = Column(Date, nullable=True)  # US Eastern date of commence_time
+    home_team = Column(String(100), nullable=True)
+    away_team = Column(String(100), nullable=True)
+    market = Column(String(64), nullable=False)
+    player_name = Column(String(128), nullable=True)
+    player_key = Column(String(128), nullable=False, default="")
+    book = Column(String(64), nullable=False)
+    line = Column(Float, nullable=True)  # spreads: the home team's point
+    over_price = Column(Integer, nullable=True)
+    under_price = Column(Integer, nullable=True)
+    home_price = Column(Integer, nullable=True)
+    away_price = Column(Integer, nullable=True)
+    book_updated_at = Column(DateTime, nullable=True)
+    first_seen_at = Column(DateTime, nullable=False)
+    last_seen_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (
+        Index("ix_odds_snap_event", "event_id", "market", "book"),
+        Index("ix_odds_snap_lookup", "game_date", "market", "player_key"),
+    )
+
+
+class NBAPropShadow(Base):
+    """Residual-model shadow prediction for an NBA rebounds/assists line.
+
+    Written daily by app/services/etl/nba/residual/shadow.py and graded only in
+    the model review. Nothing published or auto-picked reads this table.
+    """
+
+    __tablename__ = "pred_nba_prop_shadow"
+
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, nullable=False)
+    player_id = Column(Integer, nullable=False)
+    player_name = Column(String(100), nullable=True)
+    stat = Column(String(16), nullable=False)
+    line = Column(Float, nullable=False)
+    line_source = Column(String(64), nullable=True)
+    over_price = Column(Integer, nullable=True)
+    under_price = Column(Integer, nullable=True)
+    best_over_price = Column(Integer, nullable=True)
+    best_under_price = Column(Integer, nullable=True)
+    pred_residual = Column(Float, nullable=False)
+    p_over = Column(Float, nullable=False)
+    model_version = Column(String(64), nullable=False)
+    features = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=True, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("date", "player_id", "stat", name="uq_nba_prop_shadow"),
+    )

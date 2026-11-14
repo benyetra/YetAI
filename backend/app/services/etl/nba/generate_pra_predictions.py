@@ -18,11 +18,7 @@ from app.models.predictions_models import (
     ReboundsProjections,
 )
 from app.services.etl.nba._espn import now_eastern
-from app.services.etl.nba._fanduel_lines import (
-    get_event_id_for_game,
-    get_fanduel_line,
-    pick_side,
-)
+from app.services.etl.nba._fanduel_lines import apply_fanduel_to_projection
 from app.services.etl.nba._samples import player_games
 from app.services.etl.nba._stale_rows import (
     active_players_not_started,
@@ -107,30 +103,14 @@ def _get_component(
     return _weighted_stat(recent_games, recent_attr)
 
 
-def _fanduel_pra_line(
-    team_name: str, player_name: str, opponent_team_name: str, projection: float
-) -> tuple[float | None, str | None, int | None]:
-    event_id = get_event_id_for_game("basketball_nba", team_name, opponent_team_name)
-    if not event_id:
-        return None, None, None
-    line, price, flag = get_fanduel_line(
-        "basketball_nba",
-        event_id,
-        player_name,
-        "player_points_rebounds_assists",
-        projection,
-    )
-    if line <= 0 or flag == "n":
-        return None, None, None
-    return line, flag, int(price) if price else None
-
-
 def run() -> dict:
     today = now_eastern().date()
     created = 0
     updated = 0
     skipped = 0
     errors = 0
+    lines_attached = 0
+    best_attached = 0
 
     db = SessionLocal()
     try:
@@ -230,13 +210,6 @@ def run() -> dict:
                 pra_floor, pra_ceiling = _pra_floor_ceiling(
                     recent, points, rebounds, assists
                 )
-                fd_line, fd_flag, fd_price = _fanduel_pra_line(
-                    player.team_name,
-                    player.player_name,
-                    player.opponent_team_name,
-                    projected_pra,
-                )
-
                 existing = (
                     db.query(PRAProjections)
                     .filter(
@@ -254,37 +227,32 @@ def run() -> dict:
                     "projected_pra": round(projected_pra, 1),
                     "pra_floor": pra_floor,
                     "pra_ceiling": pra_ceiling,
-                    "fanduel_line": fd_line,
-                    "fanduel_over_under": fd_flag,
-                    "fanduel_price": fd_price,
                     "model_version": "sum-pra-v1",  # sum of the P/R/A projections
                 }
                 if existing:
-                    if fd_line is None:
-                        # No market now: keep the stored line and price; re-derive
-                        # the side (an OUT flag is lifted, he is active again).
-                        for k in (
-                            "fanduel_line",
-                            "fanduel_over_under",
-                            "fanduel_price",
-                        ):
-                            del payload[k]
-                        if existing.fanduel_line is not None:
-                            existing.fanduel_over_under = pick_side(
-                                projected_pra, existing.fanduel_line
-                            )
                     for k, v in payload.items():
                         setattr(existing, k, v)
+                    row = existing
                     updated += 1
                 else:
-                    db.add(
-                        PRAProjections(
-                            date=today,
-                            player_id=player.player_id,
-                            **payload,
-                        )
+                    row = PRAProjections(
+                        date=today,
+                        player_id=player.player_id,
+                        **payload,
                     )
+                    db.add(row)
                     created += 1
+                if apply_fanduel_to_projection(
+                    row,
+                    team_name=player.team_name,
+                    opponent_team_name=player.opponent_team_name,
+                    player_name=player.player_name,
+                    market="player_points_rebounds_assists",
+                    projection=projected_pra,
+                ):
+                    lines_attached += 1
+                if row.best_price is not None:
+                    best_attached += 1
                 db.commit()
             except Exception:
                 logger.exception(
@@ -302,6 +270,8 @@ def run() -> dict:
             "updated": updated,
             "skipped": skipped,
             "errors": errors,
+            "fanduel_lines_attached": lines_attached,
+            "best_price_attached": best_attached,
         }
     finally:
         db.close()

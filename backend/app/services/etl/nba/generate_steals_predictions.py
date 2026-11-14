@@ -1,8 +1,8 @@
 """Generate per-player steals projections via the XGBoost model.
 
 Mirrors generate_points_predictions.py but targets the steals model and
-writes to pred_steals_projections. StealsProjections has fanduel_line +
-fanduel_over_under; both are set to NULL until a FanDuel feed is wired in.
+writes to pred_steals_projections. Lines (fanduel_* plus best_* across the
+PROP_BOOKS) are attached with apply_fanduel_to_projection (player_steals).
 
 Note: the `opp_stat_allowed` feature for steals uses TeamDefenseStats.turnovers
 (not a "steals_allowed" column). Matches the YetiBets training pipeline.
@@ -19,6 +19,7 @@ from app.models.predictions_models import (
     StealsProjections,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._fanduel_lines import apply_fanduel_to_projection
 from app.services.etl.nba._stale_rows import (
     active_players_not_started,
     mark_projection_out,
@@ -52,6 +53,8 @@ def run() -> dict:
     skipped_injured = 0
     skipped_insufficient = 0
     errors = 0
+    lines_attached = 0
+    best_attached = 0
 
     use_last10 = _last10.enabled(STAT)
     model_version = (
@@ -121,25 +124,30 @@ def run() -> dict:
                     existing.model_version = model_version
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
-                    existing.fanduel_line = None
-                    existing.fanduel_over_under = None
-                    existing.fanduel_price = None
+                    row = existing
                     updated += 1
                 else:
-                    db.add(
-                        StealsProjections(
-                            date=today,
-                            player_id=player.player_id,
-                            player_name=player.player_name,
-                            opponent_team_name=player.opponent_team_name,
-                            projected_steals=projected,
-                            model_version=model_version,
-                            fanduel_line=None,
-                            fanduel_over_under=None,
-                            fanduel_price=None,
-                        )
+                    row = StealsProjections(
+                        date=today,
+                        player_id=player.player_id,
+                        player_name=player.player_name,
+                        opponent_team_name=player.opponent_team_name,
+                        projected_steals=projected,
+                        model_version=model_version,
                     )
+                    db.add(row)
                     created += 1
+                if apply_fanduel_to_projection(
+                    row,
+                    team_name=player.team_name,
+                    opponent_team_name=player.opponent_team_name,
+                    player_name=player.player_name,
+                    market="player_steals",
+                    projection=projected,
+                ):
+                    lines_attached += 1
+                if row.best_price is not None:
+                    best_attached += 1
                 db.commit()
 
                 logger.info("%s -> %.2f stl", player.player_name, projected)
@@ -163,6 +171,8 @@ def run() -> dict:
             "skipped_injured": skipped_injured,
             "skipped_insufficient_data": skipped_insufficient,
             "errors": errors,
+            "fanduel_lines_attached": lines_attached,
+            "best_price_attached": best_attached,
         }
     finally:
         db.close()

@@ -166,6 +166,13 @@ def nba_update_game_lines():
     return run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.nba.close_capture")
+def nba_close_capture():
+    from app.services.etl.nba.close_capture import run
+
+    return run()
+
+
 @celery_app.task(name="app.tasks.etl_pipeline.nba.generate_predictions")
 def nba_generate_predictions():
     from app.services.etl.nba.generate_points_predictions import run
@@ -178,6 +185,18 @@ def nba_find_top_performers():
     from app.services.etl.nba.find_top_performers import run
 
     return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.residual_shadow")
+def nba_residual_shadow():
+    """Shadow-only residual predictions (own table); never raises, not critical."""
+    try:
+        from app.services.etl.nba.residual.shadow import run
+
+        return run()
+    except Exception as e:  # a shadow failure must not mark the pipeline partial
+        logger.exception("residual shadow failed")
+        return {"status": "error", "error": f"{type(e).__name__}: {e}"}
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.generate_rebounds_predictions")
@@ -517,6 +536,7 @@ NBA_PHASES = [
             nba_find_top_performers,
         ],
     ),
+    ("shadow", [nba_residual_shadow]),
 ]
 
 
@@ -535,6 +555,7 @@ NBA_PREGAME_PHASES = [
         ],
     ),
     ("predictions", dict(NBA_PHASES)["predictions"]),
+    ("shadow", dict(NBA_PHASES)["shadow"]),
 ]
 
 
