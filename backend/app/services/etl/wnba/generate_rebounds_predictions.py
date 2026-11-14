@@ -20,6 +20,7 @@ from app.services.etl.wnba._feature_engineering import (
 from app.services.etl.wnba._ml_predict import predict
 from app.services.etl.wnba._prop_lines import (
     attach_prop_market_fields,
+    freeze_prop_rows,
     resolve_wnba_event_id,
 )
 from app.services.etl.wnba._yetiwatch_news import attach_yetiwatch_news
@@ -107,6 +108,14 @@ def run() -> dict:
             )
             attach_yetiwatch_news(row, db=db, player_id=p.player_id, game_date=today)
             upsert_rows.append(row)
+        upsert_rows = freeze_prop_rows(
+            db,
+            WNBAReboundsProjections,
+            upsert_rows,
+            stat=STAT,
+            game_date=today,
+            active_rows=active_rows,
+        )
         upsert_many(
             db,
             WNBAReboundsProjections,

@@ -18,6 +18,7 @@ from app.models.predictions_models import (
     WNBATeamOffenseStats,
 )
 from app.services.etl import _spread_model as _sm
+from app.services.etl._game_start import not_started
 from app.services.etl._spread_model import (
     WNBA_CONFIG,
     load_elos_from_actuals,
@@ -87,6 +88,10 @@ def run() -> dict:
             db.query(WNBAGameLines)
             .filter(WNBAGameLines.game_date >= today, WNBAGameLines.game_date <= end)
             .all()
+        )
+        # Started games keep the projection users last saw.
+        games = not_started(
+            games, lambda g: (g.game_time, g.game_date), now=now_eastern()
         )
 
         for g in games:
