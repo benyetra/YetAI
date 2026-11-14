@@ -41,18 +41,26 @@ def _env(monkeypatch):
     monkeypatch.setattr(orch_mod, "_can_grade", lambda league, market, stat: True)
 
 
-def _seed_points(db, n, hit_rate, *, offset=1, first_id=0):
+def _seed_points(db, n, hit_rate, *, offset=1, first_id=0, edge=9.5):
     """n graded NBA points O/U calls (line 20.5, over); ``offset`` days before NOW."""
-    _seed(db, PointsProjections, PointsActuals, "points", n, hit_rate, offset, first_id)
+    _seed(
+        db, PointsProjections, PointsActuals, "points", n, hit_rate, offset, first_id,
+        edge,
+    )  # fmt: skip
 
 
-def _seed_rebounds(db, n, hit_rate):
-    _seed(db, ReboundsProjections, ReboundsActuals, "rebounds", n, hit_rate, 1, 0)
+def _seed_rebounds(db, n, hit_rate, *, first_id=0, edge=9.5):
+    _seed(
+        db, ReboundsProjections, ReboundsActuals, "rebounds", n, hit_rate, 1, first_id,
+        edge,
+    )  # fmt: skip
 
 
-def _seed(db, proj, act, stat, n, hit_rate, offset, first_id):
+def _seed(db, proj, act, stat, n, hit_rate, offset, first_id, edge=9.5):
+    """``edge`` = projected - line on the over call; ``hit_rate`` is the share of overs."""
     day = NOW.date() - timedelta(days=offset)
     hits = round(n * hit_rate)
+    projected = 20.5 + edge
     for i in range(first_id, first_id + n):
         extra = {"player_name": f"P{i}"}
         if stat == "rebounds":
@@ -61,7 +69,7 @@ def _seed(db, proj, act, stat, n, hit_rate, offset, first_id):
             proj(
                 date=day,
                 player_id=i,
-                **{f"projected_{stat}": 30.0},
+                **{f"projected_{stat}": projected},
                 fanduel_line=20.5,
                 fanduel_over_under="over",
                 **extra,
@@ -72,7 +80,7 @@ def _seed(db, proj, act, stat, n, hit_rate, offset, first_id):
                 date=day,
                 player_id=i,
                 **{f"actual_{stat}": 25.0 if i - first_id < hits else 10.0},
-                **{f"projected_{stat}": 30.0},
+                **{f"projected_{stat}": projected},
                 **extra,
             )
         )
@@ -114,10 +122,21 @@ async def _run(db, cands):
     ).run()
 
 
+# Prod scorecard shapes (NBA, prior window). Rebounds' qualifying edge is
+# player_prop_projection_display.EDGE_THRESHOLDS["rebounds"] (0.5): ``edge=1.0`` qualifies,
+# ``edge=0.2`` does not.
+
+
 @pytest.mark.asyncio
-async def test_losing_key_is_withheld_and_winning_key_still_picked(sqlite_db):
-    _seed_points(sqlite_db, 400, 0.48)
-    _seed_rebounds(sqlite_db, 400, 0.58)
+async def test_points_losing_at_every_edge_is_withheld_rebounds_in_subset_open(
+    sqlite_db,
+):
+    # points: 47.6% over at low and high edge alike -> no subset rescues it
+    _seed_points(sqlite_db, 250, 0.476, edge=0.2)
+    _seed_points(sqlite_db, 250, 0.476, edge=2.0, first_id=1000)
+    # rebounds: 51.8% over all calls, 57.8% in the qualifying subset
+    _seed_rebounds(sqlite_db, 275, 0.469, edge=0.2, first_id=0)
+    _seed_rebounds(sqlite_db, 225, 0.578, edge=1.0, first_id=1000)
 
     result = await _run(sqlite_db, [_prop(1, "points"), _prop(2, "rebounds")])
 
@@ -127,8 +146,30 @@ async def test_losing_key_is_withheld_and_winning_key_still_picked(sqlite_db):
     assert d["counts"]["losing_record"] == 1
     assert list(d["withheld_keys"]) == ["NBA/player_prop/points"]
     w = d["withheld_keys"]["NBA/player_prop/points"]
-    assert w["proj_n"] == 400 and w["proj_hits"] == 192 and w["bet_n"] == 0
-    assert w["shrunk_roi"] < 0 and w["n_eff"] == 60
+    assert w["proj_n"] == 250 and w["bet_n"] == 0 and w["shrunk_roi"] < 0
+    reb = load_records(sqlite_db, NOW)[REBOUNDS]
+    assert (reb.proj_n, reb.proj_hits) == (225, 130) and not reb.withheld
+    assert reb.shrunk_roi > 0
+
+
+def test_rebounds_overall_record_would_withhold_but_subset_is_what_counts(sqlite_db):
+    _seed_rebounds(sqlite_db, 400, 0.50, edge=0.2)
+    _seed_rebounds(sqlite_db, 100, 0.578, edge=1.0, first_id=1000)
+    rec = load_records(sqlite_db, NOW)[REBOUNDS]
+    assert rec.proj_n == 100 and not rec.withheld  # low-edge rows are not graded
+
+
+def test_key_at_exact_breakeven_is_open():
+    # 110/210 = 52.38% over at -110 is zero ROI.
+    rec = combine(POINTS, proj_n=210, proj_hits=110)
+    assert rec.shrunk_roi == 0 and not rec.withheld
+    assert combine(POINTS, proj_n=210, proj_hits=109).withheld
+
+
+def test_no_data_means_no_record_and_open_gate(sqlite_db):
+    recs = load_records(sqlite_db, NOW)
+    assert all(r.n_eff == 0 and not r.withheld for r in recs.values())
+    assert not combine(POINTS).withheld
 
 
 def test_thin_sample_is_not_withheld():
@@ -141,14 +182,14 @@ def test_withheld_is_strict_and_needs_n_eff():
     assert not combine(POINTS, proj_n=60, proj_hits=40).withheld
 
 
-def test_prior_is_capped_and_shrunk():
+def test_prior_is_capped_and_shrunk_toward_breakeven():
     rec = combine(POINTS, proj_n=400, proj_hits=192, bet_n=5, bet_units=-5.0)
     scale = 60 / 400
     proj_units = 192 * (100 / 110) - 208
-    shrink_units = 20 * (0.5 * 100 / 110 - 0.5)
     assert rec.n_eff == pytest.approx(400 * scale + 5)
+    # the shrink pseudo-picks carry zero ROI (breakeven), not a 50% hit rate at -110
     assert rec.shrunk_roi == pytest.approx(
-        (proj_units * scale - 5.0 + shrink_units) / (400 * scale + 5 + 20)
+        (proj_units * scale - 5.0) / (400 * scale + 5 + 20)
     )
 
 
@@ -268,3 +309,28 @@ def test_nba_spread_projection_record_feeds_the_gate(sqlite_db):
     rec = load_records(sqlite_db, NOW)[("NBA", "spread", None)]
     assert (rec.proj_hits, rec.proj_n) == (40, 100)
     assert rec.withheld
+
+
+def test_gate_report_prints_each_key_and_writes_nothing(sqlite_db, capsys):
+    from app.models.database_models import YetAIBet
+    from app.services.auto_pick import __main__ as cli
+
+    _seed_points(sqlite_db, 250, 0.476, edge=2.0)
+    _seed_rebounds(sqlite_db, 225, 0.578, edge=1.0)
+    for _ in range(3):
+        _bet(sqlite_db, True, -110, NOW - timedelta(days=3), stat="rebounds")
+    sqlite_db.commit()
+    bets_before = sqlite_db.query(YetAIBet).count()
+
+    rows = rg.gate_report(sqlite_db, NOW)
+    by_key = {r["key"]: r for r in rows}
+    pts, reb = by_key["NBA/player_prop/points"], by_key["NBA/player_prop/rebounds"]
+    assert (pts["proj_n"], pts["proj_hits"], pts["withheld"]) == (250, 119, True)
+    assert (reb["bet_n"], reb["proj_n"], reb["proj_hits"]) == (3, 225, 130)
+    assert reb["withheld"] is False and reb["shrunk_roi"] > 0
+    assert reb["prior_hit_rate"] == pytest.approx(130 / 225)
+
+    cli.print_gate_report(rows)
+    out = capsys.readouterr().out
+    assert "NBA/player_prop/points" in out and "WITHHELD" in out
+    assert sqlite_db.query(YetAIBet).count() == bets_before

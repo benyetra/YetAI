@@ -5,8 +5,10 @@ A key's record blends two sources, both over the last WINDOW_DAYS:
 - bet record: graded AUTO YetAIBet rows, units at the stored odds;
 - projection record: the model's published over/under calls graded vs the line they
   were published with (high volume prior), valued at -110 because rows store no price.
-The blend is shrunk toward a 50% hit rate at -110 (like the NBA totals record gate in
-etl/nba/totals_baseline.py), so a thin sample never withholds a key.
+  Only calls the source would turn into a pick count: where the stored call is made at
+  any edge (NBA props) rows below the source's own minimum edge are left out.
+The blend is shrunk toward breakeven (zero ROI; 52.38% at -110), so a thin sample never
+withholds a key and a key needs no more than breakeven to stay open.
 
 Records are recomputed every run from data that keeps being graded while a key is
 withheld, so re-admission is automatic.
@@ -39,8 +41,6 @@ log = logging.getLogger(__name__)
 RecordKey = tuple[str, str, Optional[str]]
 
 BREAKEVEN_ODDS = -110
-# Units won per 1u stake at -110.
-_WIN_110 = 100 / 110
 
 DEFAULT_MIN_PICKS = 30
 DEFAULT_WINDOW_DAYS = 90
@@ -126,13 +126,12 @@ def combine(
     proj_n: int = 0,
     proj_hits: int = 0,
 ) -> KeyRecord:
-    """Blend bet + projection records and shrink toward 50% at -110 (pure)."""
+    """Blend bet + projection records and shrink toward breakeven, zero ROI (pure)."""
     scale = min(1.0, prior_max_picks() / proj_n) if proj_n else 1.0
-    proj_units = proj_hits * _WIN_110 - (proj_n - proj_hits)
-    shrink = shrink_picks()
-    shrink_units = shrink * (0.5 * _WIN_110 - 0.5)
+    # Units at -110, in integers until the one division so breakeven is exactly 0.
+    proj_units = (proj_hits * 100 - (proj_n - proj_hits) * 110) / 110
     n_eff = proj_n * scale + bet_n
-    shrunk_roi = (proj_units * scale + bet_units + shrink_units) / (n_eff + shrink)
+    shrunk_roi = (proj_units * scale + bet_units) / (n_eff + shrink_picks())
     return KeyRecord(
         key=key,
         bet_n=bet_n,
@@ -179,23 +178,45 @@ def load_bet_records(db: Session, now: datetime) -> dict[RecordKey, tuple[int, f
 # Projection loaders: name -> fn(db, start, end) -> {key: (hits, graded)}; dates inclusive.
 ProjectionLoader = Callable[[Session, date, date], dict[RecordKey, tuple[int, int]]]
 
+# part -> (stat, actual field, projected field, EDGE_THRESHOLDS key)
 _NBA_PROP_STATS = {
-    "points_ou": ("points", "actual_points"),
-    "three_pt_ou": ("threes", "actual_three_pt_made"),
-    "steals_ou": ("steals", "actual_steals"),
-    "assists_ou": ("assists", "actual_assists"),
-    "rebounds_ou": ("rebounds", "actual_rebounds"),
+    "points_ou": ("points", "actual_points", "projected_points", "points"),
+    "three_pt_ou": (
+        "threes",
+        "actual_three_pt_made",
+        "projected_three_pt_made",
+        "three_pt_made",
+    ),
+    "steals_ou": ("steals", "actual_steals", "projected_steals", "steals"),
+    "assists_ou": ("assists", "actual_assists", "projected_assists", "assists"),
+    "rebounds_ou": ("rebounds", "actual_rebounds", "projected_rebounds", "rebounds"),
 }
+
+
+def _prop_qualifies(row, projected_field: str, min_edge: float) -> bool:
+    """Would the NBA prop source emit this stored call as a candidate?
+
+    The flag on these rows is just the side of projection vs line at any edge; a pick
+    needs the projection to clear the line by the stat's minimum edge on the called side.
+    """
+    proj, line = row.get(projected_field), row.get("fanduel_line")
+    if proj is None or line is None:
+        return False
+    over = str(row.get("fanduel_over_under") or "").strip().lower() in ("o", "over")
+    return (proj - line if over else line - proj) >= min_edge
 
 
 def _nba_props(db, start, end):
     from app.services.nba_accuracy_service import _nba_season_window_rows
+    from app.services.player_prop_projection_display import EDGE_THRESHOLDS
 
     out = {}
     for part, _label, rows, _merge in _nba_season_window_rows(db, start=start, end=end):
         if part not in _NBA_PROP_STATS:
             continue
-        stat, actual_field = _NBA_PROP_STATS[part]
+        stat, actual_field, proj_field, edge_key = _NBA_PROP_STATS[part]
+        min_edge = EDGE_THRESHOLDS[edge_key]
+        rows = [r for r in rows if _prop_qualifies(r, proj_field, min_edge)]
         hits, n = ou_call_graded_counts(
             rows,
             line_field="fanduel_line",
@@ -365,3 +386,24 @@ def load_records(db: Session, now: datetime) -> dict[RecordKey, KeyRecord]:
         )
         for key in set(bets) | set(projs)
     }
+
+
+def gate_report(db: Session, now: datetime) -> list[dict]:
+    """Per-key gate decision for the dry-run CLI (read-only: only the loaders run)."""
+    rows = []
+    records = load_records(db, now)
+    for key, r in sorted(records.items(), key=lambda kv: key_label(kv[0])):
+        rows.append(
+            {
+                "key": key_label(key),
+                "bet_n": r.bet_n,
+                "bet_units": round(r.bet_units, 2),
+                "proj_n": r.proj_n,
+                "proj_hits": r.proj_hits,
+                "prior_hit_rate": r.proj_hits / r.proj_n if r.proj_n else None,
+                "n_eff": round(r.n_eff, 1),
+                "shrunk_roi": round(r.shrunk_roi, 4),
+                "withheld": r.withheld,
+            }
+        )
+    return rows
