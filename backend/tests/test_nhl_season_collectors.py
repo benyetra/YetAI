@@ -357,11 +357,14 @@ def test_goalie_stats_current_season_only_and_shrunk(db):
             away_goalie_id=2,
         )
     )
+    # A goalie row with no stored game at all (stale numbers from an old build)
+    db.add(NHLGoalie(player_id=4, name="G4", team_id=9, team_name="T9", games_played=2))
     db.commit()
 
     chd.calculate_goalie_stats(SEASON)
 
     g = {x.player_id: x for x in db.query(NHLGoalie).all()}
+    assert g[4].games_played == 0 and g[4].save_pct is None
     g1 = g[1]
     assert g1.games_played == 2 and (g1.wins, g1.losses) == (1, 1)
     assert (g1.saves, g1.shots_against) == (54, 60)

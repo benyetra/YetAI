@@ -461,6 +461,12 @@ def calculate_goalie_stats(season=None):
 
         goalies_updated += 1
 
+    # Goalies with no stored game at all keep their row but no current numbers.
+    for goalie in db_session.query(NHLGoalie).all():
+        if goalie.player_id not in by_goalie:
+            goalie.games_played = 0
+            goalie.save_pct = goalie.goals_against_avg = None
+
     db_session.commit()
     print(f"✓ Updated {goalies_updated} goalies")
 
