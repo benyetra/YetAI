@@ -1,4 +1,4 @@
-"""End-to-end NBA prop XGB retrain: dataset → train → MAE gate → optional S3 upload."""
+"""End-to-end NBA prop XGB retrain: dataset → train → MAE gate → champion-gated S3 upload."""
 
 from __future__ import annotations
 
@@ -136,6 +136,7 @@ def run(
         chronological=True,
     )
     metadata = _enrich_metadata(stat_col, metadata)
+    metadata["data_window"] = f"{season_start}..{season_end}"
 
     _, X_hold, _, y_hold = split(features_df, target, chronological=True)
     holdout_preds = model.predict(X_hold)
@@ -210,7 +211,26 @@ def run(
     }
 
     if upload:
-        keys = upload_to_s3.upload(stat_col, model, metadata)
-        result["s3_keys"] = keys
+        # Only replace the live model if it is not worse on this same holdout.
+        out = upload_to_s3.upload_gated(
+            stat_col,
+            model,
+            metadata,
+            candidate_metric=validation["mae"],
+            score_champion=upload_to_s3.live_scorer(stat_col, X_hold, y_hold),
+        )
+        result["gate"] = out
+        if out["status"] == "rejected_by_champion":
+            logger.warning(
+                "NBA %s candidate rejected: holdout MAE %.3f vs live %.3f",
+                stat_col,
+                out["candidate_metric"],
+                out["champion_metric"],
+            )
+            result["status"] = "rejected_by_champion"
+        else:
+            result["s3_keys"] = {
+                k: out[k] for k in ("model_key", "metadata_key", "manifest_key")
+            }
 
     return result

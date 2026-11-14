@@ -45,7 +45,7 @@ def _is_missing(exc: Exception) -> bool:
     return err in ("NoSuchKey", "404", "NotFound")
 
 
-def _get_bytes(s3, bucket: str, key: str) -> bytes | None:
+def get_bytes(s3, bucket: str, key: str) -> bytes | None:
     """Object body, or None when the key does not exist."""
     try:
         return s3.get_object(Bucket=bucket, Key=key)["Body"].read()
@@ -115,7 +115,7 @@ class S3Object:
 
     def _load_manifest(self, s3) -> dict | None:
         try:
-            raw = _get_bytes(s3, self.bucket, manifest_key(self.key))
+            raw = get_bytes(s3, self.bucket, manifest_key(self.key))
             return json.loads(raw) if raw else None
         except Exception as exc:
             logger.warning("manifest unreadable for %s: %s", self.key, exc)
@@ -178,7 +178,7 @@ def gated_upload(
     extras = dict(extra_files or {})
     mkey = manifest_key(model_key)
 
-    live = _get_bytes(s3, bucket, model_key)
+    live = get_bytes(s3, bucket, model_key)
     champion: float | None = None
     reason: str | None = None
     if live is None:
@@ -190,7 +190,7 @@ def gated_upload(
         except Exception as exc:
             logger.warning("could not score live %s on the holdout: %s", model_key, exc)
             try:
-                raw = _get_bytes(s3, bucket, mkey)
+                raw = get_bytes(s3, bucket, mkey)
                 champion = float(json.loads(raw)["holdout_metric"]) if raw else None
             except Exception:
                 champion = None
