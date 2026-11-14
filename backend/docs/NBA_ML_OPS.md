@@ -154,11 +154,26 @@ games sat a day late, nightly `store_actuals` matched few projections, and the p
 generators (which read `game_date < today`) skipped the previous night's games. The
 ingest now files each game under its Eastern tip-off date.
 
-Rows written before the fix keep their shifted dates. Repair a season with the
-**NBA Season Ops** action `repair-recent-game-dates` (inputs `seasons`, `apply`; dry run
-unless `apply` is checked), or `scripts/nba_recent_games_date_repair.py`. It copies the
-season's rows to `pred_recent_games_bak_<year>`, deletes them and re-pulls every game
-day (~1,500 API-Sports calls per full season). Retrain the prop models afterwards.
+Rows written before the fix keep their shifted dates, and a later re-run filed some games
+a second time under the right date (same player and game on D and D+1). Repair with the
+**NBA Season Ops** action `repair-recent-game-dates` (input `apply`; dry run unless checked),
+or `scripts/nba_recent_games_redate.py [--season YYYY] [--apply]`. It takes each game's true
+Eastern date from `pred_nba_spread_actuals` (ESPN finals), matched on opponent and home flag,
+deletes duplicate copies and moves late-filed rows one day earlier. Rows it cannot place
+(no game, two games on consecutive days it cannot tell apart) are listed and left alone; rows
+after the last final are skipped. One transaction, idempotent, no API calls. Then regrade
+what was derived from the moved rows with `scripts/nba_regrade_actuals.py --start <first date>
+[--apply]` (prop actuals, `pred_prediction_accuracy`, missing totals actuals; its apply re-counts
+and exits 1 unless nothing is left to change), and retrain the prop models.
+
+Since NBA-1 each row also stores the API-Sports game id (`api_game_id`, unique per player), and
+the ingest matches a line by game id, then date, then a legacy copy one day late with the same
+box, so re-running any window converges to one row per player per game.
+
+Threes, steals, blocks and free throws are served as a last-10-games average
+(`etl/nba/_last10.py`, `model_version` `last10-avg-v1`; current season once a player has 5 games,
+else his last 10 across seasons): each static S3 model lost to it on correctly dated rows.
+`NBA_LAST10_PROPS=0` restores the S3 models.
 
 ## Honest evaluation and the daily loop
 

@@ -3,7 +3,8 @@
 Port of YetiBets/scripts/nba/update_recent_games_api_sports_simple.py. For each
 day in the window, hits api-sports /games to find game ids, then for each game
 hits /players/statistics to pull box-score lines. Each line is keyed by
-(player_id, game_date) and upserted into pred_recent_games.
+(player_id, api_game_id) and upserted into pred_recent_games; rows written
+before api_game_id existed are matched by date and box (see _canonical_row).
 
 The original script defaulted to a 30-day window. We default to 7 to be
 gentler on api-sports quota in normal Beat-driven runs; the daily orchestrator
@@ -115,6 +116,40 @@ def game_eastern_date(game: dict, fallback: date) -> date:
     return tipoff.astimezone(EASTERN).date()
 
 
+def _legacy_copies(db, player_id: int, game_day: date, stats: dict) -> list:
+    """Rows filed under the old UTC date (game_day + 1, no api_game_id) that hold
+    this same box score against the same opponent: shifted copies of the game."""
+    return (
+        db.query(RecentGames)
+        .filter(
+            RecentGames.player_id == player_id,
+            RecentGames.api_game_id.is_(None),
+            RecentGames.game_date == game_day + timedelta(days=1),
+            RecentGames.opponent_team_id == stats["opponent_team_id"],
+            RecentGames.minutes == stats["minutes"],
+            RecentGames.points == stats["points"],
+            RecentGames.rebounds == stats["rebounds"],
+            RecentGames.assists == stats["assists"],
+        )
+        .all()
+    )
+
+
+def _canonical_row(db, player_id: int, game_id, game_day: date, stats: dict):
+    """(row to update or None, shifted copies to delete) for one stat line.
+
+    Row: same api_game_id, else same date, else a legacy D+1 copy. Re-running any
+    window therefore converges to one row per player per game."""
+    q = db.query(RecentGames).filter_by(player_id=player_id)
+    shifted = _legacy_copies(db, player_id, game_day, stats)
+    row = (
+        q.filter_by(api_game_id=game_id).first()
+        or q.filter_by(game_date=game_day).first()
+        or (shifted[0] if shifted else None)
+    )
+    return row, shifted
+
+
 def _process_day(target_date: date) -> tuple[int, int]:
     """Fetch games for a date, upsert stat lines. Returns (added, updated)."""
     if is_offseason_date(target_date):
@@ -162,47 +197,54 @@ def _process_day(target_date: date) -> tuple[int, int]:
 
             for ps in stats_data["response"]:
                 try:
-                    player = ps.get("player") or {}
-                    name = f"{(player.get('firstname') or '').strip()} {(player.get('lastname') or '').strip()}".strip()
-                    team_nba_id = API_SPORTS_TO_NBA.get(
-                        (ps.get("team") or {}).get("id")
-                    )
-                    name = expand_player_name(
-                        name, roster_by_team.get(team_nba_id, []), league_names
-                    )
-                    nba_player_id = resolve_nba_player_id(
-                        name, api_sports_id=player.get("id")
-                    )
-                    if not nba_player_id:
-                        continue
-
-                    stats = stat_line_fields(ps, home_api_id, away_api_id)
-                    if stats["minutes"] is None:
-                        continue  # did not play
-
-                    existing = (
-                        db.query(RecentGames)
-                        .filter_by(player_id=nba_player_id, game_date=game_day)
-                        .first()
-                    )
-                    if existing:
-                        for k, v in stats.items():
-                            setattr(existing, k, v)
-                        updated += 1
-                    else:
-                        db.add(
-                            RecentGames(
-                                player_id=nba_player_id,
-                                game_date=game_day,
-                                **stats,
-                            )
+                    with db.begin_nested():  # one bad line must not drop the game
+                        player = ps.get("player") or {}
+                        name = f"{(player.get('firstname') or '').strip()} {(player.get('lastname') or '').strip()}".strip()
+                        team_nba_id = API_SPORTS_TO_NBA.get(
+                            (ps.get("team") or {}).get("id")
                         )
-                        added += 1
+                        name = expand_player_name(
+                            name, roster_by_team.get(team_nba_id, []), league_names
+                        )
+                        nba_player_id = resolve_nba_player_id(
+                            name, api_sports_id=player.get("id")
+                        )
+                        if not nba_player_id:
+                            continue
+
+                        stats = stat_line_fields(ps, home_api_id, away_api_id)
+                        if stats["minutes"] is None:
+                            continue  # did not play
+
+                        stats["api_game_id"] = game_id
+                        row, shifted = _canonical_row(
+                            db, nba_player_id, game_id, game_day, stats
+                        )
+                        if row:
+                            for k, v in stats.items():
+                                setattr(row, k, v)
+                            row.game_date = game_day
+                            updated += 1
+                        else:
+                            row = RecentGames(
+                                player_id=nba_player_id, game_date=game_day, **stats
+                            )
+                            db.add(row)
+                            added += 1
+                        for copy in shifted:
+                            if copy is not row:
+                                db.delete(copy)
+                                logger.info(
+                                    "update_recent_games: dropped shifted copy of game %s "
+                                    "for player %s (%s)",
+                                    game_id,
+                                    nba_player_id,
+                                    copy.game_date,
+                                )
                 except Exception:
                     logger.exception(
                         "update_recent_games: failed line for game %s", game_id
                     )
-                    db.rollback()
                     continue
 
             db.commit()

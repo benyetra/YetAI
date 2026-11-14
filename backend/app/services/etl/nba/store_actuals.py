@@ -46,6 +46,7 @@ from app.models.predictions_models import (
     ThreePointProjections,
 )
 from app.services.etl.grading_window import grading_dates
+from app.services.etl.nba._espn import NBA_TEAM_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -178,20 +179,97 @@ def _ou_coverage_stats(
     }
 
 
-def _store_stat(
-    db: Session, stat_key: str, cfg: dict[str, Any], target_date: date
-) -> dict[str, int]:
-    written = 0
-    missing_actual = 0
-    no_projection = 0
-    errors = 0
-    ou_graded = 0
+def opponent_matches(proj: Any, recent: Any) -> bool:
+    """False when the box row's opponent is not the one the projection was made for.
 
+    A projection without an opponent name, or a box opponent id we cannot name,
+    is not blocked.
+    """
+    name = getattr(proj, "opponent_team_name", None)
+    box_name = NBA_TEAM_NAMES.get(getattr(recent, "opponent_team_id", None))
+    if not name or not box_name:
+        return True
+    return str(name).strip().lower() == box_name.lower()
+
+
+def pra_value(recent: Any) -> float | None:
+    parts = (recent.points, recent.rebounds, recent.assists)
+    return None if any(v is None for v in parts) else float(sum(parts))
+
+
+# PRA is graded from three box columns; it has no STAT_CONFIG entry.
+PRA_CONFIG: dict[str, Any] = {
+    "projection_model": PRAProjections,
+    "actuals_model": PRAActuals,
+    "actual_attr": "actual_pra",
+    "value_fn": pra_value,
+}
+GRADED_STATS = [*STAT_CONFIG, "pra"]
+
+
+def _value_fn(cfg: dict[str, Any]):
+    return cfg.get("value_fn") or (lambda r: getattr(r, cfg["recent_attr"], None))
+
+
+def resolve_actuals(
+    db: Session, cfg: dict[str, Any], target_date: date
+) -> tuple[list[Any], list[tuple[Any, Any, float]], list[Any]]:
+    """The one rule for what the actuals of a date must be.
+
+    Returns (projections, matches, stale): ``matches`` are (projection, box row,
+    value) where the player has a box row with a value and the opponent agrees;
+    ``stale`` are existing actual rows that must not exist (no matching box row,
+    or an orphan with neither projection nor box row).
+    """
     projections = (
         db.query(cfg["projection_model"])
         .filter(cfg["projection_model"].date == target_date)
         .all()
     )
+    box = {
+        r.player_id: r
+        for r in db.query(RecentGames)
+        .filter(RecentGames.game_date == target_date)
+        .all()
+    }
+    value_fn = _value_fn(cfg)
+    matches = []
+    for proj in projections:
+        recent = box.get(proj.player_id)
+        value = value_fn(recent) if recent is not None else None
+        if value is not None and opponent_matches(proj, recent):
+            matches.append((proj, recent, value))
+    keep = {p.player_id for p, _, _ in matches}
+    projected = {p.player_id for p in projections}
+    actuals_model = cfg["actuals_model"]
+    stale = [
+        a
+        for a in db.query(actuals_model).filter(actuals_model.date == target_date).all()
+        if a.player_id not in keep
+        and (a.player_id in projected or a.player_id not in box)
+    ]
+    return projections, matches, stale
+
+
+def _delete_rows(db: Session, rows: list[Any]) -> int:
+    for row in rows:
+        db.delete(row)
+    if rows:
+        db.commit()
+    return len(rows)
+
+
+def _store_stat(
+    db: Session, stat_key: str, cfg: dict[str, Any], target_date: date
+) -> dict[str, int]:
+    written = 0
+    no_projection = 0
+    errors = 0
+    ou_graded = 0
+
+    projections, matches, stale = resolve_actuals(db, cfg, target_date)
+    deleted = _delete_rows(db, stale)
+    missing_actual = len(projections) - len(matches)
 
     if not projections:
         logger.info("store_actuals[%s]: no projections for %s", stat_key, target_date)
@@ -201,23 +279,10 @@ def _store_stat(
             "missing_projection": no_projection,
             "errors": errors,
             "projections_found": 0,
+            "deleted": deleted,
         }
 
-    # Pre-fetch yesterday's RecentGames rows for the players we projected so we
-    # only touch the table once per stat.
-    player_ids = [p.player_id for p in projections]
-    recent_rows = (
-        db.query(RecentGames)
-        .filter(
-            RecentGames.game_date == target_date,
-            RecentGames.player_id.in_(player_ids),
-        )
-        .all()
-    )
-    recent_by_pid = {r.player_id: r for r in recent_rows}
-
     actuals_model = cfg["actuals_model"]
-    recent_attr = cfg["recent_attr"]
     actual_attr = cfg["actual_attr"]
     projected_attr = cfg["projected_attr"]
     # FreeThrow's actuals table uses a different projected_* column name than
@@ -225,17 +290,8 @@ def _store_stat(
     actuals_projected_attr = cfg.get("actuals_projected_attr", projected_attr)
     extra_actual_attrs: dict[str, str] = cfg.get("extra_actual_attrs", {}) or {}
 
-    for proj in projections:
+    for proj, recent, actual_value in matches:
         try:
-            recent = recent_by_pid.get(proj.player_id)
-            if recent is None:
-                missing_actual += 1
-                continue
-            actual_value = getattr(recent, recent_attr, None)
-            if actual_value is None:
-                missing_actual += 1
-                continue
-
             projected_value = getattr(proj, projected_attr, None)
             correct = _compute_correct_prediction(
                 proj, float(actual_value), cfg["has_fanduel"]
@@ -307,6 +363,7 @@ def _store_stat(
         "missing_projection": no_projection,
         "errors": errors,
         "projections_found": len(projections),
+        "deleted": deleted,
     }
     result.update(
         _ou_coverage_stats(
@@ -325,44 +382,27 @@ def _store_stat(
 
 
 def _store_pra(db: Session, target_date: date) -> dict[str, int]:
-    """PRA actuals = points + rebounds + assists from RecentGames."""
+    """PRA actuals = points + rebounds + assists from RecentGames (all three non-null)."""
     written = 0
     missing_actual = 0
     errors = 0
     ou_graded = 0
 
-    projections = (
-        db.query(PRAProjections).filter(PRAProjections.date == target_date).all()
-    )
+    projections, matches, stale = resolve_actuals(db, PRA_CONFIG, target_date)
+    deleted = _delete_rows(db, stale)
+    missing_actual = len(projections) - len(matches)
     if not projections:
         return {
             "written": 0,
             "missing_actual": 0,
             "errors": 0,
             "projections_found": 0,
+            "deleted": deleted,
         }
 
-    player_ids = [p.player_id for p in projections]
-    recent_rows = (
-        db.query(RecentGames)
-        .filter(
-            RecentGames.game_date == target_date,
-            RecentGames.player_id.in_(player_ids),
-        )
-        .all()
-    )
-    recent_by_pid = {r.player_id: r for r in recent_rows}
-
-    for proj in projections:
+    for proj, recent, actual_pra in matches:
         try:
-            recent = recent_by_pid.get(proj.player_id)
-            if recent is None:
-                missing_actual += 1
-                continue
-            ap = recent.points or 0
-            ar = recent.rebounds or 0
-            aa = recent.assists or 0
-            actual_pra = float(ap + ar + aa)
+            ap, ar, aa = recent.points, recent.rebounds, recent.assists
             correct = _compute_correct_prediction(
                 proj, actual_pra, bool(proj.fanduel_line)
             )
@@ -412,6 +452,7 @@ def _store_pra(db: Session, target_date: date) -> dict[str, int]:
         "missing_actual": missing_actual,
         "errors": errors,
         "projections_found": len(projections),
+        "deleted": deleted,
     }
     result.update(_ou_coverage_stats(projections, has_fanduel=True, graded=ou_graded))
     if projections:
@@ -422,6 +463,33 @@ def _store_pra(db: Session, target_date: date) -> dict[str, int]:
             len(projections),
         )
     return result
+
+
+def plan_counts(db: Session, stat_key: str, target_date: date) -> dict[str, int]:
+    """Read-only: what storing ``stat_key`` for the date would change."""
+    cfg = PRA_CONFIG if stat_key == "pra" else STAT_CONFIG[stat_key]
+    _, matches, stale = resolve_actuals(db, cfg, target_date)
+    model = cfg["actuals_model"]
+    existing = {
+        a.player_id: a for a in db.query(model).filter(model.date == target_date)
+    }
+    counts = {"updated": 0, "deleted": len(stale), "inserted": 0, "unchanged": 0}
+    for proj, _, value in {m[0].player_id: m for m in matches}.values():
+        row = existing.get(proj.player_id)
+        if row is None:
+            counts["inserted"] += 1
+        elif getattr(row, cfg["actual_attr"]) != float(value):
+            counts["updated"] += 1
+        else:
+            counts["unchanged"] += 1
+    return counts
+
+
+def store_date(db: Session, target_date: date) -> dict[str, Any]:
+    """Store every stat (and PRA) for one date on an open session."""
+    stats = {k: _store_stat(db, k, c, target_date) for k, c in STAT_CONFIG.items()}
+    stats["pra"] = _store_pra(db, target_date)
+    return stats
 
 
 def run(target_date: date | None = None) -> dict:
@@ -443,12 +511,9 @@ def run(target_date: date | None = None) -> dict:
     db = SessionLocal()
     try:
         for d in dates:
-            stats: dict[str, Any] = {}
-            for stat_key, cfg in STAT_CONFIG.items():
-                stats[stat_key] = _store_stat(db, stat_key, cfg, d)
-                logger.info("store_actuals[%s] %s: %s", stat_key, d, stats[stat_key])
-            stats["pra"] = _store_pra(db, d)
-            logger.info("store_actuals[pra] %s: %s", d, stats["pra"])
+            stats = store_date(db, d)
+            for stat_key, res in stats.items():
+                logger.info("store_actuals[%s] %s: %s", stat_key, d, res)
             summary["stats"] = stats
     finally:
         db.close()

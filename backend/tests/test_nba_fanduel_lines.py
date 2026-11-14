@@ -260,6 +260,7 @@ def test_store_actuals_grades_ou_and_reports_coverage():
     mock_db.query.return_value.filter.return_value.all.side_effect = [
         [proj],
         [recent],
+        [],  # existing actuals of the date
     ]
     mock_db.query.return_value.filter.return_value.first.return_value = None
 

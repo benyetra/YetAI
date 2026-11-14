@@ -28,6 +28,7 @@ from app.models.predictions_models import (
     ThreePointProjections,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba.store_actuals import opponent_matches, pra_value
 
 logger = logging.getLogger(__name__)
 
@@ -99,21 +100,26 @@ STAT_CONFIGS = {
 }
 
 
-def calculate_accuracy_for_date(target_date):
+def calculate_accuracy_for_date(target_date, dry_run=False):
     """
     Calculate accuracy for all projections on a given date.
 
-    Uses RecentGames as the primary source of truth for actual values,
-    with Actuals tables as fallback.
+    RecentGames (box scores) is the only source of actual values; a row with
+    no matching box value is deleted.
 
     Args:
         target_date: Date to calculate accuracy for
+        dry_run: count what would change without writing
+
+    Returns counts: created, updated, deleted, unchanged.
     """
     logger.info(f"Calculating accuracy for {target_date}")
 
     records_created = 0
     records_updated = 0
     records_skipped = 0
+    records_deleted = 0
+    records_unchanged = 0
 
     for stat_type, config in STAT_CONFIGS.items():
         try:
@@ -145,7 +151,8 @@ def calculate_accuracy_for_date(target_date):
                         records_skipped += 1
                         continue
 
-                    # PRIMARY: Get actual value from RecentGames (most reliable source)
+                    # Box score only: the actuals tables are derived from it, so
+                    # falling back to them could only return a stale grade.
                     actual_value = None
                     minutes_played = None
                     recent_game = (
@@ -154,43 +161,15 @@ def calculate_accuracy_for_date(target_date):
                         .first()
                     )
 
-                    if recent_game:
+                    if recent_game and opponent_matches(proj, recent_game):
                         minutes_played = recent_game.minutes
-                        # Get actual value from RecentGames
                         if recent_games_field:
                             actual_value = getattr(
                                 recent_game, recent_games_field, None
                             )
                         elif config.get("compute_from_fields"):
-                            # Compute value from multiple fields (e.g., PRA = points + rebounds + assists)
-                            computed_value = 0
-                            all_fields_present = True
-                            for field in config["compute_from_fields"]:
-                                field_val = getattr(recent_game, field, None)
-                                if field_val is not None:
-                                    computed_value += field_val
-                                else:
-                                    all_fields_present = False
-                                    break
-                            if all_fields_present:
-                                actual_value = computed_value
+                            actual_value = pra_value(recent_game)
 
-                    # FALLBACK: If no RecentGames data, try Actuals table
-                    if actual_value is None and actual_model is not None:
-                        actual = (
-                            db.query(actual_model)
-                            .filter_by(player_id=player_id, date=target_date)
-                            .first()
-                        )
-                        if actual:
-                            actual_value = getattr(actual, actual_field, None)
-
-                    # Skip if we still have no actual value (game might not have happened yet)
-                    if actual_value is None:
-                        records_skipped += 1
-                        continue
-
-                    # Check if record already exists
                     existing = (
                         db.query(PredictionAccuracy)
                         .filter_by(
@@ -200,6 +179,29 @@ def calculate_accuracy_for_date(target_date):
                         )
                         .first()
                     )
+
+                    # No box value (not played, re-dated away, wrong opponent):
+                    # an old grade must not outlive it.
+                    if actual_value is None:
+                        if existing:
+                            if not dry_run:
+                                db.delete(existing)
+                                db.commit()
+                            records_deleted += 1
+                        records_skipped += 1
+                        continue
+
+                    if dry_run:
+                        if existing is None:
+                            records_created += 1
+                        elif (existing.projected_value, existing.actual_value) != (
+                            float(projected_value),
+                            float(actual_value),
+                        ):
+                            records_updated += 1
+                        else:
+                            records_unchanged += 1
+                        continue
 
                     if existing:
                         existing.projected_value = float(projected_value)
@@ -238,8 +240,15 @@ def calculate_accuracy_for_date(target_date):
             continue
 
     logger.info(
-        f"Created {records_created} records, updated {records_updated} records, skipped {records_skipped}"
+        f"Created {records_created} records, updated {records_updated} records, "
+        f"deleted {records_deleted}, skipped {records_skipped}"
     )
+    return {
+        "created": records_created,
+        "updated": records_updated,
+        "deleted": records_deleted,
+        "unchanged": records_unchanged,
+    }
 
 
 def generate_accuracy_report(days_back=7):
