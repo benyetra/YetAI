@@ -112,3 +112,10 @@ def test_betting_recommendation_requires_higher_confidence():
     out = generate_betting_recommendation(270.0, 240.0, 0.68, over_probability=0.7)
     assert out["recommendation"] == "PASS"
     assert "Low confidence" in out["reason"]
+
+
+def test_classifier_alone_never_makes_a_call():
+    # yards edge ~2.5% (< 7%) but P(over)=0.7 clears the classifier threshold
+    out = generate_betting_recommendation(246.0, 240.0, 0.8, over_probability=0.7)
+    assert out["recommendation"] == "PASS"
+    assert out["over_probability"] == 0.7
