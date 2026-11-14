@@ -294,11 +294,11 @@ def test_overview_item_from_totals_no_data():
 
 
 def test_overview_item_from_totals_with_data():
-    out = ash.overview_item_from_totals(sport="nba", label="NBA", correct=3, total=4)
+    out = ash.overview_item_from_totals(sport="nba", label="NBA", correct=30, total=40)
     assert out["has_data"] is True
-    assert out["graded_count"] == 4
+    assert out["graded_count"] == 40
     assert out["primary"] == "75%"
-    assert "4 graded picks" in out["secondary"]
+    assert "40 graded calls" in out["secondary"]
 
 
 def test_assemble_returns_standard_shape():
@@ -323,3 +323,103 @@ def test_assemble_returns_standard_shape():
             }
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Row-level result functions + bucket/row agreement (grading-rollup T1)
+# ---------------------------------------------------------------------------
+
+
+def test_ou_row_result_table():
+    f = ash.ou_row_result
+    assert f(line=5.5, pick="OVER", actual=7) == "hit"
+    assert f(line=5.5, pick=" u ", actual=4) == "hit"
+    assert f(line=5.5, pick="over", actual=4) == "miss"
+    assert f(line=5.5, pick="under", actual=7) == "miss"
+    assert f(line=5.5, pick="over", actual=5.5) == "push"
+    for pick in ("", None, "PASS", "NO_PLAY", "NONE", "lean_over"):
+        assert f(line=5.5, pick=pick, actual=7) == "no_play"
+    assert f(line=None, pick="over", actual=7) == "no_play"
+    assert f(line=5.5, pick="over", actual=None) == "ungraded"
+    assert f(line=5.5, pick="over", actual=None, actual_expected=True) == "dnp"
+    assert f(line=5.5, pick="over", actual="n/a") == "ungraded"
+    assert f(line="x", pick="over", actual=3) == "ungraded"
+
+
+def test_edge_row_result_table():
+    f = ash.edge_row_result
+    for pick in ("", None, "no_play", "NONE", "pass"):
+        assert f(pick=pick, correct_flag=True) == "no_play"
+    assert f(pick="HOME", correct_flag=True, push=True) == "push"
+    assert f(pick="HOME", correct_flag=None) == "ungraded"
+    assert f(pick="HOME", correct_flag=None, actual_expected=True) == "dnp"
+    assert f(pick="HOME", correct_flag=True) == "hit"
+    assert f(pick="HOME", correct_flag=False) == "miss"
+
+
+def test_hit_rate_row_result_table():
+    f = ash.hit_rate_row_result
+    for proj in (None, "x", 0, 0.5):
+        assert f(projected=proj, actual=3, threshold=1) == "no_play"
+    assert f(projected=2, actual=None, threshold=1) == "ungraded"
+    assert f(projected=2, actual=None, threshold=1, actual_expected=True) == "dnp"
+    assert f(projected=2, actual="n/a", threshold=1) == "ungraded"
+    assert f(projected=2, actual=1, threshold=1) == "hit"
+    assert f(projected=2, actual=0, threshold=1) == "miss"
+
+
+def test_ou_call_bucket_excludes_pass_and_no_play():
+    rows = [{"l": 220.5, "p": "OVER", "a": 230, "x": 225}] + [
+        {"l": 220.5, "p": p, "a": 230, "x": 221} for p in ("NO_PLAY", "PASS", "NONE")
+    ]
+    b = ash.ou_call_bucket(
+        rows,
+        line_field="l",
+        pick_field="p",
+        actual_field="a",
+        projected_field="x",
+        label="t",
+        key="t",
+    )
+    assert b.primary == "1/1 · 100%"
+    assert ash.ou_call_graded_counts(
+        rows, line_field="l", pick_field="p", actual_field="a"
+    ) == (1, 1)
+
+
+def test_hit_rate_unparseable_actual_not_in_total():
+    rows = [{"x": 2, "a": "n/a"}, {"x": 2, "a": 3}]
+    kw = dict(actual_field="a", projected_field="x", threshold=1)
+    assert ash.hit_rate_graded_counts(rows, **kw) == (1, 1)
+    b = ash.hit_rate_bucket(rows, label="t", key="t", secondary="s", **kw)
+    assert b.primary == "1/1 · 100%"
+
+
+def test_edge_play_bucket_excludes_pass():
+    rows = [{"pick": "PASS", "g": False}, {"pick": "HOME", "g": True}]
+    b = ash.edge_play_bucket(
+        rows, pick_field="pick", correct_field="g", label="t", key="t"
+    )
+    assert b.primary == "1/1 · 100%"
+
+
+def test_overview_item_from_markets_small_sample_and_populations():
+    out = ash.overview_item_from_markets(
+        sport="mlb", label="MLB", markets={"Ks O/U": (3, 4), "Hits": (0, 0)}
+    )
+    assert out["primary"] == "3/4"
+    assert out["graded_count"] == 4
+    assert out["tone"] == "neutral"
+    assert out["markets"] == [{"market": "Ks O/U", "correct": 3, "graded": 4}]
+    assert "4 graded calls" in out["secondary"] and "small sample" in out["secondary"]
+
+
+def test_overview_item_from_markets_full_sample_and_empty():
+    out = ash.overview_item_from_markets(
+        sport="nba", label="NBA", markets={"A": (20, 30), "B": (10, 20)}
+    )
+    assert out["primary"] == "60%" and out["graded_count"] == 50
+    assert out["secondary"] == "50 graded calls" and out["tone"] == "good"
+    none = ash.overview_item_from_markets(sport="nba", label="NBA", markets={})
+    assert none["primary"] == "No graded projections yet"
+    assert none["has_data"] is False and none["markets"] == []

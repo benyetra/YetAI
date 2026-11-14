@@ -227,11 +227,11 @@ def upsert_qb_actuals_for_week(
     weekly: pd.DataFrame | None = None,
     schedules: pd.DataFrame | None = None,
 ) -> dict[str, int]:
-    """Insert missing QB actuals for one week. Returns counts."""
+    """Insert or refresh QB actuals for one week (a partial row is corrected). Returns counts."""
     _ = min_attempts
     rows = _weekly_qb_rows(season, week, weekly=weekly, schedules=schedules)
     inserted = 0
-    skipped = 0
+    updated = 0
     matched_pred = 0
     for actual in rows:
         existing = (
@@ -243,10 +243,6 @@ def upsert_qb_actuals_for_week(
             )
             .first()
         )
-        if existing:
-            skipped += 1
-            continue
-
         pred = _find_prediction(
             db_session,
             name=actual["qb_player_name"],
@@ -281,47 +277,56 @@ def upsert_qb_actuals_for_week(
         err = actual_y - predicted
         acc = abs(err) / actual_y if actual_y > 0 else 0.0
 
-        db_session.add(
-            QBActuals(
-                game_date=actual["game_date"],
-                qb_player_id=actual["qb_player_id"],
-                qb_player_name=actual["qb_player_name"],
-                team_name=actual["team_name"],
-                opponent_team_name=actual["opponent_team_name"],
-                venue_name=actual["venue_name"],
-                season=season,
-                week=week,
-                actual_passing_yards=actual_y,
-                actual_attempts=actual["actual_attempts"],
-                actual_completions=actual["actual_completions"],
-                actual_touchdowns=actual["actual_touchdowns"],
-                actual_interceptions=actual["actual_interceptions"],
-                actual_completion_pct=actual["actual_completion_pct"],
-                actual_yards_per_attempt=actual["actual_yards_per_attempt"],
-                actual_passer_rating=actual["actual_passer_rating"],
-                predicted_passing_yards=predicted,
-                prediction_error=err,
-                prediction_accuracy=acc,
-                correct_prediction=bool(correct) if correct is not None else False,
-                hit_over_under=hit_ou,
-                prediction_confidence=confidence,
-                prediction_method=method,
-                epa_per_play=actual.get("epa_per_play"),
-                cpoe=actual.get("cpoe"),
-                air_yards_per_attempt=actual.get("air_yards_per_attempt"),
-                data_collection_date=datetime.utcnow(),
-            )
+        fields = dict(
+            game_date=actual["game_date"],
+            qb_player_name=actual["qb_player_name"],
+            team_name=actual["team_name"],
+            opponent_team_name=actual["opponent_team_name"],
+            venue_name=actual["venue_name"],
+            actual_passing_yards=actual_y,
+            actual_attempts=actual["actual_attempts"],
+            actual_completions=actual["actual_completions"],
+            actual_touchdowns=actual["actual_touchdowns"],
+            actual_interceptions=actual["actual_interceptions"],
+            actual_completion_pct=actual["actual_completion_pct"],
+            actual_yards_per_attempt=actual["actual_yards_per_attempt"],
+            actual_passer_rating=actual["actual_passer_rating"],
+            predicted_passing_yards=predicted,
+            prediction_error=err,
+            prediction_accuracy=acc,
+            correct_prediction=bool(correct) if correct is not None else False,
+            hit_over_under=hit_ou,
+            prediction_confidence=confidence,
+            prediction_method=method,
+            epa_per_play=actual.get("epa_per_play"),
+            cpoe=actual.get("cpoe"),
+            air_yards_per_attempt=actual.get("air_yards_per_attempt"),
+            data_collection_date=datetime.utcnow(),
         )
-        inserted += 1
+        if existing:
+            for k, v in fields.items():
+                setattr(existing, k, v)
+            updated += 1
+        else:
+            db_session.add(
+                QBActuals(
+                    qb_player_id=actual["qb_player_id"],
+                    season=season,
+                    week=week,
+                    **fields,
+                )
+            )
+            inserted += 1
 
     db_session.commit()
     print(
-        f"QB {season} W{week}: inserted={inserted} skipped={skipped} "
+        f"QB {season} W{week}: inserted={inserted} updated={updated} "
         f"matched_pred={matched_pred} source_rows={len(rows)}"
     )
     return {
         "inserted": inserted,
-        "skipped": skipped,
+        "updated": updated,
+        "skipped": 0,
         "matched_pred": matched_pred,
         "source_rows": len(rows),
     }

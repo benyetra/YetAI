@@ -10,6 +10,7 @@ Today's auth path returns subscription_tier='pro' for any valid-looking JWT
 in dev; the guard will start enforcing real tiers once auth is fixed.
 """
 
+import importlib
 from datetime import date as date_type, timedelta
 from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -60,6 +61,7 @@ from app.models.predictions_models import (
     WNBAThreePtMadeProjections,
     WNBATotalsProjections,
 )
+from app.services.etl.grading_window import eastern_today
 from app.services.etl.nba._season import season_opener
 from app.services.etl.yetiwatch.news import attach_news_to_rows
 from app.services.mlb_strikeout_pick import enrich_strikeout_projection_row
@@ -139,6 +141,39 @@ def _query_recent(
         if key not in latest:
             latest[key] = row
     return list(latest.values())[:limit]
+
+
+def _is_past_date(target_date: date_type | None) -> bool:
+    """True for an explicit date before today in Eastern time (a graded slate)."""
+    return target_date is not None and target_date < eastern_today()
+
+
+def _merge_past_results(
+    payload: dict[str, Any], sport: str, db: Session, target_date: date_type | None
+) -> dict[str, Any]:
+    """Attach each row's graded ``actual``/``result`` for a past date.
+
+    Merges ``<sport>_accuracy_service.past_row_results`` into the response lists
+    by key and row ``id``; rows the grader has no entry for read ``ungraded``.
+    Today/future dates are returned unchanged.
+    """
+    if not _is_past_date(target_date):
+        return payload
+    service = importlib.import_module(f"app.services.{sport}_accuracy_service")
+    results = service.past_row_results(db, target_date=target_date)
+    for key, by_id in results.items():
+        rows = payload.get(key)
+        if not rows:
+            continue
+        payload[key] = [
+            (
+                {**row, **by_id[row.get("id")]}
+                if row.get("id") in by_id
+                else {**row, "result": "ungraded"}
+            )
+            for row in rows
+        ]
+    return payload
 
 
 def _nfl_slate_season_week(
@@ -428,6 +463,16 @@ def _query_props_by_minutes(
     ]
     if not rows:
         return []
+    past = _is_past_date(target_date)
+    if past:
+        # Past slates show every graded row (the tiles count them all), one per
+        # player per date: the latest projection, as the accuracy service keeps.
+        latest: dict[Any, dict[str, Any]] = {}
+        for r in sorted(rows, key=lambda r: r.get("id") or 0):
+            latest[
+                r.get("player_id") if r.get("player_id") is not None else r.get("id")
+            ] = r
+        rows = list(latest.values())
 
     player_ids = [int(r["player_id"]) for r in rows if r.get("player_id") is not None]
     mpg_by_player = load_mpg(db, player_ids, target_date)
@@ -439,7 +484,7 @@ def _query_props_by_minutes(
         ),
         reverse=True,
     )
-    return rows[:limit]
+    return rows if past else rows[:limit]
 
 
 @router.get("/health")
@@ -578,10 +623,13 @@ def mlb_predictions(
             continue
         seen_pitchers.add(pid)
         meta = pitcher_meta.get(str(pid)) if pid is not None else None
+        # A past row keeps the line it was published with; today's live pitcher
+        # line/flags would grade yesterday's pick against a different number.
+        live = not _is_past_date(target_date)
         if meta:
             line = row.get("fanduel_line")
             fd_point = getattr(meta, "fanduel_point", None)
-            if (line is None or line <= 0) and fd_point and fd_point > 0:
+            if live and (line is None or line <= 0) and fd_point and fd_point > 0:
                 row = {**row, "fanduel_line": fd_point}
             row = {
                 **row,
@@ -592,9 +640,11 @@ def mlb_predictions(
             }
         enriched = enrich_strikeout_projection_row(
             row,
-            fanduel_flag=getattr(meta, "fanduel_flag", None) if meta else None,
-            prob_over=getattr(meta, "prob_over", None) if meta else None,
-            pick_edge_pct=getattr(meta, "pick_edge_pct", None) if meta else None,
+            fanduel_flag=getattr(meta, "fanduel_flag", None) if meta and live else None,
+            prob_over=getattr(meta, "prob_over", None) if meta and live else None,
+            pick_edge_pct=(
+                getattr(meta, "pick_edge_pct", None) if meta and live else None
+            ),
         )
         cleaned_strikeouts.append(enrich_strikeout_display_row(enriched))
 
@@ -673,13 +723,18 @@ def mlb_predictions(
         _query_recent(db, Homer, "game_time", target_date, limit, tz=tz)
     )
 
-    return {
-        "strikeout_projections": cleaned_strikeouts,
-        "game_projections": game_rows,
-        "projected_hits": projected_hits,
-        "projected_homers": projected_homers,
-        "home_run_predictions": home_run_predictions,
-    }
+    return _merge_past_results(
+        {
+            "strikeout_projections": cleaned_strikeouts,
+            "game_projections": game_rows,
+            "projected_hits": projected_hits,
+            "projected_homers": projected_homers,
+            "home_run_predictions": home_run_predictions,
+        },
+        "mlb",
+        db,
+        target_date,
+    )
 
 
 @router.get("/mlb/accuracy")
@@ -741,21 +796,26 @@ def nba_predictions(
         "blocks": (BlocksProjections, "blocks"),
         "pra": (PRAProjections, "pra"),
     }
-    return {
-        "totals": totals,
-        "spreads": spreads,
-        **{
-            key: enrich_prop_rows(
-                _query_nba_props_by_season_minutes(
-                    db, model, target_date, prop_limit, tz=tz
-                ),
-                sport="nba",
-                stat=stat,
-                db=db,
-            )
-            for key, (model, stat) in props.items()
+    return _merge_past_results(
+        {
+            "totals": totals,
+            "spreads": spreads,
+            **{
+                key: enrich_prop_rows(
+                    _query_nba_props_by_season_minutes(
+                        db, model, target_date, prop_limit, tz=tz
+                    ),
+                    sport="nba",
+                    stat=stat,
+                    db=db,
+                )
+                for key, (model, stat) in props.items()
+            },
         },
-    }
+        "nba",
+        db,
+        target_date,
+    )
 
 
 @router.get("/nfl")
@@ -778,52 +838,57 @@ def nfl_predictions(
     )
     spreads = attach_game_times_from_lines(db, spreads, NFLGameLines)
     totals = attach_game_times_from_lines(db, totals, NFLGameLines)
-    return {
-        "qb_predictions": enrich_prop_rows(
-            _query_recent_nfl_with_fallback(
-                db,
-                QBPredictions,
-                "game_date",
-                target_date,
-                limit,
-                tz=tz,
-                dedupe_keys=("season", "week", "qb_player_id"),
+    return _merge_past_results(
+        {
+            "qb_predictions": enrich_prop_rows(
+                _query_recent_nfl_with_fallback(
+                    db,
+                    QBPredictions,
+                    "game_date",
+                    target_date,
+                    limit,
+                    tz=tz,
+                    dedupe_keys=("season", "week", "qb_player_id"),
+                ),
+                sport="nfl",
+                stat="passing_yards",
+                db=db,
             ),
-            sport="nfl",
-            stat="passing_yards",
-            db=db,
-        ),
-        "kicker_predictions": attach_team_opponent_fields(
-            _query_recent_nfl_with_fallback(
-                db,
-                KickerPredictions,
-                "game_date",
-                target_date,
-                limit,
-                tz=tz,
-                latest_dedupe_keys=("kicker_player_id",),
-            )
-        ),
-        "anytime_td_predictions": _query_nfl_anytime_td_predictions(
-            db, target_date, limit
-        ),
-        "receiving_yards_predictions": enrich_prop_rows(
-            _query_recent_nfl_with_fallback(
-                db,
-                RecvYdsPredictions,
-                "game_date",
-                target_date,
-                limit,
-                tz=tz,
-                dedupe_keys=("season", "week", "player_id"),
+            "kicker_predictions": attach_team_opponent_fields(
+                _query_recent_nfl_with_fallback(
+                    db,
+                    KickerPredictions,
+                    "game_date",
+                    target_date,
+                    limit,
+                    tz=tz,
+                    latest_dedupe_keys=("kicker_player_id",),
+                )
             ),
-            sport="nfl",
-            stat="receiving_yards",
-            db=db,
-        ),
-        "spreads": spreads,
-        "totals": totals,
-    }
+            "anytime_td_predictions": _query_nfl_anytime_td_predictions(
+                db, target_date, limit
+            ),
+            "receiving_yards_predictions": enrich_prop_rows(
+                _query_recent_nfl_with_fallback(
+                    db,
+                    RecvYdsPredictions,
+                    "game_date",
+                    target_date,
+                    limit,
+                    tz=tz,
+                    dedupe_keys=("season", "week", "player_id"),
+                ),
+                sport="nfl",
+                stat="receiving_yards",
+                db=db,
+            ),
+            "spreads": spreads,
+            "totals": totals,
+        },
+        "nfl",
+        db,
+        target_date,
+    )
 
 
 @router.get("/nba/accuracy")
@@ -860,45 +925,50 @@ def nhl_predictions(
 ) -> dict[str, Any]:
     """Recent NHL props: goalie saves, player SOG, game totals O/U."""
     tz = _safe_tz(tz)
-    return {
-        "goalie_predictions": enrich_prop_rows(
-            _query_recent(
+    return _merge_past_results(
+        {
+            "goalie_predictions": enrich_prop_rows(
+                _query_recent(
+                    db,
+                    NHLGoaliePredictions,
+                    "game_date",
+                    target_date,
+                    limit,
+                    tz=tz,
+                    dedupe_keys=("goalie_id", "game_date"),
+                ),
+                sport="nhl",
+                stat="saves",
+                db=db,
+            ),
+            "player_shots": enrich_prop_rows(
+                _query_recent(
+                    db,
+                    NHLPlayerShotsPredictions,
+                    "game_date",
+                    target_date,
+                    limit,
+                    tz=tz,
+                    dedupe_keys=("player_id", "game_date"),
+                ),
+                sport="nhl",
+                stat="shots",
+                db=db,
+            ),
+            "team_totals": _query_recent(
                 db,
-                NHLGoaliePredictions,
+                NHLTeamTotalsPredictions,
                 "game_date",
                 target_date,
                 limit,
                 tz=tz,
-                dedupe_keys=("goalie_id", "game_date"),
+                dedupe_keys=("home_team_id", "away_team_id", "game_date"),
             ),
-            sport="nhl",
-            stat="saves",
-            db=db,
-        ),
-        "player_shots": enrich_prop_rows(
-            _query_recent(
-                db,
-                NHLPlayerShotsPredictions,
-                "game_date",
-                target_date,
-                limit,
-                tz=tz,
-                dedupe_keys=("player_id", "game_date"),
-            ),
-            sport="nhl",
-            stat="shots",
-            db=db,
-        ),
-        "team_totals": _query_recent(
-            db,
-            NHLTeamTotalsPredictions,
-            "game_date",
-            target_date,
-            limit,
-            tz=tz,
-            dedupe_keys=("home_team_id", "away_team_id", "game_date"),
-        ),
-    }
+        },
+        "nhl",
+        db,
+        target_date,
+    )
 
 
 @router.get("/nhl/accuracy")
@@ -950,50 +1020,55 @@ def wnba_predictions(
     spreads, totals = enrich_wnba_game_predictions(
         db, spreads, totals, target_date=target_date
     )
-    return {
-        "totals": totals,
-        "spreads": spreads,
-        "points": enrich_prop_rows(
-            _query_wnba_props_by_season_minutes(
-                db, WNBAPointsProjections, target_date, prop_limit, tz=tz
+    return _merge_past_results(
+        {
+            "totals": totals,
+            "spreads": spreads,
+            "points": enrich_prop_rows(
+                _query_wnba_props_by_season_minutes(
+                    db, WNBAPointsProjections, target_date, prop_limit, tz=tz
+                ),
+                sport="wnba",
+                stat="points",
+                db=db,
             ),
-            sport="wnba",
-            stat="points",
-            db=db,
-        ),
-        "assists": enrich_prop_rows(
-            _query_wnba_props_by_season_minutes(
-                db, WNBAAssistsProjections, target_date, prop_limit, tz=tz
+            "assists": enrich_prop_rows(
+                _query_wnba_props_by_season_minutes(
+                    db, WNBAAssistsProjections, target_date, prop_limit, tz=tz
+                ),
+                sport="wnba",
+                stat="assists",
+                db=db,
             ),
-            sport="wnba",
-            stat="assists",
-            db=db,
-        ),
-        "rebounds": enrich_prop_rows(
-            _query_wnba_props_by_season_minutes(
-                db, WNBAReboundsProjections, target_date, prop_limit, tz=tz
+            "rebounds": enrich_prop_rows(
+                _query_wnba_props_by_season_minutes(
+                    db, WNBAReboundsProjections, target_date, prop_limit, tz=tz
+                ),
+                sport="wnba",
+                stat="rebounds",
+                db=db,
             ),
-            sport="wnba",
-            stat="rebounds",
-            db=db,
-        ),
-        "three_point": enrich_prop_rows(
-            _query_wnba_props_by_season_minutes(
-                db, WNBAThreePtMadeProjections, target_date, prop_limit, tz=tz
+            "three_point": enrich_prop_rows(
+                _query_wnba_props_by_season_minutes(
+                    db, WNBAThreePtMadeProjections, target_date, prop_limit, tz=tz
+                ),
+                sport="wnba",
+                stat="three_pt_made",
+                db=db,
             ),
-            sport="wnba",
-            stat="three_pt_made",
-            db=db,
-        ),
-        "pra": enrich_prop_rows(
-            _query_wnba_props_by_season_minutes(
-                db, WNBAPRAProjections, target_date, prop_limit, tz=tz
+            "pra": enrich_prop_rows(
+                _query_wnba_props_by_season_minutes(
+                    db, WNBAPRAProjections, target_date, prop_limit, tz=tz
+                ),
+                sport="wnba",
+                stat="pra",
+                db=db,
             ),
-            sport="wnba",
-            stat="pra",
-            db=db,
-        ),
-    }
+        },
+        "wnba",
+        db,
+        target_date,
+    )
 
 
 @router.get("/wnba/accuracy")

@@ -1,11 +1,11 @@
 """Per-day NBA projection accuracy → unified bucket shape.
 
-Buckets:
-- Points O/U (FanDuel-line call accuracy + MAE)
-- 3P Made O/U (FanDuel-line call accuracy + MAE)
-- Steals O/U (FanDuel-line call accuracy + MAE)
-- Assists O/U (FanDuel-line call accuracy + MAE)
-- Rebounds O/U (FanDuel-line call accuracy + MAE)
+Buckets (daily tile, season overview and the past view's per-row results all
+come from the same row builders, so they cannot disagree):
+- Props O/U vs the FanDuel line: points, 3P made, steals, assists, rebounds, PRA
+  (blocks has no line column, so nothing to grade against)
+- Game totals O/U (market_total + recommendation)
+- Spreads ATS (market_spread_home + HOME/AWAY recommendation; push excluded)
 """
 
 from __future__ import annotations
@@ -19,8 +19,14 @@ from app.models.predictions_models import (
     ActualThreePointMade,
     AssistsActuals,
     AssistsProjections,
+    NBASpreadActuals,
+    NBASpreadProjections,
+    NBATotalsActuals,
+    NBATotalsProjections,
     PointsActuals,
     PointsProjections,
+    PRAActuals,
+    PRAProjections,
     ReboundsActuals,
     ReboundsProjections,
     StealsActuals,
@@ -31,10 +37,74 @@ from app.services.nfl_accuracy_service import mae_by_model_version
 from app.services.accuracy_shared import (
     AccuracyBucket,
     assemble,
+    edge_play_bucket,
+    edge_play_graded_breakdown,
+    edge_play_graded_counts,
+    edge_row_result,
     ou_call_bucket,
     ou_call_graded_breakdown,
     ou_call_graded_counts,
-    overview_item_from_totals,
+    ou_row_result,
+    overview_item_from_markets,
+)
+
+# (response key in GET /predictions/nba, bucket key, label, overview/diag key,
+#  projections, actuals, projected field, actual field)
+_PROPS = (
+    (
+        "points",
+        "points_ou",
+        "Points O/U",
+        PointsProjections,
+        PointsActuals,
+        "projected_points",
+        "actual_points",
+    ),
+    (
+        "three_point",
+        "three_pt_ou",
+        "3P Made O/U",
+        ThreePointProjections,
+        ActualThreePointMade,
+        "projected_three_pt_made",
+        "actual_three_pt_made",
+    ),
+    (
+        "steals",
+        "steals_ou",
+        "Steals O/U",
+        StealsProjections,
+        StealsActuals,
+        "projected_steals",
+        "actual_steals",
+    ),
+    (
+        "assists",
+        "assists_ou",
+        "Assists O/U",
+        AssistsProjections,
+        AssistsActuals,
+        "projected_assists",
+        "actual_assists",
+    ),
+    (
+        "rebounds",
+        "rebounds_ou",
+        "Rebounds O/U",
+        ReboundsProjections,
+        ReboundsActuals,
+        "projected_rebounds",
+        "actual_rebounds",
+    ),
+    (
+        "pra",
+        "pra_ou",
+        "PRA O/U",
+        PRAProjections,
+        PRAActuals,
+        "projected_pra",
+        "actual_pra",
+    ),
 )
 
 
@@ -74,313 +144,292 @@ def _merge_actuals_range(
     return out, stats
 
 
-def _merge_actuals(
-    projections, actuals, *, pid_attr: str, actual_attr: str
-) -> list[dict[str, Any]]:
-    """Pair projection rows with their per-player actual via an in-memory map.
-
-    Returns row dicts with all projection columns plus the actual_* value
-    (None if no actual was recorded yet).
-    """
-    by_pid = {getattr(a, pid_attr): a for a in actuals}
-    out = []
-    for p in projections:
-        a = by_pid.get(getattr(p, pid_attr))
-        # Pull every projection column onto the row dict — generic helpers
-        # only read whatever field names the caller passes in.
-        row: dict[str, Any] = {c.name: getattr(p, c.name) for c in p.__table__.columns}
-        row["__actual"] = getattr(a, actual_attr) if a else None
-        out.append(row)
-    return out
-
-
-def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
-    """Build the NBA accuracy summary for `target_date`."""
-
-    # --- Points ----------------------------------------------------------
-    pts_proj = (
-        db.query(PointsProjections).filter(PointsProjections.date == target_date).all()
-    )
-    pts_actuals = (
-        db.query(PointsActuals).filter(PointsActuals.date == target_date).all()
-    )
-    pts_rows = _merge_actuals(
-        pts_proj, pts_actuals, pid_attr="player_id", actual_attr="actual_points"
-    )
-    for row in pts_rows:
-        row["actual_points"] = row.pop("__actual")
-
-    # --- 3P --------------------------------------------------------------
-    tpm_proj = (
-        db.query(ThreePointProjections)
-        .filter(ThreePointProjections.date == target_date)
-        .all()
-    )
-    tpm_actuals = (
-        db.query(ActualThreePointMade)
-        .filter(ActualThreePointMade.date == target_date)
-        .all()
-    )
-    tpm_rows = _merge_actuals(
-        tpm_proj, tpm_actuals, pid_attr="player_id", actual_attr="actual_three_pt_made"
-    )
-    for row in tpm_rows:
-        row["actual_three_pt_made"] = row.pop("__actual")
-
-    # --- Steals ----------------------------------------------------------
-    stl_proj = (
-        db.query(StealsProjections).filter(StealsProjections.date == target_date).all()
-    )
-    stl_actuals = (
-        db.query(StealsActuals).filter(StealsActuals.date == target_date).all()
-    )
-    stl_rows = _merge_actuals(
-        stl_proj, stl_actuals, pid_attr="player_id", actual_attr="actual_steals"
-    )
-    for row in stl_rows:
-        row["actual_steals"] = row.pop("__actual")
-
-    # --- Assists ---------------------------------------------------------
-    ast_proj = (
-        db.query(AssistsProjections)
-        .filter(AssistsProjections.date == target_date)
-        .all()
-    )
-    ast_actuals = (
-        db.query(AssistsActuals).filter(AssistsActuals.date == target_date).all()
-    )
-    ast_rows = _merge_actuals(
-        ast_proj, ast_actuals, pid_attr="player_id", actual_attr="actual_assists"
-    )
-    for row in ast_rows:
-        row["actual_assists"] = row.pop("__actual")
-
-    # --- Rebounds --------------------------------------------------------
-    reb_proj = (
-        db.query(ReboundsProjections)
-        .filter(ReboundsProjections.date == target_date)
-        .all()
-    )
-    reb_actuals = (
-        db.query(ReboundsActuals).filter(ReboundsActuals.date == target_date).all()
-    )
-    reb_rows = _merge_actuals(
-        reb_proj, reb_actuals, pid_attr="player_id", actual_attr="actual_rebounds"
-    )
-    for row in reb_rows:
-        row["actual_rebounds"] = row.pop("__actual")
-
-    buckets: list[AccuracyBucket] = [
-        ou_call_bucket(
-            pts_rows,
-            line_field="fanduel_line",
-            pick_field="fanduel_over_under",
-            actual_field="actual_points",
-            projected_field="projected_points",
-            label="Points O/U",
-            key="points_ou",
-        ),
-        ou_call_bucket(
-            tpm_rows,
-            line_field="fanduel_line",
-            pick_field="fanduel_over_under",
-            actual_field="actual_three_pt_made",
-            projected_field="projected_three_pt_made",
-            label="3P Made O/U",
-            key="three_pt_ou",
-        ),
-        ou_call_bucket(
-            stl_rows,
-            line_field="fanduel_line",
-            pick_field="fanduel_over_under",
-            actual_field="actual_steals",
-            projected_field="projected_steals",
-            label="Steals O/U",
-            key="steals_ou",
-        ),
-        ou_call_bucket(
-            ast_rows,
-            line_field="fanduel_line",
-            pick_field="fanduel_over_under",
-            actual_field="actual_assists",
-            projected_field="projected_assists",
-            label="Assists O/U",
-            key="assists_ou",
-        ),
-        ou_call_bucket(
-            reb_rows,
-            line_field="fanduel_line",
-            pick_field="fanduel_over_under",
-            actual_field="actual_rebounds",
-            projected_field="projected_rebounds",
-            label="Rebounds O/U",
-            key="rebounds_ou",
-        ),
-    ]
-
-    available = any([pts_rows, tpm_rows, stl_rows, ast_rows, reb_rows])
-    assembled = assemble(
-        date_str=target_date.isoformat(),
-        buckets=buckets,
-        available=available,
-    )
-    assembled["by_model_version"] = {
-        f"{key}_mae": mae_by_model_version(
-            rows, projected_field=f"projected_{key}", actual_field=f"actual_{key}"
-        )
-        for key, rows in (
-            ("points", pts_rows),
-            ("three_pt_made", tpm_rows),
-            ("steals", stl_rows),
-            ("assists", ast_rows),
-            ("rebounds", reb_rows),
-        )
-    }
-    return assembled
-
-
-def _nba_season_window_rows(
+def _prop_rows(
     db: Session, *, start: date_type, end: date_type
-) -> list[tuple[str, str, list[dict[str, Any]], dict[str, int]]]:
-    """Load merged row sets for the five NBA props used in ``season_overview``."""
-
-    def _rng(proj_cls, act_cls, *, pid_attr: str, actual_attr: str, actual_key: str):
+) -> dict[str, tuple[list[dict[str, Any]], dict[str, int]]]:
+    """Merged, deduped rows per prop (latest projection id per player+date)."""
+    out = {}
+    for rk, _bk, _label, proj_cls, act_cls, _pf, actual_f in _PROPS:
         proj = (
             db.query(proj_cls)
             .filter(proj_cls.date >= start, proj_cls.date <= end)
             .all()
         )
         act = db.query(act_cls).filter(act_cls.date >= start, act_cls.date <= end).all()
-        return _merge_actuals_range(
-            proj, act, pid_attr=pid_attr, actual_attr=actual_attr, actual_key=actual_key
+        rows, stats = _merge_actuals_range(
+            proj, act, pid_attr="player_id", actual_attr=actual_f, actual_key=actual_f
+        )
+        graded_dates = {a.date for a in act}
+        for r in rows:
+            # Grading ran for that date → a missing player actual is a DNP.
+            r["actual_expected"] = r["date"] in graded_dates
+        out[rk] = (rows, stats)
+    return out
+
+
+def _upper(value: Any) -> str:
+    return str(value or "").strip().upper()
+
+
+def _game_rows(
+    db: Session, *, start: date_type, end: date_type
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(totals rows, spread rows) with their actuals and the ATS grade."""
+
+    def _in_range(model):
+        return (
+            db.query(model)
+            .filter(model.game_date >= start, model.game_date <= end)
+            .all()
         )
 
-    return [
-        (
-            "points_ou",
-            "Points O/U",
-            *_rng(
-                PointsProjections,
-                PointsActuals,
-                pid_attr="player_id",
-                actual_attr="actual_points",
-                actual_key="actual_points",
-            ),
-        ),
-        (
-            "three_pt_ou",
-            "3P Made O/U",
-            *_rng(
-                ThreePointProjections,
-                ActualThreePointMade,
-                pid_attr="player_id",
-                actual_attr="actual_three_pt_made",
-                actual_key="actual_three_pt_made",
-            ),
-        ),
-        (
-            "steals_ou",
-            "Steals O/U",
-            *_rng(
-                StealsProjections,
-                StealsActuals,
-                pid_attr="player_id",
-                actual_attr="actual_steals",
-                actual_key="actual_steals",
-            ),
-        ),
-        (
-            "assists_ou",
-            "Assists O/U",
-            *_rng(
-                AssistsProjections,
-                AssistsActuals,
-                pid_attr="player_id",
-                actual_attr="actual_assists",
-                actual_key="actual_assists",
-            ),
-        ),
-        (
-            "rebounds_ou",
-            "Rebounds O/U",
-            *_rng(
-                ReboundsProjections,
-                ReboundsActuals,
-                pid_attr="player_id",
-                actual_attr="actual_rebounds",
-                actual_key="actual_rebounds",
-            ),
-        ),
-    ]
+    def _key(r):
+        return (r.game_date, r.home_team_name, r.away_team_name)
+
+    total_actuals = _in_range(NBATotalsActuals)
+    by_total = {_key(a): a for a in total_actuals}
+    total_dates = {a.game_date for a in total_actuals}
+    totals: list[dict[str, Any]] = []
+    for p in _in_range(NBATotalsProjections):
+        a = by_total.get(_key(p))
+        totals.append(
+            {
+                "id": p.id,
+                "game_date": p.game_date,
+                "projected_total": p.projected_total,
+                "market_total": p.market_total,
+                "pick": _upper(p.recommendation),
+                "actual_total": a.actual_total if a else None,
+                "actual_home_score": a.home_actual_score if a else None,
+                "actual_away_score": a.away_actual_score if a else None,
+                "actual_expected": p.game_date in total_dates,
+            }
+        )
+
+    spread_actuals = _in_range(NBASpreadActuals)
+    by_spread = {_key(a): a for a in spread_actuals}
+    spread_dates = {a.game_date for a in spread_actuals}
+    spreads: list[dict[str, Any]] = []
+    for p in _in_range(NBASpreadProjections):
+        a = by_spread.get(_key(p))
+        pick = _upper(p.recommendation)
+        line = p.market_spread_home
+        if pick not in ("HOME", "AWAY") or line is None:
+            pick = "NO_PLAY"
+        margin = a.actual_margin if a else None
+        correct = push = None
+        if margin is not None and pick != "NO_PLAY":
+            # home covers when margin > -market_spread_home
+            threshold = -line
+            push = margin == threshold
+            if not push:
+                correct = (margin > threshold) == (pick == "HOME")
+        spreads.append(
+            {
+                "id": p.id,
+                "game_date": p.game_date,
+                "projected_margin": p.projected_margin,
+                "market_spread_home": line,
+                "ats_pick": pick,
+                "ats_correct": correct,
+                "ats_push": bool(push),
+                "actual_margin": margin,
+                "actual_home_score": a.home_score if a else None,
+                "actual_away_score": a.away_score if a else None,
+                "actual_winner": (
+                    None if a is None else "home" if a.home_won else "away"
+                ),
+                "actual_expected": p.game_date in spread_dates,
+            }
+        )
+    return totals, spreads
 
 
-def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:
-    """Window NBA accuracy — combined O/U hit rate across core props."""
-    actual_fields = [
-        "actual_points",
-        "actual_three_pt_made",
-        "actual_steals",
-        "actual_assists",
-        "actual_rebounds",
+def past_row_results(
+    db: Session, *, target_date: date_type
+) -> dict[str, dict[int, dict[str, Any]]]:
+    """{response_key: {projection id: {"actual", "result", ...}}} for one past date.
+
+    Covers every row for the date (the past view's top-N cap is applied elsewhere).
+    Rows superseded by a later projection for the same player are absent.
+    """
+    out: dict[str, dict[int, dict[str, Any]]] = {}
+    props = _prop_rows(db, start=target_date, end=target_date)
+    for rk, _bk, _label, _pc, _ac, _pf, actual_f in _PROPS:
+        out[rk] = {
+            r["id"]: {
+                "actual": r[actual_f],
+                "result": ou_row_result(
+                    line=r.get("fanduel_line"),
+                    pick=r.get("fanduel_over_under"),
+                    actual=r[actual_f],
+                    actual_expected=r["actual_expected"],
+                ),
+            }
+            for r in props[rk][0]
+        }
+    totals, spreads = _game_rows(db, start=target_date, end=target_date)
+    out["totals"] = {}
+    for r in totals:
+        res = ou_row_result(
+            line=r["market_total"],
+            pick=r["pick"],
+            actual=r["actual_total"],
+            actual_expected=r["actual_expected"],
+        )
+        out["totals"][r["id"]] = {
+            "actual": r["actual_total"],
+            "result": res,
+            "actual_total": r["actual_total"],
+            "actual_home_score": r["actual_home_score"],
+            "actual_away_score": r["actual_away_score"],
+            "total_correct": res == "hit" if res in ("hit", "miss") else None,
+        }
+    out["spreads"] = {}
+    for r in spreads:
+        res = edge_row_result(
+            pick=r["ats_pick"],
+            correct_flag=r["ats_correct"],
+            push=r["ats_push"],
+            actual_expected=r["actual_expected"],
+        )
+        out["spreads"][r["id"]] = {
+            "actual": r["actual_margin"],
+            "result": res,
+            "actual_home_score": r["actual_home_score"],
+            "actual_away_score": r["actual_away_score"],
+            "actual_winner": r["actual_winner"],
+            "spread_correct": res == "hit" if res in ("hit", "miss") else None,
+        }
+    return out
+
+
+def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
+    """Build the NBA accuracy summary for `target_date`."""
+    props = _prop_rows(db, start=target_date, end=target_date)
+    totals, spreads = _game_rows(db, start=target_date, end=target_date)
+
+    buckets: list[AccuracyBucket] = [
+        ou_call_bucket(
+            props[rk][0],
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field=actual_f,
+            projected_field=proj_f,
+            label=label,
+            key=bk,
+        )
+        for rk, bk, label, _pc, _ac, proj_f, actual_f in _PROPS
     ]
-    window_rows = _nba_season_window_rows(db, start=start, end=end)
-    parts = [
-        ou_call_graded_counts(
+    buckets.append(
+        ou_call_bucket(
+            totals,
+            line_field="market_total",
+            pick_field="pick",
+            actual_field="actual_total",
+            projected_field="projected_total",
+            label="Game Totals O/U",
+            key="totals_ou",
+        )
+    )
+    buckets.append(
+        edge_play_bucket(
+            spreads,
+            pick_field="ats_pick",
+            correct_field="ats_correct",
+            label="Spreads ATS",
+            key="spread_ats",
+        )
+    )
+    available = any(rows for rows, _ in props.values()) or bool(totals or spreads)
+    assembled = assemble(
+        date_str=target_date.isoformat(),
+        buckets=buckets,
+        available=available,
+    )
+    assembled["by_model_version"] = {
+        f"{rk}_mae": mae_by_model_version(
+            props[rk][0], projected_field=proj_f, actual_field=actual_f
+        )
+        for rk, _bk, _label, _pc, _ac, proj_f, actual_f in _PROPS
+    }
+    return assembled
+
+
+def _overview_parts(
+    db: Session, *, start: date_type, end: date_type
+) -> list[dict[str, Any]]:
+    """One entry per published market: counts + breakdown + merge stats."""
+    props = _prop_rows(db, start=start, end=end)
+    totals, spreads = _game_rows(db, start=start, end=end)
+    parts: list[dict[str, Any]] = []
+    for rk, bk, label, _pc, _ac, _pf, actual_f in _PROPS:
+        rows, merge = props[rk]
+        bd = ou_call_graded_breakdown(
             rows,
             line_field="fanduel_line",
             pick_field="fanduel_over_under",
-            actual_field=af,
+            actual_field=actual_f,
         )
-        for (_key, _label, rows, _merge), af in zip(window_rows, actual_fields)
-    ]
-    correct = sum(p[0] for p in parts)
-    total = sum(p[1] for p in parts)
-    return overview_item_from_totals(
-        sport="nba", label="NBA", correct=correct, total=total
+        parts.append(
+            {
+                "key": bk,
+                "label": label,
+                "actual_field": actual_f,
+                "merge": merge,
+                "breakdown": bd,
+            }
+        )
+    parts.append(
+        {
+            "key": "totals_ou",
+            "label": "Game totals O/U",
+            "actual_field": "actual_total",
+            "breakdown": ou_call_graded_breakdown(
+                totals,
+                line_field="market_total",
+                pick_field="pick",
+                actual_field="actual_total",
+            ),
+        }
     )
+    parts.append(
+        {
+            "key": "spread_ats",
+            "label": "Spreads ATS",
+            "actual_field": "actual_margin",
+            "breakdown": edge_play_graded_breakdown(
+                spreads, pick_field="ats_pick", correct_field="ats_correct"
+            ),
+        }
+    )
+    for p in parts:
+        p["graded_correct"] = p["breakdown"]["graded_correct"]
+        p["graded_total"] = p["breakdown"]["graded_total"]
+    return parts
+
+
+def _overview_item(parts: list[dict[str, Any]]) -> dict[str, Any]:
+    return overview_item_from_markets(
+        sport="nba",
+        label="NBA",
+        markets={p["label"]: (p["graded_correct"], p["graded_total"]) for p in parts},
+    )
+
+
+def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:
+    """Window NBA accuracy — every published O/U and ATS market, one definition."""
+    return _overview_item(_overview_parts(db, start=start, end=end))
 
 
 def season_overview_diagnostics(
     db: Session, *, start: date_type, end: date_type
 ) -> dict[str, Any]:
     """Structured counts for admin/debug — same window rules as ``season_overview``."""
-    actual_fields = [
-        "actual_points",
-        "actual_three_pt_made",
-        "actual_steals",
-        "actual_assists",
-        "actual_rebounds",
-    ]
-    window_rows = _nba_season_window_rows(db, start=start, end=end)
-    parts_out: list[dict[str, Any]] = []
-    correct = 0
-    total = 0
-    for (key, label, rows, merge_stats), af in zip(window_rows, actual_fields):
-        bd = ou_call_graded_breakdown(
-            rows,
-            line_field="fanduel_line",
-            pick_field="fanduel_over_under",
-            actual_field=af,
-        )
-        c, t = bd["graded_correct"], bd["graded_total"]
-        correct += c
-        total += t
-        parts_out.append(
-            {
-                "key": key,
-                "label": label,
-                "actual_field": af,
-                "merge": merge_stats,
-                "breakdown": bd,
-                "graded_correct": c,
-                "graded_total": t,
-            }
-        )
+    parts = _overview_parts(db, start=start, end=end)
     return {
         "sport": "nba",
         "date_bounds": {"start": start.isoformat(), "end": end.isoformat()},
-        "overview": overview_item_from_totals(
-            sport="nba", label="NBA", correct=correct, total=total
-        ),
-        "parts": parts_out,
+        "overview": _overview_item(parts),
+        "parts": parts,
     }

@@ -45,7 +45,7 @@ from app.models.predictions_models import (
     StealsProjections,
     ThreePointProjections,
 )
-from app.services.etl.nba._espn import now_eastern
+from app.services.etl.grading_window import grading_dates
 
 logger = logging.getLogger(__name__)
 
@@ -427,26 +427,29 @@ def _store_pra(db: Session, target_date: date) -> dict[str, int]:
 def run(target_date: date | None = None) -> dict:
     """Run store_actuals for every configured stat.
 
-    target_date defaults to yesterday (Eastern). Override is useful for
-    backfills.
+    target_date=None re-grades ``grading_dates("nba")`` (upserts, so a partial
+    night heals); the summary reports the newest date. Pass a date for a backfill.
     """
-    if target_date is None:
-        target_date = (now_eastern() - timedelta(days=1)).date()
+    dates = [target_date] if target_date else grading_dates("nba")
 
     summary: dict[str, Any] = {
         "status": "ok",
-        "date": target_date.isoformat(),
+        "date": dates[-1].isoformat(),
+        "dates": [d.isoformat() for d in dates],
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "stats": {},
     }
 
     db = SessionLocal()
     try:
-        for stat_key, cfg in STAT_CONFIG.items():
-            summary["stats"][stat_key] = _store_stat(db, stat_key, cfg, target_date)
-            logger.info("store_actuals[%s]: %s", stat_key, summary["stats"][stat_key])
-        summary["stats"]["pra"] = _store_pra(db, target_date)
-        logger.info("store_actuals[pra]: %s", summary["stats"]["pra"])
+        for d in dates:
+            stats: dict[str, Any] = {}
+            for stat_key, cfg in STAT_CONFIG.items():
+                stats[stat_key] = _store_stat(db, stat_key, cfg, d)
+                logger.info("store_actuals[%s] %s: %s", stat_key, d, stats[stat_key])
+            stats["pra"] = _store_pra(db, d)
+            logger.info("store_actuals[pra] %s: %s", d, stats["pra"])
+            summary["stats"] = stats
     finally:
         db.close()
 

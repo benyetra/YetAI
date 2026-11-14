@@ -13,6 +13,7 @@ import {
 } from '@/lib/spreadTotalsProjectionDisplay';
 import { teamColorStyle, teamPrimaryColor } from '@/lib/team-colors';
 import { gamblyLegFromProjection } from '@/lib/gambly';
+import { resultBadge } from '@/lib/propProjectionDisplay';
 import GambleItButton from './GambleItButton';
 import { TeamGlyph } from './primitives';
 
@@ -194,10 +195,12 @@ function formatSpreadLine(side: Side, marketSpreadHome: number): string {
   return `${sign}${line.toFixed(1)}`;
 }
 
-function pickGrade(proj: GameRow, kind: PickKind): boolean | null {
-  if (kind === 'ml') return typeof proj.ml_correct === 'boolean' ? proj.ml_correct : null;
-  if (kind === 'total') return typeof proj.total_correct === 'boolean' ? proj.total_correct : null;
-  return typeof proj.spread_correct === 'boolean' ? proj.spread_correct : null;
+/** Graded result of the pick: the backend `<kind>_result`, else the legacy boolean flag. */
+function pickResult(proj: GameRow, kind: PickKind): string {
+  const stored = proj[`${kind}_result`];
+  if (typeof stored === 'string') return stored;
+  const flag = proj[`${kind}_correct`];
+  return typeof flag === 'boolean' ? (flag ? 'hit' : 'miss') : 'ungraded';
 }
 
 function verdictClass(valueRating: string, hasPick: boolean): string {
@@ -421,7 +424,7 @@ function GameCard({
         marginUnit={cfg.marginUnit}
         scoreUnit={cfg.scoreUnit}
         showResults={showResults}
-        grade={pick && showResults ? pickGrade(proj, pick.kind) : null}
+        result={pick && showResults ? pickResult(proj, pick.kind) : null}
         matchup={`${away} @ ${home}`}
         pickOdds={
           pick?.kind === 'ml' && pick.side
@@ -611,7 +614,7 @@ function ModelPickModule({
   marginUnit,
   scoreUnit,
   showResults,
-  grade,
+  result,
   pickTeamColors,
   matchup,
   pickOdds,
@@ -632,7 +635,7 @@ function ModelPickModule({
   marginUnit: string;
   scoreUnit: string;
   showResults: boolean;
-  grade: boolean | null;
+  result: string | null;
   pickTeamColors?: Record<string, string>;
   matchup: string;
   pickOdds: number | null;
@@ -733,9 +736,9 @@ function ModelPickModule({
             </span>
           ) : null}
         </span>
-        {showResults && grade != null ? (
-          <span className={grade ? 'badge badge-win' : 'badge'} style={{ fontSize: 10 }}>
-            {grade ? 'Hit' : 'Miss'}
+        {showResults && result != null ? (
+          <span className={resultBadge(result).className} style={{ fontSize: 10 }}>
+            {resultBadge(result).label}
           </span>
         ) : null}
       </div>

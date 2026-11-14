@@ -14,7 +14,8 @@ import {
   type ColumnDef,
 } from '@/components/PredictionsTable';
 import { usePredictions, type PredictionSport } from '@/lib/usePredictions';
-import { countTopPlays, isTopPlay } from '@/lib/propProjectionDisplay';
+import { countTopPlays, isTopPlay, withPastResultColumns } from '@/lib/propProjectionDisplay';
+import { easternIso } from '@/lib/easternDate';
 import {
   RECV_POSITION_FILTERS,
   filterRowsByPosition,
@@ -46,14 +47,6 @@ export type GroupsProp = PropGroup[] | ((ctx: GroupsContext) => PropGroup[]);
 
 export type { DiscoveryGroupConfig };
 
-function todayIso(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
 function expandedMap(groups: PropGroup[], value: boolean): Record<string, boolean> {
   return Object.fromEntries(groups.map((g) => [g.responseKey, value]));
 }
@@ -84,12 +77,12 @@ export default function SportPredictionsPage({
 }) {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [date, setDate] = useState<string>(todayIso);
+  const [date, setDate] = useState<string>(easternIso);
   const [playerSearch, setPlayerSearch] = useState('');
   const [positionFilter, setPositionFilter] = useState<PositionFilter>('All');
   const { data, loading, error, paywalled } = usePredictions(sport, date, { enabled: isAuthenticated });
 
-  const isPastDate = useMemo(() => date < todayIso(), [date]);
+  const isPastDate = useMemo(() => date < easternIso(), [date]);
   const resolvedGroups = useMemo<PropGroup[]>(
     () => (typeof groups === 'function' ? groups({ date, isPastDate }) : groups),
     [groups, date, isPastDate]
@@ -403,7 +396,7 @@ export default function SportPredictionsPage({
                 key={g.responseKey}
                 title={g.title}
                 rows={rows}
-                columns={g.columns}
+                columns={isPastDate ? withPastResultColumns(g.columns, data?.[g.responseKey]) : g.columns}
                 loading={loading}
                 expanded={expandedByKey[g.responseKey] !== false}
                 onExpandedChange={(next) =>

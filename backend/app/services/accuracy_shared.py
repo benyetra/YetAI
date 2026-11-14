@@ -20,7 +20,7 @@ build buckets by calling the helpers in this module
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable, Literal, Optional
 
 Tone = Literal["good", "warn", "neutral"]
@@ -51,6 +51,7 @@ class AccuracyOverviewItem:
     tone: Tone
     has_data: bool
     graded_count: int = 0
+    markets: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -81,6 +82,81 @@ def tone_for_rate(rate: Optional[float]) -> Tone:
 
 
 # ---------------------------------------------------------------------------
+# Row-level results: the single grading definition. Every bucket / count
+# builder below derives from these so a tile and a row can never disagree.
+# ---------------------------------------------------------------------------
+
+RowResult = Literal["hit", "miss", "push", "no_play", "dnp", "ungraded"]
+OVERVIEW_MIN_GRADED = 30
+
+
+def _missing_actual(actual_expected: bool) -> RowResult:
+    return "dnp" if actual_expected else "ungraded"
+
+
+def _to_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def ou_row_result(
+    *, line: Any, pick: Any, actual: Any, actual_expected: bool = False
+) -> RowResult:
+    """Grade one sportsbook O/U row. Non over/under picks are not calls."""
+    if str(pick or "").strip().lower() not in ("over", "o", "under", "u"):
+        return "no_play"
+    if line is None:
+        return "no_play"
+    if actual is None:
+        return _missing_actual(actual_expected)
+    line_f, actual_f = _to_float(line), _to_float(actual)
+    if line_f is None or actual_f is None:
+        return "ungraded"
+    if actual_f == line_f:
+        return "push"
+    is_over = str(pick).strip().lower() in ("over", "o")
+    return "hit" if (actual_f > line_f) == is_over else "miss"
+
+
+def edge_row_result(
+    *,
+    pick: Any,
+    correct_flag: Any,
+    push: bool = False,
+    actual_expected: bool = False,
+) -> RowResult:
+    """Grade one edge-play row from its stored correct flag."""
+    if str(pick or "").strip().upper() in ("", "NO_PLAY", "NONE", "PASS"):
+        return "no_play"
+    if push:
+        return "push"
+    if correct_flag is None:
+        return _missing_actual(actual_expected)
+    return "hit" if correct_flag else "miss"
+
+
+def hit_rate_row_result(
+    *,
+    projected: Any,
+    actual: Any,
+    threshold: float,
+    actual_expected: bool = False,
+) -> RowResult:
+    """Grade one hit-rate prop: projected >= 1 is a prediction, hit = actual >= threshold."""
+    projected_f = _to_float(projected)
+    if projected_f is None or projected_f < 1:
+        return "no_play"
+    if actual is None:
+        return _missing_actual(actual_expected)
+    actual_f = _to_float(actual)
+    if actual_f is None:
+        return "ungraded"
+    return "hit" if actual_f >= threshold else "miss"
+
+
+# ---------------------------------------------------------------------------
 # Bucket builders
 # ---------------------------------------------------------------------------
 
@@ -97,11 +173,12 @@ def ou_call_bucket(
 ) -> AccuracyBucket:
     """O/U call accuracy across rows that carry a sportsbook line.
 
-    Counts each row where line + pick + actual are all present.
-    actual == line is a push and drops out of the total.
+    Counts rows graded "hit"/"miss" by ``ou_row_result`` (a real over/under pick
+    with line + actual). Pushes drop out of the total; PASS/NO_PLAY are not calls.
 
     Reports primary = 'correct/total · NN%' and secondary = 'MAE X.XX
-    · K push' where K is the push count (omitted if zero).
+    · K push' where K is the push count (omitted if zero). MAE is over every
+    row with a projection and an actual, regardless of pick.
     """
     total = 0
     correct = 0
@@ -109,8 +186,6 @@ def ou_call_bucket(
     abs_errors: list[float] = []
 
     for row in rows:
-        line = row.get(line_field)
-        pick = (row.get(pick_field) or "").strip().lower()
         actual = row.get(actual_field)
         projected = row.get(projected_field)
 
@@ -120,23 +195,14 @@ def ou_call_bucket(
             except (TypeError, ValueError):
                 pass
 
-        if line is None or not pick or actual is None:
-            continue
-        try:
-            line_f = float(line)
-            actual_f = float(actual)
-        except (TypeError, ValueError):
-            continue
-
-        if actual_f == line_f:
+        result = ou_row_result(
+            line=row.get(line_field), pick=row.get(pick_field), actual=actual
+        )
+        if result == "push":
             push += 1
-            continue
-
-        won_over = pick in ("over", "o") and actual_f > line_f
-        won_under = pick in ("under", "u") and actual_f < line_f
-        total += 1
-        if won_over or won_under:
-            correct += 1
+        elif result in ("hit", "miss"):
+            total += 1
+            correct += result == "hit"
 
     accuracy = correct / total if total else None
     mae = sum(abs_errors) / len(abs_errors) if abs_errors else None
@@ -169,25 +235,21 @@ def hit_rate_bucket(
 ) -> AccuracyBucket:
     """Hit rate across rows where projected >= 1: success = actual >= threshold.
 
-    Rows where the actual hasn't been written yet are skipped from both
+    Rows where the actual is missing or unparseable are skipped from both
     numerator and denominator (an ungraded prop doesn't count for or
     against). Rows projected as 0 are not predictions at all.
     """
     total = 0
     hits = 0
     for row in rows:
-        projected = row.get(projected_field)
-        actual = row.get(actual_field)
-        if not projected or float(projected) < 1:
-            continue
-        if actual is None:
-            continue
-        total += 1
-        try:
-            if float(actual) >= threshold:
-                hits += 1
-        except (TypeError, ValueError):
-            continue
+        result = hit_rate_row_result(
+            projected=row.get(projected_field),
+            actual=row.get(actual_field),
+            threshold=threshold,
+        )
+        if result in ("hit", "miss"):
+            total += 1
+            hits += result == "hit"
     rate = hits / total if total else None
     return AccuracyBucket(
         key=key,
@@ -211,15 +273,12 @@ def edge_play_bucket(
     total = 0
     correct = 0
     for row in rows:
-        pick = (row.get(pick_field) or "").strip().upper()
-        if pick in ("", "NO_PLAY", "NONE"):
-            continue
-        graded = row.get(correct_field)
-        if graded is None:
-            continue
-        total += 1
-        if graded:
-            correct += 1
+        result = edge_row_result(
+            pick=row.get(pick_field), correct_flag=row.get(correct_field)
+        )
+        if result in ("hit", "miss"):
+            total += 1
+            correct += result == "hit"
     accuracy = correct / total if total else None
     return AccuracyBucket(
         key=key,
@@ -400,34 +459,24 @@ def ou_call_graded_breakdown(
         line = row.get(line_field)
         pick = (row.get(pick_field) or "").strip().lower()
         actual = row.get(actual_field)
-        if line is None:
-            missing_line += 1
-            continue
-        if not pick:
-            missing_pick += 1
-            continue
-        if actual is None:
-            missing_actual += 1
-            continue
-        if pick not in ("over", "o", "under", "u"):
-            non_decision_pick += 1
-            continue
-        try:
-            line_f = float(line)
-            actual_f = float(actual)
-        except (TypeError, ValueError):
-            invalid_numeric += 1
-            continue
-
-        if actual_f == line_f:
+        result = ou_row_result(line=line, pick=pick, actual=actual)
+        if result == "no_play":
+            if line is None:
+                missing_line += 1
+            elif not pick:
+                missing_pick += 1
+            else:
+                non_decision_pick += 1
+        elif result == "ungraded":
+            if actual is None:
+                missing_actual += 1
+            else:
+                invalid_numeric += 1
+        elif result == "push":
             push += 1
-            continue
-
-        won_over = pick in ("over", "o") and actual_f > line_f
-        won_under = pick in ("under", "u") and actual_f < line_f
-        graded_total += 1
-        if won_over or won_under:
-            graded_correct += 1
+        else:
+            graded_total += 1
+            graded_correct += result == "hit"
     return {
         "rows_scanned": rows_scanned,
         "missing_line": missing_line,
@@ -474,25 +523,20 @@ def hit_rate_graded_breakdown(
     graded_actual_parse_fail = 0
     for row in rows:
         rows_scanned += 1
-        projected = row.get(projected_field)
         actual = row.get(actual_field)
-        try:
-            if projected is None or float(projected) < 1:
-                skip_low_or_bad_projection += 1
-                continue
-        except (TypeError, ValueError):
+        result = hit_rate_row_result(
+            projected=row.get(projected_field), actual=actual, threshold=threshold
+        )
+        if result == "no_play":
             skip_low_or_bad_projection += 1
-            continue
-        if actual is None:
-            skip_missing_actual += 1
-            continue
-        graded_total += 1
-        try:
-            if float(actual) >= threshold:
-                graded_hits += 1
-        except (TypeError, ValueError):
-            graded_actual_parse_fail += 1
-            continue
+        elif result == "ungraded":
+            if actual is None:
+                skip_missing_actual += 1
+            else:
+                graded_actual_parse_fail += 1
+        else:
+            graded_total += 1
+            graded_hits += result == "hit"
     return {
         "rows_scanned": rows_scanned,
         "skip_low_or_bad_projection": skip_low_or_bad_projection,
@@ -537,22 +581,19 @@ def edge_play_graded_breakdown(
     for row in rows:
         rows_scanned += 1
         pick = (row.get(pick_field) or "").strip().upper()
-        if pick == "":
-            empty_pick += 1
-            continue
-        if pick in ("NO_PLAY", "NONE"):
-            no_play_pick += 1
-            continue
-        if pick == "PASS":
-            pass_pick += 1
-            continue
-        graded = row.get(correct_field)
-        if graded is None:
+        result = edge_row_result(pick=pick, correct_flag=row.get(correct_field))
+        if result == "no_play":
+            if pick == "":
+                empty_pick += 1
+            elif pick == "PASS":
+                pass_pick += 1
+            else:
+                no_play_pick += 1
+        elif result == "ungraded":
             missing_grade += 1
-            continue
-        graded_total += 1
-        if graded:
-            graded_correct += 1
+        else:
+            graded_total += 1
+            graded_correct += result == "hit"
     return {
         "rows_scanned": rows_scanned,
         "empty_pick": empty_pick,
@@ -577,19 +618,34 @@ def edge_play_graded_counts(
     return b["graded_correct"], b["graded_total"]
 
 
-def overview_item_from_totals(
+def overview_item_from_markets(
     *,
     sport: str,
     label: str,
-    correct: int,
-    total: int,
+    markets: dict[str, tuple[int, int]],
 ) -> dict[str, Any]:
-    """Build one overview dict from summed correct/total across graded categories."""
+    """Build one overview dict from per-market (correct, graded_total) pairs.
+
+    Carries the population (``markets`` + ``graded_count``) so the tile says what
+    it is made of. Below ``OVERVIEW_MIN_GRADED`` the primary is a count, not a
+    bare percentage, and the tone stays neutral.
+    """
+    listed = [
+        {"market": name, "correct": c, "graded": t}
+        for name, (c, t) in markets.items()
+        if t > 0
+    ]
+    total = sum(m["graded"] for m in listed)
+    correct = sum(m["correct"] for m in listed)
     has_data = total > 0
-    rate = correct / total if total else None
-    primary = pct(rate) if has_data else "No graded projections yet"
-    secondary = f"{total} graded picks" if has_data else "Season to date"
-    tone: Tone = tone_for_rate(rate) if has_data else "neutral"
+    small = has_data and total < OVERVIEW_MIN_GRADED
+    rate = correct / total if has_data else None
+    if not has_data:
+        primary, secondary = "No graded projections yet", "Season to date"
+    else:
+        primary = f"{correct}/{total}" if small else pct(rate)
+        secondary = f"{total} graded calls" + (" · small sample" if small else "")
+    tone: Tone = tone_for_rate(rate) if has_data and not small else "neutral"
     return AccuracyOverviewItem(
         sport=sport,
         label=label,
@@ -597,5 +653,19 @@ def overview_item_from_totals(
         secondary=secondary,
         tone=tone,
         has_data=has_data,
-        graded_count=total if has_data else 0,
+        graded_count=total,
+        markets=listed,
     ).to_dict()
+
+
+def overview_item_from_totals(
+    *,
+    sport: str,
+    label: str,
+    correct: int,
+    total: int,
+) -> dict[str, Any]:
+    """Thin wrapper over ``overview_item_from_markets`` for single-population callers."""
+    return overview_item_from_markets(
+        sport=sport, label=label, markets={label: (correct, total)}
+    )

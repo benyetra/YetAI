@@ -179,10 +179,15 @@ def store_actuals(date):
             )
             continue
 
-        actual_over_under_result = (
-            "over" if strikeouts > projection.fanduel_line else "under"
-        )
-        correct_prediction = actual_over_under_result == projection.fanduel_over_under
+        if strikeouts == projection.fanduel_line:
+            correct_prediction = None  # push: neither over nor under won
+        else:
+            actual_over_under_result = (
+                "over" if strikeouts > projection.fanduel_line else "under"
+            )
+            correct_prediction = (
+                actual_over_under_result == projection.fanduel_over_under
+            )
 
         existing_actual = (
             db_session.query(StrikeoutActuals)

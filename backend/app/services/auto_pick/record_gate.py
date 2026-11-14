@@ -238,9 +238,9 @@ def _nba_spread(db, start, end):
 
 
 def _nhl(db, start, end):
-    from app.services.nhl_accuracy_service import _nhl_season_overview_row_sets
+    from app.services.nhl_accuracy_service import _nhl_rows
 
-    sets = _nhl_season_overview_row_sets(db, start=start, end=end)
+    sets = _nhl_rows(db, start=start, end=end)
     return {
         ("NHL", "player_prop", "saves"): ou_call_graded_counts(
             sets["goalie"],

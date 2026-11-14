@@ -3,7 +3,7 @@
 from datetime import date
 
 from app.models.predictions_models import NHLGoalieActuals, NHLGoaliePredictions
-from app.services.nhl_accuracy_service import _nhl_season_overview_row_sets
+from app.services.nhl_accuracy_service import _nhl_rows
 
 
 def test_goalie_actual_is_matched_by_game_date(sqlite_db):
@@ -41,5 +41,5 @@ def test_goalie_actual_is_matched_by_game_date(sqlite_db):
         )
     sqlite_db.commit()
 
-    rows = _nhl_season_overview_row_sets(sqlite_db, start=d1, end=d2)["goalie"]
+    rows = _nhl_rows(sqlite_db, start=d1, end=d2)["goalie"]
     assert sorted(r["actual_saves"] for r in rows) == [20, 30]

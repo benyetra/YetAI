@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date, timedelta
+from datetime import date
 
 from app.services.etl.nba._espn import now_eastern
 
@@ -67,25 +67,30 @@ def run_projections_phase(target_date: date | None = None) -> dict:
 
 
 def run_actuals_phase(target_date: date | None = None) -> dict:
-    """Post-game: grade yesterday (or ``target_date``) K / game / batter actuals."""
-    yesterday = target_date or (now_eastern().date() - timedelta(days=1))
-    results = {}
+    """Post-game: grade K / game / batter actuals.
 
+    An explicit ``target_date`` grades just that day; otherwise the whole
+    ``grading_dates("mlb")`` lookback window is re-graded (each grader upserts),
+    so one failed night heals on the next run.
+    """
+    from app.services.etl.grading_window import grading_dates
+    from app.services.etl.mlb.daily_batter_projection import run_store_batter_actuals
+    from app.services.etl.mlb.daily_projection_update import run_store_strikeout_actuals
     from app.services.etl.mlb.game_projection_pipeline import run_store_game_actuals
 
-    results["game_actuals"] = run_store_game_actuals(yesterday)
-
-    from app.services.etl.mlb.daily_projection_update import run_store_strikeout_actuals
-
-    results["strikeout_actuals"] = run_store_strikeout_actuals(yesterday)
-
-    from app.services.etl.mlb.daily_batter_projection import run_store_batter_actuals
-
-    results["batter_actuals"] = run_store_batter_actuals(yesterday)
+    dates = [target_date] if target_date else grading_dates("mlb")
+    results = {}
+    for d in dates:
+        results[d.isoformat()] = {
+            "game_actuals": run_store_game_actuals(d),
+            "strikeout_actuals": run_store_strikeout_actuals(d),
+            "batter_actuals": run_store_batter_actuals(d),
+        }
 
     return {
         "status": "ok",
-        "date": yesterday.isoformat(),
+        "date": dates[-1].isoformat(),
+        "dates": [d.isoformat() for d in dates],
         "phase": "actuals",
         "results": results,
     }

@@ -104,6 +104,10 @@ export default function StatProjectionsHubPage() {
             (ov.has_data
               ? `Season model: ${ov.primary} · ${ov.secondary}`
               : ov.primary);
+          const marketsLine =
+            ov?.has_data && ov.markets.length
+              ? ov.markets.map((m) => `${m.market} ${m.correct}/${m.graded}`).join(' · ')
+              : null;
           const summaryTitle = ov
             ? ov.has_data
               ? `${s.label} season-to-date: ${ov.primary} across ${ov.graded_count} graded picks.`
@@ -134,6 +138,11 @@ export default function StatProjectionsHubPage() {
                     title={summaryTitle}
                   >
                     {summaryLine}
+                  </p>
+                ) : null}
+                {marketsLine ? (
+                  <p className="dim" style={{ fontSize: 10, marginTop: 2 }} title={marketsLine}>
+                    {marketsLine}
                   </p>
                 ) : null}
               </span>

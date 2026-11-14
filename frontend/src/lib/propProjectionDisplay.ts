@@ -1,3 +1,4 @@
+import { createElement } from 'react';
 import {
   formatNumber,
   formatString,
@@ -427,3 +428,53 @@ export const NFL_QB_COLUMNS: ColumnDef[] = [
   },
   NEWS_COLUMN,
 ];
+
+
+/** Past-view grading result per row (backend `result`): label + existing badge class. */
+export type PastResult = 'hit' | 'miss' | 'push' | 'no_play' | 'dnp' | 'ungraded';
+
+const RESULT_BADGES: Record<PastResult, { label: string; className: string }> = {
+  hit: { label: 'Hit', className: 'badge badge-win' },
+  miss: { label: 'Miss', className: 'badge badge-loss' },
+  push: { label: 'Push', className: 'badge badge-pending' },
+  no_play: { label: 'No play', className: 'badge badge-pending' },
+  // DNP (player did not play) is gold; Ungraded (never graded) is plain dim text.
+  dnp: { label: 'DNP', className: 'badge badge-gold' },
+  ungraded: { label: 'Ungraded', className: 'dim' },
+};
+
+export function resultBadge(result: unknown): { label: string; className: string } {
+  return RESULT_BADGES[String(result ?? 'ungraded') as PastResult] ?? RESULT_BADGES.ungraded;
+}
+
+const RESULT_COLUMN: ColumnDef = {
+  key: 'result',
+  label: 'Result',
+  sortable: false,
+  format: (v) => {
+    const { label, className } = resultBadge(v);
+    return createElement('span', { className, style: { fontSize: 11 } }, label);
+  },
+};
+
+const ACTUAL_COLUMN: ColumnDef = {
+  key: 'actual',
+  label: 'Actual',
+  align: 'right',
+  mono: true,
+  format: (v) => formatNumber(v, 1),
+};
+
+/**
+ * Past tables: append Actual + Result when the rows carry a grading `result`.
+ * Groups the grader does not cover (no `result` on any row) are left alone, and
+ * an existing `actual_*` column (MLB) is not duplicated.
+ */
+export function withPastResultColumns(
+  columns: ColumnDef[],
+  rows: Array<Record<string, unknown>> | undefined
+): ColumnDef[] {
+  if (!rows?.some((r) => r.result !== undefined)) return columns;
+  const hasActual = columns.some((c) => c.key === 'actual' || c.key.startsWith('actual_'));
+  return [...columns, ...(hasActual ? [] : [ACTUAL_COLUMN]), RESULT_COLUMN];
+}

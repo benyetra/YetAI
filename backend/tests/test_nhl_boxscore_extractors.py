@@ -18,10 +18,13 @@ from app.services.etl.nhl import _boxscore as bx
 # ---------------------------------------------------------------------------
 
 
-def _team_summary(name: str, *, team_id: int, sog: int = 30, score: int = 2) -> dict:
+def _team_summary(place: str, *, team_id: int, sog: int = 30, score: int = 2) -> dict:
+    """Real NHL boxscore team shape: abbrev/commonName/placeName/id/score/sog, no `name`."""
     return {
         "id": team_id,
-        "name": {"default": name},
+        "commonName": {"default": f"{place} Team"},
+        "abbrev": place[:3].upper(),
+        "placeName": {"default": place},
         "sog": sog,
         "score": score,
     }
@@ -33,8 +36,8 @@ def _skater(*, player_id: int, name: str, sog: int) -> dict:
 
 def _boxscore(
     *,
-    away_name="Bruins",
-    home_name="Rangers",
+    away_name="Boston",
+    home_name="New York",
     away_id=1,
     home_id=2,
     away_sog=28,
@@ -78,10 +81,10 @@ def test_extract_team_shots_returns_two_rows_per_game():
     rows = bx.extract_team_shots(_boxscore(), game_id=42, game_date=GAME_DATE)
     assert len(rows) == 2
     away, home = rows
-    assert away["team_name"] == "Bruins"
-    assert away["opponent_team_name"] == "Rangers"
+    assert away["team_name"] == "Boston"
+    assert away["opponent_team_name"] == "New York"
     assert away["actual_shots"] == 28
-    assert home["team_name"] == "Rangers"
+    assert home["team_name"] == "New York"
     assert home["actual_shots"] == 33
 
 
@@ -91,7 +94,7 @@ def test_extract_team_shots_skips_missing_sog():
     box["homeTeam"].pop("sog")
     rows = bx.extract_team_shots(box, game_id=42, game_date=GAME_DATE)
     assert len(rows) == 1
-    assert rows[0]["team_name"] == "Bruins"
+    assert rows[0]["team_name"] == "Boston"
 
 
 def test_extract_team_shots_empty_boxscore_returns_empty():
@@ -124,11 +127,11 @@ def test_extract_player_shots_attaches_team_and_opponent():
     )
     rows = bx.extract_player_shots(box, game_id=42, game_date=GAME_DATE)
     a = next(r for r in rows if r["player_id"] == 100)
-    assert a["team_name"] == "Bruins"
-    assert a["opponent_team_name"] == "Rangers"
+    assert a["team_name"] == "Boston"
+    assert a["opponent_team_name"] == "New York"
     h = next(r for r in rows if r["player_id"] == 200)
-    assert h["team_name"] == "Rangers"
-    assert h["opponent_team_name"] == "Bruins"
+    assert h["team_name"] == "New York"
+    assert h["opponent_team_name"] == "Boston"
 
 
 def test_extract_player_shots_skips_rows_without_sog_or_id():
@@ -157,8 +160,8 @@ def test_extract_team_totals_returns_one_row():
     assert row["actual_home_goals"] == 4
     assert row["actual_away_goals"] == 2
     assert row["actual_total_goals"] == 6
-    assert row["home_team_name"] == "Rangers"
-    assert row["away_team_name"] == "Bruins"
+    assert row["home_team_name"] == "New York"
+    assert row["away_team_name"] == "Boston"
 
 
 def test_extract_team_totals_returns_none_when_score_missing():
@@ -198,3 +201,35 @@ def test_grade_ou_pick_pass_returns_none():
 
 def test_grade_ou_pick_missing_actual_returns_none():
     assert bx.grade_ou_pick(actual=None, line=4.5, recommendation="OVER 4.5") is None
+
+
+# ---------------------------------------------------------------------------
+# Real payload (trimmed boxscore of 2026-11-10 COL @ TOR, fetched from the NHL API)
+# ---------------------------------------------------------------------------
+
+import json
+from pathlib import Path
+
+REAL = json.loads(
+    (Path(__file__).parent / "fixtures/nhl/nhl_boxscore_2026020286.json").read_text()
+)
+
+
+def test_real_boxscore_team_names_are_place_names_not_blank():
+    """NHL-2: the real team object has no `name`; actuals must still carry names."""
+    assert "name" not in REAL["homeTeam"]
+    totals = bx.extract_team_totals(REAL, game_id=2026020286, game_date=GAME_DATE)
+    assert totals["home_team_name"] == "Toronto"
+    assert totals["away_team_name"] == "Colorado"
+    assert totals["home_team_id"] == 10 and totals["away_team_id"] == 21
+    assert totals["actual_total_goals"] == 9
+    shots = bx.extract_team_shots(REAL, game_id=2026020286, game_date=GAME_DATE)
+    assert {r["team_name"] for r in shots} == {"Toronto", "Colorado"}
+    players = bx.extract_player_shots(REAL, game_id=2026020286, game_date=GAME_DATE)
+    assert players and all(r["team_name"] and r["opponent_team_name"] for r in players)
+
+
+def test_team_name_falls_back_to_common_name_then_abbrev():
+    assert bx._team_name({"commonName": {"default": "Leafs"}}) == "Leafs"
+    assert bx._team_name({"abbrev": "TOR"}) == "TOR"
+    assert bx._team_name({}) == ""
