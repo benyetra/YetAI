@@ -887,6 +887,7 @@ class YetAIBetsServiceDB:
                 "odds": bet.odds,
                 "effective_odds": _settlement(bet).get("effective_odds"),
                 "created_at": bet.created_at,
+                "settled_at": bet.settled_at,
             }
             for bet in self._query_yetai_bets_for_user(
                 user_tier,
@@ -914,8 +915,10 @@ class YetAIBetsServiceDB:
         """Promoted picks in the window (newest first).
 
         Returns (bets, stats, blocks): stats cover the whole window; blocks holds the
-        `today` (America/New_York day) and `last_7d` stats over the same population,
-        windowed on created_at like the history itself.
+        `today` (America/New_York day) and `last_7d` stats over the same population:
+        `today` counts results (settled_at in the ET day: last night's picks settle this
+        morning and today's picks are pending all day); `last_7d` counts picks created
+        in the last 7 days, like the history itself.
         """
         now = datetime.utcnow()
         since = now - timedelta(days=max(days, 1))
@@ -940,15 +943,15 @@ class YetAIBetsServiceDB:
             .replace(tzinfo=None)
         )
 
-        def window(start: datetime, period: int) -> Dict:
+        def window(start: datetime, period: int, key: str) -> Dict:
             return self.compute_history_stats(
-                [r for r in settled if r["created_at"] and r["created_at"] >= start],
+                [r for r in settled if r[key] and r[key] >= start],
                 period_days=period,
             )
 
         blocks = {
-            "today": window(et_midnight, 1),
-            "last_7d": window(now - timedelta(days=7), 7),
+            "today": window(et_midnight, 1, "settled_at"),
+            "last_7d": window(now - timedelta(days=7), 7, "created_at"),
         }
         return bets, stats, blocks
 

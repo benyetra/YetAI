@@ -97,7 +97,7 @@ export default function YetaiBetsScreen({
         <StatTile
           label={
             <>
-              <Target size={12} /> Today&apos;s hit rate
+              <Target size={12} /> Hit rate · settled today
             </>
           }
           value={hitRate === null ? '—' : `${hitRate}%`}
@@ -106,7 +106,7 @@ export default function YetaiBetsScreen({
         <StatTile
           label={
             <>
-              <TrendingUp size={12} /> 7-day ROI
+              <TrendingUp size={12} /> ROI · picks from last 7 days
             </>
           }
           value={roiLabel || '—'}

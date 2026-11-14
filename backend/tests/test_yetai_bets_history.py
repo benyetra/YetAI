@@ -1,7 +1,8 @@
 """YetAI bets history API helpers."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 from app.models.database_models import BetType, SubscriptionTier, YetAIBet
@@ -149,6 +150,8 @@ def _settled(i, status, created, odds=100, eff=None):
 def test_history_has_today_and_last_7d_blocks():
     now = datetime.utcnow()
     rows = [_settled(1, "lost", now), _settled(2, "lost", now)]
+    for r in rows:
+        r.settled_at = now
     service, p = _rows_service(rows)
     with p:
         _, _, blocks = service.get_yetai_bets_history_for_user("free", None)
@@ -172,3 +175,26 @@ def test_last_7d_uses_effective_odds_and_created_at_window():
     with p:
         _, _, blocks = service.get_yetai_bets_history_for_user("free", None)
     assert blocks["last_7d"]["total"] == 1 and blocks["last_7d"]["units"] == 1.0
+
+
+def test_today_tile_counts_results_settled_today_not_picks_created_today():
+    # Last night's picks settle this morning (created yesterday); today's picks stay
+    # pending all day. The tile is about results: window on settled_at (ET day).
+    now = datetime.utcnow()
+    et_midnight = (
+        datetime.now(ZoneInfo("America/New_York"))
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
+    overnight = _settled(1, "won", now - timedelta(days=1))
+    overnight.settled_at = now
+    yesterday = _settled(2, "lost", now - timedelta(days=1))
+    yesterday.settled_at = et_midnight - timedelta(hours=1)
+    pending_today = _pick(3, "pending")
+    pending_today.created_at = now
+    service, p = _rows_service([overnight, yesterday, pending_today])
+    with p:
+        _, _, blocks = service.get_yetai_bets_history_for_user("free", None)
+    assert blocks["today"]["graded"] == 1 and blocks["today"]["win_rate"] == 100.0
+    assert blocks["last_7d"]["graded"] == 2  # still picks created in the last 7 days
