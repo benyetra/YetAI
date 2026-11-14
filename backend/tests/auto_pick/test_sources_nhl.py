@@ -182,3 +182,11 @@ def test_utah_names_match_espn_display_name():
 
     assert nhl_full_name(59) == nhl_full_name(68) == "Utah Mammoth"
     assert nhl_full_name(6) == "Boston Bruins"
+
+
+def test_goalie_saves_skips_superseded_starter(sqlite_db):
+    # ETL keeps a replaced starter's row flagged was_scratch; it is never a pick.
+    _goalie(sqlite_db, 1, was_scratch=True)
+    _goalie(sqlite_db, 2)
+    rows = run(NHLGoalieSavesSource(sqlite_db).get_todays_projections(DR))
+    assert [r["event_id"].split("-")[-2] for r in rows] == ["2"]

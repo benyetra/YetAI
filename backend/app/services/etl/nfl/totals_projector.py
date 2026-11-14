@@ -20,6 +20,7 @@ from app.services.etl.nfl.spread_projector import (
     _project_spread_row,
     apply_qb_out_for_game,
     projection_end_date,
+    unstarted_games,
 )
 from app.services.etl.wnba._db_upsert import upsert_many
 
@@ -162,6 +163,7 @@ def run() -> dict:
             .filter(NFLGameLines.game_date >= today, NFLGameLines.game_date <= end)
             .all()
         )
+        games = unstarted_games(games)
 
         for g in games:
             home_qb_out, away_qb_out = apply_qb_out_for_game(

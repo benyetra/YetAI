@@ -12,6 +12,7 @@ import os
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBAGameLines
+from app.services.etl._game_start import not_started
 from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._game_lines_odds import game_line_rows_from_events
 
@@ -45,7 +46,22 @@ def _odds_get(path: str, params: dict) -> list | dict | None:
     return resp.json()
 
 
-def run() -> dict:
+def _keep_stored_lines(db, rows: list[dict]) -> None:
+    """A book that lists no market right now must not blank a stored line."""
+    stored = {
+        (g.game_date, g.home_team_name, g.away_team_name): g
+        for g in db.query(WNBAGameLines)
+        .filter(WNBAGameLines.game_date.in_({r["game_date"] for r in rows}))
+        .all()
+    }
+    for row in rows:
+        old = stored.get((row["game_date"], row["home_team_name"], row["away_team_name"]))
+        for key, value in row.items():
+            if value is None and old is not None:
+                row[key] = getattr(old, key, None)
+
+
+def run(now=None) -> dict:
     payload = _odds_get(
         f"{SPORT}/odds",
         params={
@@ -57,12 +73,18 @@ def run() -> dict:
     if not isinstance(payload, list):
         return {"status": "no_data", "games": 0}
 
-    upsert_rows_list = game_line_rows_from_events(payload)
+    # Started games (live in the feed) are frozen as users last saw them.
+    upsert_rows_list = not_started(
+        game_line_rows_from_events(payload),
+        lambda r: (r["game_time"], r["game_date"]),
+        now=now,
+    )
     if not upsert_rows_list:
         return {"status": "no_data", "games": 0}
 
     db = SessionLocal()
     try:
+        _keep_stored_lines(db, upsert_rows_list)
         upsert_many(
             db,
             WNBAGameLines,

@@ -18,6 +18,7 @@ import requests
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import NBAGameLines
+from app.services.etl._game_start import has_started, keep_known
 from app.services.etl.nba._espn import EASTERN, now_eastern
 
 logger = logging.getLogger(__name__)
@@ -164,6 +165,9 @@ def run() -> dict:
                 game_date = game_dt.astimezone(EASTERN).date()
                 if game_date not in (today, tomorrow):
                     continue
+                # Live or finished game: its stored line is what users saw at tip.
+                if has_started(game_dt):
+                    continue
 
                 processed += 1
                 home_norm = _normalize(home_team)
@@ -183,8 +187,10 @@ def run() -> dict:
                 if existing:
                     existing.odds_api_event_id = event_id
                     existing.game_time = game_dt
-                    for k, v in odds.items():
-                        setattr(existing, k, v)
+                    if odds["spread_home"] is None and odds["total"] is None:
+                        # Book has no market now: keep the stored lines and bookmaker.
+                        odds["bookmaker"] = None
+                    keep_known(existing, odds)
                     existing.last_updated = datetime.utcnow()
                 else:
                     db.add(

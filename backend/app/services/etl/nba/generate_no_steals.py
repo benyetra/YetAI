@@ -18,6 +18,7 @@ from app.models.predictions_models import (
     TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._stale_rows import active_players_not_started
 from app.services.etl.nba._samples import MIN_CURRENT_SEASON_GAMES, player_games
 from app.services.etl.nba._season import (
     regular_season_start,
@@ -606,7 +607,7 @@ def project_no_steals():
     """
     today = _today()
     try:
-        players = db.query(TodayActivePlayers).filter_by(game_date=today).all()
+        players = active_players_not_started(db, today)
         logger.info(f"Found {len(players)} active players for {today}.")
     except SQLAlchemyError as e:
         logger.error(f"Error fetching today's active players: {e}")

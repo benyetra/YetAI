@@ -72,11 +72,10 @@ def has_kicked_off(
     Thursday, so Monday-Wednesday runs still point at games already played.
     Their rows must stay as they were at kickoff: those are the numbers (and
     the closing line) the pick is graded against. Unknown kickoff -> False.
-    A bare date counts as kicked off from the following day.
+    A bare date counts as kicked off from the following day. Naive values
+    (``kickoff`` and ``now``) are Eastern; see ``_game_start.has_started``.
     """
-    if kickoff is None:
-        return False
+    from app.services.etl._game_start import has_started
+
     current = now if now is not None else now_eastern_naive()
-    if isinstance(kickoff, datetime):
-        return kickoff.replace(tzinfo=None) <= current
-    return kickoff < current.date()
+    return has_started(kickoff, now=current, naive_tz=EASTERN)

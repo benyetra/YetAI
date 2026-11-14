@@ -17,10 +17,12 @@ from app.core.database import SessionLocal
 from app.models.predictions_models import (
     PlayerInjuryStatus,
     StealsProjections,
-    TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
-from app.services.etl.nba._stale_rows import drop_projection_for_today
+from app.services.etl.nba._stale_rows import (
+    active_players_not_started,
+    mark_projection_out,
+)
 from app.services.etl.nba._feature_engineering import build_features
 from app.services.etl.nba._ml_predict import predict
 
@@ -51,11 +53,7 @@ def run() -> dict:
 
     db = SessionLocal()
     try:
-        active = (
-            db.query(TodayActivePlayers)
-            .filter(TodayActivePlayers.game_date == today)
-            .all()
-        )
+        active = active_players_not_started(db, today)
 
         if not active:
             logger.info(
@@ -76,7 +74,7 @@ def run() -> dict:
             try:
                 injured, injury_status = _is_injured(db, player.player_id)
                 if injured:
-                    drop_projection_for_today(
+                    mark_projection_out(
                         db, StealsProjections, today, player.player_id
                     )
                     skipped_injured += 1

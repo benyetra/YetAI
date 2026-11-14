@@ -23,6 +23,7 @@ from app.models.predictions_models import (
     TeamRoster,
     TodayActivePlayers,
 )
+from app.services.etl._game_start import not_started
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba._samples import player_games
 from app.services.etl.nba._season import season_opener, season_start_year
@@ -819,6 +820,8 @@ def get_todays_games() -> List[Dict]:
     today = _today()
 
     games = db.query(NBAGameLines).filter_by(game_date=today).all()
+    # Started games keep the projection users saw before tip.
+    games = not_started(games, lambda g: (g.game_time, g.game_date))
 
     result = []
     for game in games:

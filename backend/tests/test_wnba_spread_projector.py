@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -44,6 +45,7 @@ def test_run_writes_projection_for_each_market_line(monkeypatch):
     game.away_team_name = "Las Vegas Aces"
     game.spread_home = -2.5
     game.total = 162.5
+    game.game_time = datetime(2026, 5, 21, 23, 0)  # naive UTC
 
     # query(WNBASpreadActuals).order_by(...).all() → []
     # query(WNBATeamOffenseStats).all() → []
@@ -64,6 +66,10 @@ def test_run_writes_projection_for_each_market_line(monkeypatch):
         },
     )
 
+    monkeypatch.setattr(
+        "app.services.etl.wnba.spread_projector.now_eastern",
+        lambda: datetime(2026, 5, 21, 12, tzinfo=ZoneInfo("America/New_York")),
+    )
     with patch("app.services.etl.wnba.spread_projector.upsert_many") as um:
         result = sp.run()
 

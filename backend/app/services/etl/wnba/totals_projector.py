@@ -20,6 +20,7 @@ from app.models.predictions_models import (
     WNBATeamRoster,
     WNBATotalsProjections,
 )
+from app.services.etl._game_start import not_started
 from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba.totals_ml import enrich_projection
 
@@ -870,6 +871,11 @@ def generate_nightly_report(game_date: Optional[date] = None) -> Dict:
         }
 
     logger.info(f"Found {len(games)} games for {game_date}")
+
+    # Started games keep the projection users last saw.
+    games = not_started(
+        games, lambda g: (g["game_time"], game_date), now=now_eastern()
+    )
 
     projections = []
     value_plays = 0

@@ -14,6 +14,7 @@ from app.models.predictions_models import (
     QBPredictions,
 )
 from app.services.etl import _spread_model as _sm
+from app.services.etl._game_start import not_started
 from app.services.etl._spread_model import (
     NFL_CONFIG,
     load_elos_from_actuals,
@@ -57,6 +58,14 @@ def apply_qb_out_for_game(
         qb_out_by_team.get(home_team_name, False),
         qb_out_by_team.get(away_team_name, False),
     )
+
+
+def unstarted_games(games: list, *, now: datetime | None = None) -> list:
+    """Drop games whose kickoff has passed: their row and line stay as users saw them.
+
+    ``game_time`` is naive UTC (written from the Odds API commence_time).
+    """
+    return not_started(games, lambda g: (g.game_time, g.game_date), now=now)
 
 
 def _load_qb_out_by_team(
@@ -161,6 +170,7 @@ def run() -> dict:
             .filter(NFLGameLines.game_date >= today, NFLGameLines.game_date <= end)
             .all()
         )
+        games = unstarted_games(games)
 
         for g in games:
             home_qb_out, away_qb_out = apply_qb_out_for_game(

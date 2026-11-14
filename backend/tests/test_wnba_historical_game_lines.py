@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -116,7 +116,7 @@ def test_consensus_averages_across_books(fake_odds_payload, monkeypatch):
         ),
     ):
         og.return_value = fake_odds_payload
-        result = ugl.run()
+        result = ugl.run(now=datetime(2026, 5, 21, 12, tzinfo=timezone.utc))
 
     assert captured["spread_home"] == pytest.approx(-2.75)
     assert captured["total"] == pytest.approx(162.5)

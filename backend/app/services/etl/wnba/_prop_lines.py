@@ -12,7 +12,7 @@ back to the live /events list with canonical team-name normalization.
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -23,6 +23,8 @@ from app.services.etl.nba._fanduel_lines import (
     fetch_fanduel_prop_for_player,
     get_event_id_for_game,
 )
+from app.services.etl._game_start import has_started
+from app.services.etl.wnba.prop_calibration import maybe_attach_p_over
 from app.services.player_prop_projection_display import prop_confidence_pct
 
 WNBA_SPORT = "basketball_wnba"
@@ -149,3 +151,65 @@ def attach_prop_market_fields(
         prop_confidence_pct(abs(edge), stat) if recommendation != "NO_PLAY" else None
     )
     return True
+
+
+def freeze_prop_rows(
+    db: Session,
+    model: type,
+    rows: list[dict[str, Any]],
+    *,
+    stat: str,
+    game_date: date,
+    active_rows: list[Any],
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Rows safe to upsert: nothing for started games, stored lines kept pre-start.
+
+    Every prop generator calls this just before ``upsert_many``. Game start is
+    ``WNBAGameLines.game_time`` (naive UTC, game_date when it is missing).
+    """
+    starts: dict[frozenset, tuple[Any, date]] = {}
+    games = db.query(WNBAGameLines).filter(WNBAGameLines.game_date == game_date).all()
+    for g in games:
+        if isinstance(g, WNBAGameLines):
+            starts[frozenset((g.home_team_name, g.away_team_name))] = (
+                g.game_time,
+                g.game_date,
+            )
+    matchup_of = {
+        p.player_id: frozenset((p.team_name, p.opponent_team_name or ""))
+        for p in active_rows
+    }
+
+    live = []
+    for row in rows:
+        start, day = starts.get(matchup_of.get(row["player_id"]), (None, game_date))
+        if not has_started(start, game_date=day, now=now):
+            live.append(row)
+
+    missing = [r for r in live if r.get("market_line") is None]
+    if not missing:
+        return live
+    stored = {}
+    for rec in db.query(model).filter(model.date == game_date).all():
+        if isinstance(rec, model) and rec.market_line is not None:
+            stored[rec.player_id] = rec
+    threshold = EDGE_THRESHOLDS.get(stat, 1.0)
+    for row in missing:
+        rec = stored.get(row["player_id"])
+        if rec is None:
+            continue
+        # No market right now: keep the last line and re-judge the projection against it.
+        projected = row[f"projected_{stat}"]
+        row["market_line"] = rec.market_line
+        row["fanduel_price"] = rec.fanduel_price
+        row["edge"], row["recommendation"] = _edge_and_recommendation(
+            projected, rec.market_line, threshold
+        )
+        row["confidence_score"] = (
+            prop_confidence_pct(abs(row["edge"]), stat)
+            if row["recommendation"] != "NO_PLAY"
+            else None
+        )
+        maybe_attach_p_over(row, stat=stat, projected=projected, line=rec.market_line)
+    return live
