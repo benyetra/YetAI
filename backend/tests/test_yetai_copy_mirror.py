@@ -258,3 +258,10 @@ def test_copy_of_deleted_pick_is_graded_on_its_own(db):
     assert not service.is_yetai_linked(row)
     pick(db)
     assert service.is_yetai_linked(copy(db, id="copy-2"))
+
+
+def test_open_pick_leaves_live_copy_live(db):
+    p = pick(db)
+    row = copy(db, status=BetStatus.LIVE)
+    assert not YetAIBetsServiceDB().sync_unified_from_yetai_pick(db, p, row)
+    assert row.status == BetStatus.LIVE
