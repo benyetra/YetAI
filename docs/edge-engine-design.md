@@ -351,7 +351,8 @@ Primary analysis, decided now and not tuned afterwards:
   weights).
 - Primary flags: flags at non-closing snapshots (T-600, T-360), first per (event, market, player,
   book, side). Closing-snapshot flags are scored on ROI only (their CLV is positive by
-  construction).
+  construction). Void flags (player did not play, no box score, or a name that does not map to a
+  player) are not bets: counted, and left out of every scored set including n.
 - CLV = closing no-vig consensus probability of the side at the flag's line minus the implied
   probability of the flagged price. Intervals: 95%, clustered by game date; hit rate Wilson.
 Verdict (code: `fair_price/backtest.py` `verdict`):

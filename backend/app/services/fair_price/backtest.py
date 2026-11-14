@@ -675,9 +675,12 @@ def run_backtest(
             f["t"],
         )
     )
-    primary = [f for f in flags if f["primary"]]
-    non_close = [f for f in flags if not f["is_close"]]
-    closes = [f for f in flags if f["is_close"]]
+    # A void flag (player did not play, or has no box score / name mapping) is not a bet: it
+    # is counted below and left out of every scored set, the verdict's n included.
+    graded = [f for f in flags if f["void"] is None]
+    primary = [f for f in graded if f["primary"]]
+    non_close = [f for f in graded if not f["is_close"]]
+    closes = [f for f in graded if f["is_close"]]
 
     def table(key, buckets=None):
         out = {}
@@ -704,7 +707,9 @@ def run_backtest(
         "flags_primary": len(primary),
         "flags_close": len(closes),
         "no_close_clv_primary": sum(f["clv"] is None for f in primary),
-        "void_primary": dict(Counter(f["void"] for f in primary if f["void"])),
+        "void_primary": dict(
+            Counter(f["void"] for f in flags if f["primary"] and f["void"])
+        ),
         "push_primary": sum(1 for f in primary if f["win"] is None and not f["void"]),
     }
     summary = {
