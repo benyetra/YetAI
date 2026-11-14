@@ -370,7 +370,11 @@ def apply_fanduel_to_projection(
     elif getattr(row, "fanduel_line", None) is not None:
         # A rerun that finds nothing must not wipe a line stored by an earlier run.
         # Re-derive the side from it (lifts an OUT flag: the player is active again).
-        row.fanduel_over_under = pick_side(projection, row.fanduel_line)
+        side = pick_side(projection, row.fanduel_line)
+        if side != row.fanduel_over_under and row.fanduel_over_under in ("o", "u"):
+            # best_* was priced for the other side of the line.
+            row.best_book = row.best_line = row.best_price = None
+        row.fanduel_over_under = side
 
     event_id = get_event_id_for_game(NBA_SPORT, team_name, opponent_team_name)
     quotes = prop_quotes(NBA_SPORT, event_id, player_name, market) if event_id else []

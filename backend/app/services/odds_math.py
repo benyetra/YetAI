@@ -165,7 +165,7 @@ def best_quote(
             american_to_decimal(price),
             q.book == "fanduel",
             # reversed key order so "a" beats "z" on a full tie
-            tuple(-ord(c) for c in q.book),
+            tuple(-ord(c) for c in q.book) + (1,),  # (1,): 'a' beats 'ab'
         )
         if best is None or rank > best[0]:
             best = (rank, BestQuote(q.book, float(q.line), int(price), fair, ev))
