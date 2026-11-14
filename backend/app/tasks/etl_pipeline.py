@@ -1012,9 +1012,9 @@ def run_nhl_update_pipeline(self) -> dict:
     return _run_phases("nhl", NHL_PHASES)
 
 
-# Starters post through the afternoon, so re-run the goalie slice (and its saves
-# lines) before the 17:30 auto-pick. Disable with NHL_PREGAME_REFRESH_ENABLED=0
-# (each run spends Odds API credits).
+# Starters post through the afternoon, so re-run the NHL slice (goalie saves, shots
+# and totals lines: one 3-credit event-odds call per event) before the 17:30
+# auto-pick. Disable with NHL_PREGAME_REFRESH_ENABLED=0 (each run spends credits).
 NHL_PREGAME_PHASES = [("goalie_predictions", [nhl_goalie_pregame_refresh])]
 
 

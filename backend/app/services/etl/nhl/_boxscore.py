@@ -18,6 +18,12 @@ import requests
 NHL_API_BASE = "https://api-web.nhle.com/v1"
 
 
+def _client():
+    from app.services.etl.nhl.nhl_api_client import NHLAPIClient
+
+    return NHLAPIClient()
+
+
 def get_completed_games_for_date(target_date: date) -> list[dict[str, Any]]:
     """Schedule endpoint → games on ``target_date`` whose state is OFF/FINAL.
 
@@ -27,7 +33,7 @@ def get_completed_games_for_date(target_date: date) -> list[dict[str, Any]]:
     """
     url = f"{NHL_API_BASE}/schedule/{target_date.strftime('%Y-%m-%d')}"
     try:
-        response = requests.get(url, timeout=10)
+        response = _client()._get(url)  # backs off on 429
         response.raise_for_status()
         data = response.json()
     except Exception:
@@ -81,7 +87,7 @@ def get_game_boxscore(game_id: int) -> Optional[dict[str, Any]]:
     """Boxscore endpoint → JSON dict or None on transport failure."""
     url = f"{NHL_API_BASE}/gamecenter/{game_id}/boxscore"
     try:
-        response = requests.get(url, timeout=10)
+        response = _client()._get(url)  # backs off on 429
         response.raise_for_status()
         return response.json()
     except Exception:

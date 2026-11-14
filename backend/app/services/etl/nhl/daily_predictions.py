@@ -39,6 +39,7 @@ from app.services.etl.nhl.generate_daily_predictions import (
     get_player_shots_odds_for_event,
     get_team_totals_odds_for_event,
     get_odds_api_team_name,
+    clear_nhl_event_odds_cache,
 )
 from datetime import datetime, date, timezone
 from app.services.etl._game_start import EASTERN, keep_known, not_started
@@ -55,6 +56,13 @@ logging.basicConfig(
 )
 
 
+# Skaters need this many current-season games before we project them (a player with
+# 0-4 games has no usable rate), and each team projects its top N shooters plus
+# anyone the sportsbook posts a line for.
+NHL_MIN_GAMES_FOR_PROJECTION = 5
+NHL_SHOTS_PER_TEAM = 6
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -62,11 +70,26 @@ def _now() -> datetime:
 def _pregame(games: list[dict]) -> list[dict]:
     """Games that have not started: the only ones any writer here may touch.
 
-    Rows for a started game are frozen exactly as users last saw them.
+    Rows for a started game are frozen exactly as users last saw them. Preseason
+    (gameType 1) games are never projected; a game with no gameType is kept.
     """
+    games = [g for g in games if g.get("gameType", 2) in (2, 3)]
     return not_started(
         games, lambda g: game_datetime_et(g)[::-1], now=_now(), naive_tz=EASTERN
     )
+
+
+def find_odds_event(odds_events, home_name, home_abbrev, away_name, away_abbrev):
+    """The Odds API event for a schedule game, comparing accent-free normalized names
+    ("Montréal Canadiens" == "Montreal Canadiens"); NY teams resolve by abbrev."""
+    key = (
+        _norm(get_odds_api_team_name(away_name, away_abbrev)),
+        _norm(get_odds_api_team_name(home_name, home_abbrev)),
+    )
+    for event in odds_events:
+        if (_norm(event.get("away_team")), _norm(event.get("home_team"))) == key:
+            return event
+    return None
 
 
 def update_nhl_stats():
@@ -93,15 +116,16 @@ def update_nhl_stats():
         return False
 
 
-def find_goalie_line(goalie_lines: dict, full_name, goalie_name) -> dict:
-    """Odds API outcomes are keyed by full name ("Leevi Merilainen"); our goalie_name
-    is the boxscore name ("L. Meriläinen"). Match full name, then initial + last name.
+def find_player_line(lines: dict, full_name, short_name=None) -> dict:
+    """Odds API outcomes are keyed by full name ("Leevi Merilainen"); our short_name
+    is the boxscore name ("L. Meriläinen"). Match full name, then initial + last name
+    (unique only). Used for goalie saves and skater shots lines.
     """
-    by_norm = {_norm(k): v for k, v in goalie_lines.items()}
-    for name in (full_name, goalie_name):
+    by_norm = {_norm(k): v for k, v in lines.items()}
+    for name in (full_name, short_name):
         if name and _norm(name) in by_norm:
             return by_norm[_norm(name)]
-    first, _, last = _norm(full_name or goalie_name).rpartition(" ")
+    first, _, last = _norm(full_name or short_name).rpartition(" ")
     if not last:
         return {}
     hits = [
@@ -110,6 +134,9 @@ def find_goalie_line(goalie_lines: dict, full_name, goalie_name) -> dict:
         if k.rpartition(" ")[2] == last and (not first or k[:1] == first[:1])
     ]
     return hits[0] if len(hits) == 1 else {}
+
+
+find_goalie_line = find_player_line
 
 
 def generate_goalie_predictions(games, odds_events, odds_markets=None):
@@ -177,12 +204,10 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
         odds_home = get_odds_api_team_name(home_team, home_abbrev)
         odds_away = get_odds_api_team_name(away_team, away_abbrev)
 
-        event_key = f"{odds_away} @ {odds_home}"
-        event_id = None
-        for event in odds_events:
-            if f"{event['away_team']} @ {event['home_team']}" == event_key:
-                event_id = event["id"]
-                break
+        event = find_odds_event(
+            odds_events, home_team, home_abbrev, away_team, away_abbrev
+        )
+        event_id = event["id"] if event else None
 
         goalie_lines = {}
         if event_id:
@@ -197,10 +222,10 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
             prediction = predict_goalie_saves(
                 goalie_id=goalie_id,
                 goalie_name=goalie_name,
-                opponent_team_name=slot.opponent_team_name,
+                team_id=slot.team_id,
+                opponent_team_id=slot.opponent_team_id,
                 game_date=slot.game_date,
                 is_home=slot.is_home,
-                goalie_team_name=slot.team_name,
             )
 
             if "error" not in prediction:
@@ -263,7 +288,6 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
                     predicted_shots_against=prediction["predicted_shots_against"],
                     predicted_save_pct=prediction.get("predicted_save_pct", 0.0),
                     goalie_season_save_pct=prediction.get("goalie_season_sv_pct"),
-                    goalie_recent_save_pct=prediction.get("goalie_recent_sv_pct"),
                     opponent_shots_avg=prediction.get("opponent_shots_avg"),
                     model_version=write["model_version"],
                     confidence=combined_confidence,
@@ -316,14 +340,25 @@ def generate_player_predictions(games, odds_events):
     )
 
     predictions_generated = 0
+    client = NHLAPIClient()
+    rosters: dict = (
+        {}
+    )  # abbrev -> skater ids on the current roster, or None if the call failed
 
-    odds_lookup = {}
-    for event in odds_events:
-        key = f"{event['away_team']} @ {event['home_team']}"
-        odds_lookup[key] = event
+    def roster_ids(abbrev):
+        if abbrev not in rosters:
+            try:
+                data = client.get_team_roster(abbrev) or {}
+                ids = {
+                    p["id"] for k in ("forwards", "defensemen") for p in data.get(k, [])
+                }
+                rosters[abbrev] = ids or None
+            except Exception as e:
+                logging.error("❌ Roster fetch failed for %s: %s", abbrev, e)
+                rosters[abbrev] = None
+        return rosters[abbrev]
 
     for game in _pregame(games):
-        # Get team IDs to look up players
         home_team_id = game["homeTeam"]["id"]
         away_team_id = game["awayTeam"]["id"]
         home_abbrev = game["homeTeam"]["abbrev"]
@@ -337,27 +372,55 @@ def generate_player_predictions(games, odds_events):
 
         odds_home = get_odds_api_team_name(home_team_name, home_abbrev)
         odds_away = get_odds_api_team_name(away_team_name, away_abbrev)
-        odds_key = f"{odds_away} @ {odds_home}"
         player_lines: dict = {}
-        if odds_key in odds_lookup:
-            event_id = odds_lookup[odds_key]["id"]
+        event = find_odds_event(
+            odds_events, home_team_name, home_abbrev, away_team_name, away_abbrev
+        )
+        if event:
             player_lines = get_player_shots_odds_for_event(
-                event_id, odds_home, odds_away
+                event["id"], odds_home, odds_away
             )
 
-        # Get top scorers from each team (from our database)
-        for team_id, team_name, opponent_name, is_home in [
-            (home_team_id, home_team_name, away_team_name, True),
-            (away_team_id, away_team_name, home_team_name, False),
+        for team_id, abbrev, team_name, opponent_name, opponent_id, is_home in [
+            (
+                home_team_id,
+                home_abbrev,
+                home_team_name,
+                away_team_name,
+                away_team_id,
+                True,
+            ),
+            (
+                away_team_id,
+                away_abbrev,
+                away_team_name,
+                home_team_name,
+                home_team_id,
+                False,
+            ),
         ]:
-            # Get top 5 players by shots per game for this team
-            players = (
+            ids = roster_ids(abbrev)
+            if not ids:
+                logging.warning("⏭️  No roster for %s, skipping team", abbrev)
+                continue
+            # Current-roster skaters with a real sample: everyone the book lines,
+            # plus the team's top shooters.
+            candidates = (
                 db_session.query(NHLPlayer)
-                .filter(NHLPlayer.team_id == team_id, NHLPlayer.shots_per_game > 0)
+                .filter(
+                    NHLPlayer.player_id.in_(ids),
+                    NHLPlayer.games_played >= NHL_MIN_GAMES_FOR_PROJECTION,
+                )
                 .order_by(NHLPlayer.shots_per_game.desc())
-                .limit(5)
                 .all()
             )
+            top = [p for p in candidates if (p.shots_per_game or 0) > 0]
+            top = top[:NHL_SHOTS_PER_TEAM]
+            players = top + [
+                p
+                for p in candidates
+                if p not in top and find_player_line(player_lines, p.name)
+            ]
 
             logging.info(
                 f"  Found {len(players)} players for {team_name} (team_id={team_id})"
@@ -367,11 +430,14 @@ def generate_player_predictions(games, odds_events):
                 try:
                     pred = predict_player_shots(
                         player_id=player.player_id,
-                        opponent_team_name=opponent_name,
+                        opponent_team_id=opponent_id,
                         is_home=is_home,
+                        game_date=game_date,
                     )
                     if "error" not in pred:
-                        line_data = player_lines.get(pred["player_name"], {})
+                        line_data = find_player_line(
+                            player_lines, player.name, pred["player_name"]
+                        )
                         shots_line = line_data.get("line")
                         old_rows = (
                             db_session.query(NHLPlayerShotsPredictions)
@@ -386,18 +452,7 @@ def generate_player_predictions(games, odds_events):
                             shots_line = old_rows[0].shots_line
                         extra_features = {
                             "baseline_shots": pred.get("baseline_shots"),
-                            "ice_time_adjustment": pred.get("ice_time_adjustment"),
-                            "opponent_shots_adjustment": pred.get(
-                                "opponent_shots_adjustment"
-                            ),
-                            "blocks_adjustment": pred.get("blocks_adjustment"),
-                            "position_adjustment": pred.get("position_adjustment"),
-                            "home_ice_adjustment": pred.get("home_ice_adjustment"),
                             "player_toi_per_game": pred.get("player_toi_per_game"),
-                            "opponent_shots_against_pg": pred.get(
-                                "opponent_shots_against_pg"
-                            ),
-                            "opponent_blocks_pg": pred.get("opponent_blocks_pg"),
                             "player_position": pred.get("player_position"),
                             "is_home": pred.get("is_home"),
                         }
@@ -461,12 +516,6 @@ def generate_team_totals_predictions(games, odds_events):
         get_odds_api_team_name,
     )
 
-    # Create lookup for odds by team names
-    odds_lookup = {}
-    for event in odds_events:
-        key = f"{event['away_team']} @ {event['home_team']}"
-        odds_lookup[key] = event
-
     predictions_generated = 0
 
     for game in _pregame(games):
@@ -482,7 +531,9 @@ def generate_team_totals_predictions(games, odds_events):
 
         try:
             pred = predict_team_total_goals(
-                home_team_name=home_team, away_team_name=away_team, game_date=game_date
+                home_team_id=home_team_id,
+                away_team_id=away_team_id,
+                game_date=game_date,
             )
 
             if "error" not in pred:
@@ -493,12 +544,13 @@ def generate_team_totals_predictions(games, odds_events):
 
                 odds_home = get_odds_api_team_name(home_team, home_abbrev)
                 odds_away = get_odds_api_team_name(away_team, away_abbrev)
-                odds_key = f"{odds_away} @ {odds_home}"
+                event = find_odds_event(
+                    odds_events, home_team, home_abbrev, away_team, away_abbrev
+                )
 
-                if odds_key in odds_lookup:
-                    event_id = odds_lookup[odds_key]["id"]
+                if event:
                     totals_odds = get_team_totals_odds_for_event(
-                        event_id, odds_home, odds_away
+                        event["id"], odds_home, odds_away
                     )
 
                     if totals_odds and "line" in totals_odds:
@@ -529,11 +581,7 @@ def generate_team_totals_predictions(games, odds_events):
                         "away_offense_rating": pred.get("away_offense_rating"),
                         "home_defense_rating": pred.get("home_defense_rating"),
                         "away_defense_rating": pred.get("away_defense_rating"),
-                        "combined_pace": pred.get("combined_pace"),
-                        "home_pp_pct": pred.get("home_pp_pct"),
-                        "away_pp_pct": pred.get("away_pp_pct"),
-                        "home_pk_pct": pred.get("home_pk_pct"),
-                        "away_pk_pct": pred.get("away_pk_pct"),
+                        "league_goals_per_game": pred.get("league_goals_per_game"),
                     },
                 )
 
@@ -693,9 +741,11 @@ def run() -> dict:
 
 
 def run_goalie_refresh() -> dict:
-    """Pregame refresh: today's not-yet-started games, goalie predictions only.
+    """Pregame refresh: today's not-yet-started games; goalie saves, player shots and
+    team totals lines and predictions.
 
-    Odds credits: one saves-only event-odds call per predicted slot's event.
+    Odds credits: one event-odds call per event covering all three markets (3
+    credits per event); the goalie, shots and totals readers share its payload.
     """
     from app.services.etl.nhl._db import close_session, init_session
 
@@ -717,17 +767,20 @@ def run_goalie_refresh() -> dict:
                 "reason": "no_upcoming_games",
                 "slate_date_et": str(slate_date),
             }
+        clear_nhl_event_odds_cache()
         odds_events = get_nhl_events_from_odds_api()
-        count = generate_goalie_predictions(
-            games, odds_events, odds_markets="player_total_saves"
-        )
+        goalie_count = generate_goalie_predictions(games, odds_events)
+        player_count = generate_player_predictions(games, odds_events)
+        team_count = generate_team_totals_predictions(games, odds_events)
         return {
             "task": "nhl_goalie_pregame_refresh",
             "status": "ok",
             "slate_date_et": str(slate_date),
             "games": len(games),
             "odds_events": len(odds_events),
-            "goalie_predictions": count,
+            "goalie_predictions": goalie_count,
+            "player_predictions": player_count,
+            "team_totals_predictions": team_count,
         }
     finally:
         close_session()

@@ -44,17 +44,16 @@ def test_build_features_pure_no_db():
     assert feats["is_defenseman"] == 0.0
 
 
-def test_predict_shots_heuristic_matches_multipliers():
+def test_predict_shots_heuristic_is_the_baseline_rate():
     feats = build_features_from_prediction(_sample_prediction())
-    expected = round(3.0 * 1.08 * 1.05 * 1.0 * 1.0 * 1.05, 2)
-    assert predict_shots_heuristic(feats) == expected
+    assert predict_shots_heuristic(feats) == 3.0
 
 
 def test_enrich_shadow_without_model():
     pred = _sample_prediction()
     with patch.object(psm, "predict_shots_ml_loaded", return_value=None):
         out = enrich_player_shots_prediction_for_write(pred, extra_features={"k": 1})
-    assert out["model_version"] == "heuristic-v1"
+    assert out["model_version"] == "heuristic-v2"
     assert "ml_shadow_sog" not in (out["features_used"] or {})
 
 
@@ -63,7 +62,7 @@ def test_enrich_shadow_stores_ml_when_disabled(monkeypatch):
     pred = _sample_prediction()
     with patch.object(psm, "predict_shots_ml_loaded", return_value=4.1):
         out = enrich_player_shots_prediction_for_write(pred)
-    assert out["model_version"] == "heuristic-v1"
+    assert out["model_version"] == "heuristic-v2"
     assert out["features_used"]["ml_shadow_sog"] == 4.1
     assert out["predicted_shots"] != 4.1
 

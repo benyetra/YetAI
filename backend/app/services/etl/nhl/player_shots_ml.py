@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 S3_BUCKET = "yetibets"
 S3_PREFIX = "nhl/ml_models"
 MODEL_KEY = "player_sog"
-HEURISTIC_VERSION = "heuristic-v1"
+HEURISTIC_VERSION = "heuristic-v2"
 
 _FEATURE_NAMES: tuple[str, ...] = (
     "baseline_shots",
@@ -84,18 +84,8 @@ def build_features_from_prediction(prediction: Mapping[str, Any]) -> dict[str, f
 
 
 def predict_shots_heuristic(features: Mapping[str, float]) -> float:
-    """Same multiplicative stack as ``player_shots_model.predict_player_shots``."""
-    baseline = _float_or(features.get("baseline_shots"), 0.0)
-    if baseline <= 0:
-        return 0.0
-    product = (
-        _float_or(features.get("ice_time_adjustment"), 1.0)
-        * _float_or(features.get("opponent_shots_adjustment"), 1.0)
-        * _float_or(features.get("blocks_adjustment"), 1.0)
-        * _float_or(features.get("position_adjustment"), 1.0)
-        * _float_or(features.get("home_ice_adjustment"), 1.0)
-    )
-    return round(baseline * product, 2)
+    """The model's projection: the player's shrunk shots-per-game rate."""
+    return round(max(_float_or(features.get("baseline_shots"), 0.0), 0.0), 2)
 
 
 def _feature_vector(

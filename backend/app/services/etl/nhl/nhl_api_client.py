@@ -15,17 +15,32 @@ class NHLAPIClient:
         self.base_url = "https://api-web.nhle.com/v1"
         self.stats_url = "https://api.nhle.com/stats/rest/en"
 
-    def _get(self, url):
-        """GET with a timeout and one retry on 429 (honours Retry-After)."""
+    def _get(self, url, retries=4):
+        """GET with a timeout; on 429 back off and retry (honours Retry-After).
+
+        The public API throttles bursts (~25 quick calls, e.g. one roster per team
+        on a full slate), so one short retry is not enough.
+        """
         response = requests.get(url, timeout=10)
-        if response.status_code == 429:
+        for attempt in range(retries):
+            if response.status_code != 429:
+                break
             try:
-                wait = float(response.headers.get("Retry-After", 1.5))
+                wait = float(response.headers.get("Retry-After", 0))
             except (TypeError, ValueError):
-                wait = 1.5
-            time.sleep(min(max(wait, 0.5), 5))
+                wait = 0
+            time.sleep(min(max(wait, 2.0 * 2**attempt), 30))
             response = requests.get(url, timeout=10)
         return response
+
+    def _stats_url(self, path, season=None, regular_season=False):
+        """stats/rest URL returning ALL rows (the default page is only 50)."""
+        url = f"{self.stats_url}/{path}?limit=-1"
+        if season:
+            url += f"&cayenneExp=seasonId={season}"
+            if regular_season:
+                url += "%20and%20gameTypeId=2"
+        return url
 
     def get_schedule(self, date=None):
         """
@@ -78,9 +93,7 @@ class NHLAPIClient:
         Get team statistics
         season: Season ID (e.g., 20252026)
         """
-        url = f"{self.stats_url}/team/summary"
-        if season:
-            url += f"?cayenneExp=seasonId={season}"
+        url = self._stats_url("team/summary", season, regular_season=True)
 
         response = self._get(url)
 
@@ -165,9 +178,7 @@ class NHLAPIClient:
         Get special teams statistics (PP%, PK%, etc.)
         season: Season ID (e.g., 20252026)
         """
-        url = f"{self.stats_url}/team/summary"
-        if season:
-            url += f"?cayenneExp=seasonId={season}"
+        url = self._stats_url("team/summary", season, regular_season=True)
 
         response = self._get(url)
 
@@ -182,9 +193,7 @@ class NHLAPIClient:
         Get realtime team statistics (blocked shots, hits, etc.)
         season: Season ID (e.g., 20252026)
         """
-        url = f"{self.stats_url}/team/realtime"
-        if season:
-            url += f"?cayenneExp=seasonId={season}"
+        url = self._stats_url("team/realtime", season, regular_season=True)
 
         response = self._get(url)
 
@@ -213,9 +222,7 @@ class NHLAPIClient:
         Get all skater statistics (goals, assists, shots, ice time, etc.)
         season: Season ID (e.g., 20252026)
         """
-        url = f"{self.stats_url}/skater/summary"
-        if season:
-            url += f"?cayenneExp=seasonId={season}%20and%20gameTypeId=2"
+        url = self._stats_url("skater/summary", season, regular_season=True)
 
         response = self._get(url)
 

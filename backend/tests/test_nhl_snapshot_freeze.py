@@ -57,9 +57,17 @@ def env(monkeypatch):
             team_name="Vancouver",
             position="C",
             shots_per_game=3.0,
+            games_played=20,
         )
     )
     session.commit()
+    monkeypatch.setattr(
+        dp,
+        "NHLAPIClient",
+        lambda: SimpleNamespace(
+            get_team_roster=lambda abbrev: {"forwards": [{"id": 7}]}
+        ),
+    )
     monkeypatch.setattr(dp, "db_session", session)
     state = {"now": BEFORE, "line": 2.5, "total": 5.5, "boom": False}
     monkeypatch.setattr(dp, "_now", lambda: state["now"])

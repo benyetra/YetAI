@@ -324,15 +324,16 @@ def test_client_retries_once_on_429_then_succeeds():
     assert get.call_count == 2 and get.call_args.kwargs["timeout"] == 10
 
 
-def test_client_429_twice_returns_none_no_crash():
+def test_client_backs_off_on_429_then_gives_up_without_crash():
     from app.services.etl.nhl import nhl_api_client as nc
 
     with (
         patch.object(nc.requests, "get", return_value=_resp(429)) as get,
-        patch.object(nc.time, "sleep"),
+        patch.object(nc.time, "sleep") as sleep,
     ):
         assert nc.NHLAPIClient().get_team_roster("VAN") is None
-    assert get.call_count == 2
+    assert get.call_count == 5  # first try + 4 backoffs
+    assert [c.args[0] for c in sleep.call_args_list] == [2.0, 4.0, 8.0, 16.0]
 
 
 def test_build_slate_warns_when_slot_dropped(caplog):

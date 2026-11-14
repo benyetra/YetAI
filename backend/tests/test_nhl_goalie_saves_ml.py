@@ -55,7 +55,7 @@ def test_enrich_shadow_without_model():
     pred = _sample_prediction()
     with patch.object(gsm, "predict_saves_ml_loaded", return_value=None):
         out = enrich_goalie_prediction_for_write(pred, {"starter_confirmation": {}})
-    assert out["model_version"] == "heuristic-v1"
+    assert out["model_version"] == "heuristic-v2"
     assert out["predicted_saves"] == predict_saves_heuristic(
         build_features_from_prediction(pred)
     )
@@ -67,7 +67,7 @@ def test_enrich_shadow_stores_ml_when_disabled(monkeypatch):
     pred = _sample_prediction()
     with patch.object(gsm, "predict_saves_ml_loaded", return_value=30.2):
         out = enrich_goalie_prediction_for_write(pred, {})
-    assert out["model_version"] == "heuristic-v1"
+    assert out["model_version"] == "heuristic-v2"
     assert out["features_used"]["ml_shadow_saves"] == 30.2
     assert out["predicted_saves"] != 30.2
 
