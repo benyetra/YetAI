@@ -53,6 +53,18 @@ BREAKEVEN = 0.5238
 CALIBRATION_START = date(2026, 10, 22)
 MIN_PICKS_FOR_RECORD = 30
 
+# Stamped on every totals row. The call record counts only rows of this
+# version, so a new formula is judged on its own calls (NBA-8).
+MODEL_VERSION = "totals-anchor-v1"
+# Published total = market + a + k * (model - market), fitted walk-forward
+# (market_anchor.fit_anchor). Chosen on 2025-26 in
+# scripts/nba_game_model_replay.py (MAE within 0.01 of the best variant, the
+# smallest bias), then checked on 2026-27 to 2026-11-13: bias -0.63, MAE 13.82
+# vs the line's 13.75 (n=183); k stayed below 0.05 (no information in the model).
+ANCHOR_WINDOW = 150
+ANCHOR_K_PRIOR = 200
+ANCHOR_A_PRIOR = 100
+
 
 class Final(NamedTuple):
     """A completed game (what pred_nba_spread_actuals rows reduce to)."""
@@ -218,20 +230,32 @@ def pick_record(rows: Iterable, min_edge: float = MIN_EDGE) -> Tuple[int, int]:
     return hits, picks
 
 
-def recommend(edge: Optional[float], record: Tuple[int, int]) -> Tuple[str, float, str]:
+def recommend(
+    edge: Optional[float],
+    record: Tuple[int, int],
+    min_edge: float = MIN_EDGE,
+    sides: Tuple[str, str] = ("OVER", "UNDER"),
+) -> Tuple[str, float, str]:
     """(recommendation, confidence, note) for a game's edge vs the line.
 
-    Confidence is the measured hit rate (shrunk toward 50%), not a function of
-    the edge. Once the record is long enough, a model that isn't beating -110
-    stops making calls until it does."""
+    record: (hits, picks) of this model version's would-be calls. A call is
+    shown only once that record has MIN_PICKS_FOR_RECORD graded picks and its
+    rate, shrunk toward 50%, is at or above -110 breakeven; until then the row
+    says NO_PLAY and why. Confidence is that shrunk rate, not a function of
+    the edge. ``sides``: names for a positive and a negative edge."""
     hits, picks = record
-    if edge is None or abs(edge) < MIN_EDGE:
+    if edge is None or abs(edge) < min_edge:
         return "NO_PLAY", 0.5, "edge below threshold"
-    side = "OVER" if edge > 0 else "UNDER"
+    side = sides[0] if edge > 0 else sides[1]
     if picks < MIN_PICKS_FOR_RECORD:
-        return side, 0.5, f"unproven: {picks} graded picks so far"
+        return (
+            "NO_PLAY",
+            0.5,
+            f"withheld: {picks} graded picks of this version,"
+            f" {MIN_PICKS_FOR_RECORD} needed",
+        )
     rate = (hits + 10) / (picks + 20)
     confidence = round(min(max(rate, 0.4), 0.65), 2)
     if rate < BREAKEVEN:
-        return "NO_PLAY", confidence, f"recent record {hits}/{picks} below breakeven"
-    return side, confidence, f"recent record {hits}/{picks}"
+        return "NO_PLAY", confidence, f"withheld: record {hits}/{picks} below breakeven"
+    return side, confidence, f"record {hits}/{picks}"
