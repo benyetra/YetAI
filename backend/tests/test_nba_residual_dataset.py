@@ -161,9 +161,11 @@ def engine():
             "minutes float, rebounds float, assists float, points float, offensive_rebounds float, "
             "defensive_rebounds float, home_game bool)",
             "CREATE TABLE pred_rebounds_projections (id integer primary key, date date, player_id int, "
-            "fanduel_line float, fanduel_price int, fanduel_over_under varchar)",
+            "player_name varchar, projected_rebounds float, fanduel_line float, fanduel_price int, "
+            "fanduel_over_under varchar)",
             "CREATE TABLE pred_assists_projections (id integer primary key, date date, player_id int, "
-            "fanduel_line float, fanduel_price int, fanduel_over_under varchar)",
+            "player_name varchar, projected_assists float, fanduel_line float, fanduel_price int, "
+            "fanduel_over_under varchar)",
             "CREATE TABLE pred_team_offense_stats (team_id int, team_name varchar)",
             "CREATE TABLE pred_nba_spread_actuals (game_date date, home_team_name varchar, "
             "away_team_name varchar, home_score int, away_score int)",
@@ -196,9 +198,12 @@ def engine():
         )
         c.execute(
             text(
-                "INSERT INTO pred_rebounds_projections VALUES "
-                "(1,'2026-01-05',7,0.0,NULL,NULL),(2,'2026-01-05',7,7.5,-120,'Over'),"
-                "(3,'2026-01-05',7,8.5,110,'Over'),(4,'2026-01-05',8,5.5,-105,'Under')"
+                "INSERT INTO pred_rebounds_projections (id, date, player_id, player_name, "
+                "projected_rebounds, fanduel_line, fanduel_price, fanduel_over_under) VALUES "
+                "(1,'2026-01-05',7,'Pat Seven',9.0,0.0,NULL,NULL),"
+                "(2,'2026-01-05',7,'Pat Seven',9.0,7.5,-120,'Over'),"
+                "(3,'2026-01-05',7,'Pat Seven',9.0,8.5,110,'o'),"
+                "(4,'2026-01-05',8,'Eli Eight',6.0,5.5,-105,'Under')"
             )
         )
     return eng
@@ -226,27 +231,39 @@ def test_snapshot_table_preferred_when_present_else_fallback(engine):
     with engine.begin() as c:
         c.execute(
             text(
-                f"CREATE TABLE {ds.ODDS_SNAPSHOT_TABLE} (game_date date, stat varchar, player_id int, "
-                "line float, over_price int, under_price int, snapshot_at timestamp, "
-                "game_start timestamp, is_closing bool)"
+                f"CREATE TABLE {ds.ODDS_SNAPSHOT_TABLE} (game_date date, market varchar, "
+                "player_key varchar, book varchar, line float, over_price int, "
+                "under_price int, first_seen_at timestamp, commence_time timestamp)"
             )
         )
-        c.execute(
-            text(
-                f"INSERT INTO {ds.ODDS_SNAPSHOT_TABLE} VALUES "
-                "('2026-01-05','rebounds',7,9.5,-110,-110,'2026-01-05 15:00','2026-01-05 20:00',0),"
-                "('2026-01-05','rebounds',7,10.5,-115,-105,'2026-01-05 19:30','2026-01-05 20:00',1),"
-                "('2026-01-05','rebounds',7,4.5,-110,-110,'2026-01-05 21:00','2026-01-05 20:00',0)"
+        rows = [  # (book, line, over, under, first_seen_at)
+            ("fanduel", 9.5, -110, -110, "15:00"),
+            ("fanduel", 10.5, -115, -105, "19:30"),  # FanDuel close
+            ("fanduel", 4.5, -110, -110, "21:00"),  # after the start: ignored
+            ("draftkings", 10.5, -105, -125, "19:00"),
+            ("betmgm", 10.5, -120, 100, "19:10"),
+            ("betmgm", 10.5, -150, 120, "18:00"),  # superseded observation
+            ("betmgm", 11.5, 100, -120, "19:20"),  # other line: not same line
+        ]
+        for book, line, o, u, t in rows:
+            c.execute(
+                text(
+                    f"INSERT INTO {ds.ODDS_SNAPSHOT_TABLE} VALUES ('2026-01-05',"
+                    f"'player_rebounds','pat seven','{book}',{line},{o},{u},"
+                    f"'2026-01-05 {t}','2026-01-05 20:00')"
+                )
             )
-        )
     with engine.connect() as c:
         ln = load_inputs(c, "2026-01-05", "2026-01-05")["lines"]
     ln = ln[ln.stat == "rebounds"].set_index("player_id")
-    assert (
-        ln.loc[7, "line_source"] == "snapshot" and ln.loc[7, "line"] == 9.5
-    )  # post-game dropped
-    assert ln.loc[7, "close_line"] == 10.5 and ln.loc[7, "under_price"] == -110
+    r = ln.loc[7]
+    assert r.line_source == "snapshot_close" and r.line == 10.5
+    assert (r.over_price, r.under_price, r.price_side) == (-115, -105, "both")
+    # betmgm's latest observation is at 11.5, so only draftkings is on the same line
+    assert (r.best_over_price, r.best_under_price) == (-105, -105)
+    assert r.proj == 9.0  # projection of the same row is kept
     assert ln.loc[8, "line_source"] == "fanduel_projection"  # no snapshot -> fallback
+    assert np.isnan(ln.loc[8, "best_over_price"])
 
 
 def test_serve_rows_match_build_rows_for_same_slot():

@@ -12,6 +12,8 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import inspect, text
 
+from app.services.etl.nba._api_sports import normalize_player_name
+
 LOOKBACK_DAYS = 120
 STAT_COLUMN = {"rebounds": "rebounds", "assists": "assists"}
 PROJECTION_TABLE = {
@@ -19,24 +21,17 @@ PROJECTION_TABLE = {
     "assists": "pred_assists_projections",
 }
 
-# Odds snapshot table (written by the odds-capture work). Schema not final: the
-# mapping and the query live here only. Values are the table's column names; the
-# optional ones (game_start, is_closing) may be absent from the table.
-ODDS_SNAPSHOT_TABLE = "nba_prop_odds_snapshots"
-ODDS_SNAPSHOT_COLUMNS = {
-    "game_date": "game_date",
-    "stat": "stat",
-    "player_id": "player_id",
-    "line": "line",
-    "over_price": "over_price",
-    "under_price": "under_price",
-    "snapshot_at": "snapshot_at",
-    "game_start": "game_start",  # optional: pre-game filter
-    "is_closing": "is_closing",  # optional: marks the closing line
-}
-_OPTIONAL_SNAPSHOT = ("game_start", "is_closing")
+# Odds snapshot table (edge-odds-capture): append-only observations, one row per
+# (event, market, player_key, book, line/price set); `first_seen_at` is when the
+# values first appeared, so the closing observation is the greatest first_seen_at
+# before commence_time.
+ODDS_SNAPSHOT_TABLE = "odds_line_snapshots"
+SNAPSHOT_MARKET = {"rebounds": "player_rebounds", "assists": "player_assists"}
+SNAPSHOT_BOOK = "fanduel"
+PROJECTION_COLUMN = {"rebounds": "projected_rebounds", "assists": "projected_assists"}
 
 FEATURE_FAMILIES = {
+    "proj_": ["proj_edge"],
     "line_": ["line_line", "line_minus_l10", "line_over_l10"],
     "hist_": ["hist_n_prior", "hist_resid_l10_shrunk", "hist_over_rate_shrunk"],
     "form_": [
@@ -66,6 +61,9 @@ LINE_COLS = [
     "price_side",
     "line_source",
     "close_line",
+    "proj",
+    "best_over_price",
+    "best_under_price",
 ]
 
 
@@ -91,64 +89,65 @@ def _read(conn, sql: str, **params) -> pd.DataFrame:
 
 
 def _snapshot_query(conn, start: str, end: str) -> pd.DataFrame | None:
-    """Rows of the odds snapshot table in canonical column names, or None if absent."""
-    insp = inspect(conn)
-    if not insp.has_table(ODDS_SNAPSHOT_TABLE):
+    """Pre-game observations of the two markets, or None if the table is absent."""
+    if not inspect(conn).has_table(ODDS_SNAPSHOT_TABLE):
         return None
-    have = {c["name"] for c in insp.get_columns(ODDS_SNAPSHOT_TABLE)}
-    cols = {
-        k: v
-        for k, v in ODDS_SNAPSHOT_COLUMNS.items()
-        if k not in _OPTIONAL_SNAPSHOT or v in have
-    }
-    select = ", ".join(f"{v} AS {k}" for k, v in cols.items())
-    dcol = ODDS_SNAPSHOT_COLUMNS["game_date"]
     return _read(
         conn,
-        f"SELECT {select} FROM {ODDS_SNAPSHOT_TABLE} WHERE {dcol} >= :s AND {dcol} <= :e",
+        "SELECT game_date, market, player_key, book, line, over_price, under_price, "
+        f"first_seen_at, commence_time FROM {ODDS_SNAPSHOT_TABLE} "
+        "WHERE game_date >= :s AND game_date <= :e AND market IN :m AND line > 0 "
+        "AND first_seen_at < commence_time".replace(
+            "IN :m", "IN (" + ",".join(f"'{m}'" for m in SNAPSHOT_MARKET.values()) + ")"
+        ),
         s=start,
         e=end,
     )
 
 
-def _snapshot_lines(snap: pd.DataFrame) -> pd.DataFrame:
-    """One row per (stat, player, date): last pre-game snapshot (+ closing line)."""
+def _closing(df: pd.DataFrame, key: list[str]) -> pd.DataFrame:
+    """Per key, the rows of the latest observation; a book listing two lines in one
+    observation keeps the one priced nearest even money."""
+    df = df.copy()
+    df["_skew"] = (df["over_price"] + df["under_price"]).abs() + (
+        df["over_price"] - df["under_price"]
+    ).abs()
+    df = df[df["first_seen_at"] == df.groupby(key)["first_seen_at"].transform("max")]
+    return df.sort_values("_skew").drop_duplicates(key).drop(columns="_skew")
+
+
+def _snapshot_lines(snap: pd.DataFrame, key_to_player: dict) -> pd.DataFrame:
+    """One row per (stat, player, date): FanDuel's closing observation, plus the best
+    over / under price across books closing at that same line."""
     if snap is None or snap.empty:
         return pd.DataFrame()
     s = snap.copy()
+    s["player_id"] = s["player_key"].map(key_to_player)
+    s["stat"] = s["market"].map({v: k for k, v in SNAPSHOT_MARKET.items()})
     s["date"] = pd.to_datetime(s["game_date"])
-    s["snapshot_at"] = pd.to_datetime(s["snapshot_at"])
-    s = s[(s["line"] > 0) & s["player_id"].notna()]
-    if "game_start" in s:
-        s = s[s["snapshot_at"] < pd.to_datetime(s["game_start"])]
-    closing = (
-        s["is_closing"].fillna(False).astype(bool)
-        if "is_closing" in s
-        else pd.Series(False, index=s.index)
-    )
+    s["first_seen_at"] = pd.to_datetime(s["first_seen_at"])
+    s = s[s["player_id"].notna() & s["stat"].notna()]
+    s["player_id"] = s["player_id"].astype(int)
     key = ["stat", "player_id", "date"]
-    close = (
-        s[closing]
-        .sort_values("snapshot_at")
-        .drop_duplicates(key, keep="last")
-        .set_index(key)["line"]
-        .rename("close_line")
+    books = _closing(s, [*key, "book"])
+    fd = books[books["book"] == SNAPSHOT_BOOK].drop_duplicates(key)
+    same = books.merge(fd[[*key, "line"]], on=[*key, "line"])
+    best = same.groupby(key).agg(
+        best_over_price=("over_price", "max"), best_under_price=("under_price", "max")
     )
-    open_ = s[~closing] if (~closing).any() else s
-    out = open_.sort_values("snapshot_at").drop_duplicates(key, keep="last")
-    out = out.join(close, on=key)
-    if "close_line" not in out:
-        out["close_line"] = np.nan
+    out = fd.join(best, on=key)
     out["price_side"] = "both"
-    out["line_source"] = "snapshot"
-    out["player_id"] = out["player_id"].astype(int)
-    return out[["stat", "player_id", "date", *LINE_COLS]]
+    out["line_source"] = "snapshot_close"
+    out["close_line"] = out["line"]
+    out["proj"] = np.nan
+    return out[[*key, *LINE_COLS]]
 
 
 def _projection_lines(conn, stat: str, start: str, end: str) -> pd.DataFrame:
     df = _read(
         conn,
-        f"SELECT id, player_id, date, fanduel_line, fanduel_price, fanduel_over_under "
+        f"SELECT id, player_id, player_name, date, fanduel_line, fanduel_price, "
+        f"fanduel_over_under, {PROJECTION_COLUMN[stat]} AS proj "
         f"FROM {PROJECTION_TABLE[stat]} WHERE date >= :s AND date <= :e AND fanduel_line > 0",
         s=start,
         e=end,
@@ -175,6 +174,10 @@ def _projection_lines(conn, stat: str, start: str, end: str) -> pd.DataFrame:
             "price_side": side,
             "line_source": "fanduel_projection",
             "close_line": np.nan,
+            "proj": df["proj"].astype(float),
+            "best_over_price": np.nan,
+            "best_under_price": np.nan,
+            "player_name": df["player_name"],
         }
     )
     return out
@@ -224,20 +227,26 @@ def load_inputs(conn, start, end) -> dict[str, pd.DataFrame]:
         game_lines[f"{side}_id"] = game_lines[f"{side}_team_id"].fillna(by_name)
     lines = []
     snap = _snapshot_query(conn, lo, e)
-    snap_lines = _snapshot_lines(snap)
-    for stat in STAT_COLUMN:
-        proj = _projection_lines(conn, stat, lo, e)
+    projs = {stat: _projection_lines(conn, stat, lo, e) for stat in STAT_COLUMN}
+    names = pd.concat(projs.values())[["player_id", "player_name"]].drop_duplicates()
+    key_to_player = {
+        normalize_player_name(n): int(p)
+        for p, n in zip(names.player_id, names.player_name)
+    }
+    snap_lines = _snapshot_lines(snap, key_to_player)
+    for stat, proj in projs.items():
         if len(snap_lines):
             sl = snap_lines[snap_lines["stat"] == stat]
-            proj = proj.merge(
-                sl[["player_id", "date"]],
+            sl = sl.merge(
+                proj[["player_id", "date", "proj"]],
                 on=["player_id", "date"],
                 how="left",
-                indicator=True,
-            )
-            proj = proj[proj["_merge"] == "left_only"].drop(columns="_merge")
-            proj = pd.concat([proj, sl], ignore_index=True)
-        lines.append(proj)
+                suffixes=("_x", ""),
+            ).drop(columns="proj_x")
+            have = sl[["player_id", "date"]].assign(_s=1)
+            proj = proj.merge(have, on=["player_id", "date"], how="left")
+            proj = pd.concat([proj[proj["_s"].isna()].drop(columns="_s"), sl])
+        lines.append(proj.drop(columns="player_name", errors="ignore"))
     return {
         "box": box,
         "lines": pd.concat(lines, ignore_index=True),
@@ -408,6 +417,8 @@ def _row_features(ctx: _Ctx, r, present: dict) -> dict:
     ss = _season_start_day(day)
     sv, sm = vals[dd >= ss], mins[dd >= ss]
     l10 = _mean(vals[-10:])
+    # proj_ (the stored projection of the same row, written pre-game)
+    f["proj_edge"] = float(getattr(r, "proj", np.nan)) - line
     # line_
     f["line_line"] = line
     f["line_minus_l10"] = line - l10
@@ -509,7 +520,11 @@ def _features(ctx: _Ctx, slots: pd.DataFrame, present: dict) -> pd.DataFrame:
 
 def _line_frame(inputs: dict, stat: str) -> pd.DataFrame:
     ln = inputs["lines"]
-    return ln[ln["stat"] == stat].copy()
+    ln = ln[ln["stat"] == stat].copy()
+    for c in LINE_COLS:
+        if c not in ln:
+            ln[c] = np.nan
+    return ln
 
 
 # ---------------------------------------------------------------- public
