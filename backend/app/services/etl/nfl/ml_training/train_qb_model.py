@@ -5,26 +5,33 @@ from __future__ import annotations
 import json
 import logging
 import pickle  # nosec B403 - artifacts written to private bucket only
-import tempfile
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import boto3
+import numpy as np
 import pandas as pd
 
 from app.services.etl.nfl.ml_training.build_qb_dataset import build
+from app.services.etl.nfl.qb_features import feature_names as qb_feature_names
 from app.services.etl.nfl.qb_ou_classifier import (
+    BRIER_METRIC,
+    COIN_FLIP_BRIER,
     MODEL_KEY as OU_MODEL_KEY,
     build_ou_feature_row,
+    ou_model_feature_order,
     train_qb_ou_classifier,
 )
 from app.services.etl.nfl.qb_passing_yards_ml import (
     MODEL_KEY,
     S3_BUCKET,
     S3_PREFIX,
+    _model_is_residual,
+    predict_yards_ml,
     train_qb_yards_model,
 )
+from app.services.ml import model_store
 
 logger = logging.getLogger(__name__)
 
@@ -35,44 +42,153 @@ S3_OU_OBJECT_KEY = f"{S3_PREFIX}/{OU_MODEL_KEY}.pkl"
 S3_OU_META_KEY = f"{S3_PREFIX}/{OU_MODEL_KEY}_metadata.json"
 
 
-def upload_artifact(
+def _live_metadata(meta_key: str) -> dict[str, Any]:
+    raw = model_store.get_bytes(boto3.client("s3"), S3_BUCKET, meta_key)
+    if raw is None:
+        raise ValueError(f"live metadata {meta_key} missing")
+    return json.loads(raw)
+
+
+def live_yards_scorer(X_hold: pd.DataFrame, y_hold: Any) -> Callable[[bytes], float]:
+    """``score_champion``: yards MAE of the live QB model on the candidate holdout
+    (raw ML prediction, as the promote eval measures it)."""
+
+    def score(live_body: bytes) -> float:
+        meta = _live_metadata(S3_META_KEY)
+        live = pickle.loads(live_body)  # nosec B301 - our own private bucket
+        order = meta.get("features") or qb_feature_names()
+        residual = _model_is_residual(meta)
+        mode = str(meta.get("baseline_mode") or "market")
+        pred = np.array(
+            [
+                predict_yards_ml(
+                    live,
+                    X_hold.iloc[i].to_dict(),
+                    feature_order=list(order),
+                    residual_target=residual,
+                    baseline_mode=mode,
+                )
+                for i in range(len(X_hold))
+            ]
+        )
+        return float(np.mean(np.abs(pred - np.asarray(y_hold, dtype=float))))
+
+    return score
+
+
+def live_ou_scorer(X_hold: pd.DataFrame, y_hold: Any) -> Callable[[bytes], float]:
+    """``score_champion``: Brier of the live O/U classifier on the candidate holdout."""
+
+    def score(live_body: bytes) -> float:
+        meta = _live_metadata(S3_OU_META_KEY)
+        live = pickle.loads(live_body)  # nosec B301 - our own private bucket
+        X = X_hold.reindex(columns=ou_model_feature_order(meta), fill_value=0.0)
+        proba = live.predict_proba(X)[:, 1]
+        return float(np.mean((proba - np.asarray(y_hold, dtype=float)) ** 2))
+
+    return score
+
+
+def _gated(
+    model_key: str,
     model: Any,
     metadata: dict[str, Any],
     *,
-    model_filename: str,
-    meta_filename: str,
-    s3_model_key: str,
-    s3_meta_key: str,
-    boto3_module: Any | None = None,
-) -> dict[str, str]:
-    boto3_mod = boto3_module if boto3_module is not None else boto3
-    s3 = boto3_mod.client("s3")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        model_path = Path(tmpdir) / model_filename
-        meta_path = Path(tmpdir) / meta_filename
-        with model_path.open("wb") as f:
-            pickle.dump(model, f)
-        meta_path.write_text(json.dumps(metadata, indent=2, default=str))
-        s3.upload_file(str(model_path), S3_BUCKET, s3_model_key)
-        s3.upload_file(str(meta_path), S3_BUCKET, s3_meta_key)
-        return {"model_key": s3_model_key, "metadata_key": s3_meta_key}
+    candidate_metric: float,
+    metric_name: str,
+    score_champion: Callable[[bytes], float],
+    version_prefix: str,
+) -> dict[str, Any]:
+    meta_name = f"{model_key.rsplit('.', 1)[0].rsplit('/', 1)[-1]}_metadata.json"
+    return model_store.gated_upload(
+        model_key,
+        pickle.dumps(model),
+        candidate_metric=candidate_metric,
+        metric_name=metric_name,
+        score_champion=score_champion,
+        extra_files={meta_name: json.dumps(metadata, indent=2, default=str).encode()},
+        manifest_extra={"model_key": model_key},
+        version_prefix=version_prefix,
+    )
 
 
 def upload_qb_model(
     model: Any,
     metadata: dict[str, Any],
     *,
-    boto3_module: Any | None = None,
-) -> dict[str, str]:
-    return upload_artifact(
+    candidate_mae: float,
+    X_hold: pd.DataFrame,
+    y_hold: Any,
+) -> dict[str, Any]:
+    """Upload only if not worse than the live model on this holdout (yards MAE)."""
+    return _gated(
+        S3_OBJECT_KEY,
         model,
         metadata,
-        model_filename=f"{MODEL_KEY}.pkl",
-        meta_filename=f"{MODEL_KEY}_metadata.json",
-        s3_model_key=S3_OBJECT_KEY,
-        s3_meta_key=S3_META_KEY,
-        boto3_module=boto3_module,
+        candidate_metric=float(candidate_mae),
+        metric_name="holdout_mae",
+        score_champion=live_yards_scorer(X_hold, y_hold),
+        version_prefix="gbm-qb",
     )
+
+
+def upload_ou_model(
+    model: Any,
+    metadata: dict[str, Any],
+    *,
+    X_hold: pd.DataFrame,
+    y_hold: Any,
+) -> dict[str, Any]:
+    """Upload the O/U classifier only if its holdout Brier beats a coin flip and is
+    not worse than the live classifier's on the same rows."""
+    brier = metadata.get(BRIER_METRIC)
+    if brier is None or not float(brier) < COIN_FLIP_BRIER:
+        logger.warning("O/U classifier not uploaded: holdout Brier %s >= %s", brier, COIN_FLIP_BRIER)
+        return {
+            "status": "rejected_coin_flip",
+            "metric_name": BRIER_METRIC,
+            "candidate_metric": brier,
+            "threshold": COIN_FLIP_BRIER,
+        }
+    return _gated(
+        S3_OU_OBJECT_KEY,
+        model,
+        metadata,
+        candidate_metric=float(brier),
+        metric_name=BRIER_METRIC,
+        score_champion=live_ou_scorer(X_hold, y_hold),
+        version_prefix="gbm-ou",
+    )
+
+
+def upload_local_artifacts(
+    models_dir: Path, holdout: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    """Gated upload of the QB yards model and O/U classifier a retrain script just
+    wrote to ``models_dir``. ``holdout`` is the sink the script filled:
+    ``yards`` (X, y), ``yards_mae``, ``ou`` (X, y). Result is keyed by model key."""
+    out: dict[str, dict[str, Any]] = {}
+
+    def _load(key: str) -> tuple[Any, dict[str, Any]] | None:
+        pkl = models_dir / f"{key}.pkl"
+        if not pkl.is_file():
+            return None
+        with pkl.open("rb") as f:
+            model = pickle.load(f)  # nosec B301 - written by this run
+        return model, json.loads((models_dir / f"{key}_metadata.json").read_text())
+
+    if "yards" in holdout and (got := _load(MODEL_KEY)):
+        out[MODEL_KEY] = upload_qb_model(
+            *got,
+            candidate_mae=holdout["yards_mae"],
+            X_hold=holdout["yards"][0],
+            y_hold=holdout["yards"][1],
+        )
+    if "ou" in holdout and (got := _load(OU_MODEL_KEY)):
+        out[OU_MODEL_KEY] = upload_ou_model(
+            *got, X_hold=holdout["ou"][0], y_hold=holdout["ou"][1]
+        )
+    return out
 
 
 def _build_ou_training_frame(
@@ -140,14 +256,23 @@ def run(
             "min_required": MIN_TRAINING_ROWS,
         }
 
-    model, metadata = train_qb_yards_model((features_df, target), residual_target=True)
+    holdout: dict[str, Any] = {}
+    model, metadata = train_qb_yards_model(
+        (features_df, target), residual_target=True, holdout_sink=holdout
+    )
     result: dict[str, Any] = {
         "status": "ok",
         "metadata": metadata,
         "rows": len(features_df),
     }
     if upload:
-        result["s3_keys"] = upload_qb_model(model, metadata)
+        result["s3_keys"] = upload_qb_model(
+            model,
+            metadata,
+            candidate_mae=metadata["holdout_mae"],
+            X_hold=holdout["X"],
+            y_hold=holdout["y"],
+        )
 
     if train_ou:
         try:
@@ -165,16 +290,17 @@ def run(
             finally:
                 session.close()
             if ou_ds is not None:
-                ou_model, ou_meta = train_qb_ou_classifier(ou_ds[0], ou_ds[1])
+                ou_holdout: dict[str, Any] = {}
+                ou_model, ou_meta = train_qb_ou_classifier(
+                    ou_ds[0], ou_ds[1], holdout_sink=ou_holdout
+                )
                 result["ou_classifier"] = {"status": "ok", "metadata": ou_meta}
                 if upload:
-                    result["ou_classifier"]["s3_keys"] = upload_artifact(
+                    result["ou_classifier"]["s3_keys"] = upload_ou_model(
                         ou_model,
                         ou_meta,
-                        model_filename=f"{OU_MODEL_KEY}.pkl",
-                        meta_filename=f"{OU_MODEL_KEY}_metadata.json",
-                        s3_model_key=S3_OU_OBJECT_KEY,
-                        s3_meta_key=S3_OU_META_KEY,
+                        X_hold=ou_holdout["X"],
+                        y_hold=ou_holdout["y"],
                     )
             else:
                 result["ou_classifier"] = {"status": "insufficient_ou_rows"}
