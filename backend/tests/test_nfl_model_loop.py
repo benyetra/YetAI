@@ -302,10 +302,21 @@ def test_atd_trainer_stamps_current_lambda_family(monkeypatch, tmp_path):
     monkeypatch.setattr(feats, "load_weekly_records_with_fallback", lambda *a, **k: ([{}], "x"))
     monkeypatch.setattr(pbp, "load_pbp_records_nflverse", lambda *_: [])
     monkeypatch.setattr(cal, "fit_position_gbm_bundle", lambda rows: {"rb": "stub"})
-    meta_path = tmp_path / "m.json"
-    rc = trainer.main(
-        ["--seasons", "2025", "--start-week", "2", "--end-week", "2",
-         "--model-path", str(tmp_path / "m.pkl"), "--meta-path", str(meta_path)]
-    )
-    assert rc == 0
-    assert json.loads(meta_path.read_text())["conversion_rate_family"] == "rz_gl_v2"
+
+    def run(passes):
+        monkeypatch.setattr(
+            bt, "run_walk_forward_backtest",
+            lambda **k: {"passes_gate": passes, "metrics": {}, "gate": {}},
+        )
+        meta_path = tmp_path / f"m{passes}.json"
+        rc = trainer.main(
+            ["--seasons", "2025", "--start-week", "2", "--end-week", "2",
+             "--model-path", str(tmp_path / "m.pkl"), "--meta-path", str(meta_path)]
+        )
+        return rc, json.loads(meta_path.read_text())
+
+    rc, meta = run(True)
+    assert rc == 0 and meta["conversion_rate_family"] == "rz_gl_v2"
+    rc, meta = run(False)
+    assert rc == 1
+    assert not cal.artifact_supports_current_lambda(meta)
