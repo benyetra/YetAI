@@ -6,6 +6,7 @@ import os
 import re
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
+from types import SimpleNamespace
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo
 import logging
@@ -228,6 +229,94 @@ def yetai_bet_subscriber_live_visible(
     return now <= visibility_end
 
 
+def publish_gates_enabled() -> bool:
+    """Default on; YETAI_PUBLISH_GATES_ENABLED=false/0/no/off is the kill switch."""
+    return os.getenv("YETAI_PUBLISH_GATES_ENABLED", "true").strip().lower() not in (
+        "false",
+        "0",
+        "no",
+        "off",
+    )
+
+
+def pick_started(commence_time: Optional[datetime], *, now: Optional[datetime] = None):
+    """True when tipoff is within START_BUFFER (or past); no commence_time -> False."""
+    from app.services.auto_pick.selector import START_BUFFER
+
+    if commence_time is None:
+        return False
+    tipoff = _naive_utc(
+        commence_time.astimezone(timezone.utc)
+        if commence_time.tzinfo
+        else commence_time
+    )
+    return tipoff <= (now or datetime.utcnow()) + START_BUFFER
+
+
+def _single_pick_ungradeable_reason(bet_like) -> Optional[str]:
+    """Mirror yetai_grading.grade_pick's pre-ESPN checks, same order, same inputs."""
+    from app.services import yetai_grading as g
+
+    sel = getattr(bet_like, "selection", None)
+    if not g._meta(bet_like):
+        bad = g.unsupported_market(sel)
+        if bad:
+            return f"Unsupported market: {bad}"
+    spec = g.grading_spec(bet_like)
+    if not spec:
+        if not g.normalize_league(getattr(bet_like, "sport", None)):
+            return f"Grader cannot settle {getattr(bet_like, 'sport', None)}"
+        bt = getattr(getattr(bet_like, "bet_type", None), "value", None) or getattr(
+            bet_like, "bet_type", ""
+        )
+        return f"Grader cannot parse pick '{sel}' for a {bt} bet"
+    if not g.can_grade(spec["league"], spec["market"], spec.get("stat")):
+        return f"Grader cannot settle {spec['league']} {spec['market']}"
+    return None
+
+
+def yetai_pick_ungradeable_reason(bet_like) -> Optional[str]:
+    """Why the grader would void this pick as ungradeable (None when it can grade it)."""
+    legs = getattr(bet_like, "parlay_legs", None)
+    if not legs:
+        return _single_pick_ungradeable_reason(bet_like)
+    from app.services.yetai_parlay_verification import _leg_as_bet
+
+    created = getattr(bet_like, "created_at", None)
+    for n, leg in enumerate(legs, 1):
+        if not isinstance(leg, dict):
+            continue
+        reason = _single_pick_ungradeable_reason(
+            _leg_as_bet(leg, created.date() if created else None)
+        )
+        if reason:
+            return f"Leg {n}: {reason}"
+    return None
+
+
+def publish_gate_reason(bet_like, *, now: Optional[datetime] = None) -> Optional[str]:
+    """Why this pick must not be published now (started game or ungradeable); None = ok."""
+    if not publish_gates_enabled():
+        return None
+    legs = getattr(bet_like, "parlay_legs", None)
+    if legs:
+        for n, leg in enumerate(legs, 1):
+            ct = leg.get("commence_time") if isinstance(leg, dict) else None
+            if ct:
+                from app.services.yetai_parlay_verification import _parse_time
+
+                if pick_started(_parse_time(ct), now=now):
+                    game = leg.get("game") or leg.get("pick")
+                    return (
+                        "Game has already started (or starts within 20 minutes): "
+                        f"Leg {n} {game}"
+                    )
+    elif pick_started(getattr(bet_like, "commence_time", None), now=now):
+        game = getattr(bet_like, "title", None) or getattr(bet_like, "selection", "")
+        return f"Game has already started (or starts within 20 minutes): {game}"
+    return yetai_pick_ungradeable_reason(bet_like)
+
+
 def yetai_pick_gradeable(bet: YetAIBet, *, now: Optional[datetime] = None) -> bool:
     """True when the game window has likely finished and auto-grading is safe."""
     now = now or datetime.utcnow()
@@ -382,6 +471,8 @@ class YetAIBetsServiceDB:
                     "player props": "prop",
                     "player prop": "prop",
                     "puck line": "spread",
+                    "run line": "spread",
+                    "runline": "spread",
                 }
 
                 # Normalize bet type to enum value
@@ -421,6 +512,22 @@ class YetAIBetsServiceDB:
                 logger.info(
                     f"Using provided game data: game_id={game_id}, {away_team} @ {home_team}"
                 )
+
+                refusal = publish_gate_reason(
+                    SimpleNamespace(
+                        sport=bet_request.sport,
+                        bet_type=normalized_bet_type,
+                        selection=bet_request.pick,
+                        title=bet_request.game,
+                        home_team=home_team,
+                        away_team=away_team,
+                        commence_time=game_commence_time,
+                        created_at=datetime.utcnow(),
+                        prediction_factors={},
+                    )
+                )
+                if refusal:
+                    return {"success": False, "error": refusal}
 
                 game_id = _ensure_game_row_for_yetai_bet(
                     db,
@@ -512,6 +619,17 @@ class YetAIBetsServiceDB:
                         odds_value = float(odds_value)
                 else:
                     odds_value = float(odds_value)
+
+                refusal = publish_gate_reason(
+                    SimpleNamespace(
+                        parlay_legs=[
+                            leg.model_dump(mode="json") for leg in parlay_request.legs
+                        ],
+                        created_at=datetime.utcnow(),
+                    )
+                )
+                if refusal:
+                    return {"success": False, "error": refusal}
 
                 parlay_bet = YetAIBet(
                     id=parlay_id,
@@ -1065,13 +1183,12 @@ class YetAIBetsServiceDB:
         stale_cutoff = now - timedelta(hours=24)
         rows = db.query(YetAIBet).filter(YetAIBet.status == "pending_approval").all()
         expired = []
-        grace = timedelta(hours=4)
         for row in rows:
             if row.commence_time is not None:
                 tipoff = row.commence_time
                 if tipoff.tzinfo is not None:
                     tipoff = tipoff.replace(tzinfo=None)
-                if tipoff + grace <= now:
+                if tipoff <= now:
                     expired.append(row)
             elif (
                 row.commence_time is None

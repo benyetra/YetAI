@@ -59,6 +59,9 @@ def _bet(
     bet.created_at = datetime(2026, 5, 22, 12, 0, 0)
     bet.prediction_factors = {}
     bet.parlay_legs = None
+    bet.commence_time = None  # publish gates: gradeable, not started
+    bet.home_team = "Los Angeles Lakers"
+    bet.away_team = "Boston Celtics"
     return bet
 
 

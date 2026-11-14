@@ -15,6 +15,9 @@ from app.models.database_models import AutoPickRun, YetAIBet, SubscriptionTier
 from app.services.auto_pick.diagnostics import get_run_diagnostics
 from app.services.yetai_bets_service_db import (
     clamp_yetai_result,
+    pick_started,
+    publish_gate_reason,
+    publish_gates_enabled,
     set_yetai_auto_grade_hold,
 )
 
@@ -129,6 +132,12 @@ async def approve(
             status_code=400,
             detail=f"Cannot approve a bet in status '{bet.status}'",
         )
+    if publish_gates_enabled() and pick_started(bet.commence_time):
+        raise HTTPException(
+            status_code=400, detail="Game has started; reject this pick instead"
+        )
+    if reason := publish_gate_reason(bet):
+        raise HTTPException(status_code=400, detail=reason)
     bet.status = ACTIVE_STATUS
     db.commit()
     return _serialize(bet)
@@ -246,7 +255,12 @@ async def approve_all(
 ):
     """Bulk-approve every pending_approval pick in one shot."""
     rows = db.query(YetAIBet).filter(YetAIBet.status == PENDING_STATUS).all()
+    approved, skipped = [], []
     for bet in rows:
+        if reason := publish_gate_reason(bet):
+            skipped.append({"id": bet.id, "reason": reason})
+            continue
         bet.status = ACTIVE_STATUS
+        approved.append(bet.id)
     db.commit()
-    return {"approved": [b.id for b in rows]}
+    return {"approved": approved, "skipped": skipped}
