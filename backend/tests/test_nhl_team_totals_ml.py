@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import numpy as np
@@ -69,9 +70,10 @@ def test_enrich_promotes_ml_when_enabled(monkeypatch):
     monkeypatch.setenv("NHL_TOTALS_ML_ENABLED", "1")
     pred = _sample_prediction()
     with patch.object(ttm, "predict_total_ml_loaded", return_value=6.6):
-        with patch.object(ttm, "_METADATA", {"model_version": "gbm-totals-20260525"}):
-            with patch.object(ttm, "_MODEL", object()):
-                out = enrich_team_totals_prediction_for_write(pred)
+        with patch.object(
+            ttm, "_PAIR", SimpleNamespace(get=lambda: (object(), {"model_version": "gbm-totals-20260525"}))
+        ):
+            out = enrich_team_totals_prediction_for_write(pred)
     assert out["predicted_total_goals"] == 6.6
     assert out["model_version"] == "gbm-totals-20260525"
 
