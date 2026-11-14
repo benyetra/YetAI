@@ -18,6 +18,7 @@ from app.models.predictions_models import (
     TeamOffenseStats,
 )
 from app.services.etl import _spread_model as _sm
+from app.services.etl._game_start import not_started
 from app.services.etl._spread_model import (
     NBA_CONFIG,
     load_elos_from_actuals,
@@ -59,7 +60,7 @@ def run() -> dict:
             .all()
         )
 
-        for g in games:
+        for g in not_started(games, lambda g: (g.game_time, g.game_date)):
             home_elo = elos.get(g.home_team_name, INITIAL_ELO)
             away_elo = elos.get(g.away_team_name, INITIAL_ELO)
             base_margin = _sm.expected_margin(home_elo, away_elo, cfg=NBA_CONFIG)

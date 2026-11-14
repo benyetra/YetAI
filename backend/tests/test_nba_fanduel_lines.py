@@ -148,6 +148,9 @@ def _run_generator_with_fd_mock(module, *, projected: float, market_key: str):
 
     with ExitStack() as stack:
         stack.enter_context(patch.object(module, "SessionLocal", return_value=mock_db))
+        stack.enter_context(
+            patch.object(module, "active_players_not_started", return_value=[player])
+        )
         ne = stack.enter_context(patch.object(module, "now_eastern"))
         stack.enter_context(
             patch.object(module, "_is_injured", return_value=(False, None))
@@ -220,6 +223,7 @@ def test_generators_coverage_pct_partial_lines():
 
     with (
         patch.object(pts_mod, "SessionLocal", return_value=mock_db),
+        patch.object(pts_mod, "active_players_not_started", return_value=players),
         patch.object(pts_mod, "now_eastern") as ne,
         patch.object(pts_mod, "_is_injured", return_value=(False, None)),
         patch.object(pts_mod, "build_points_features", return_value={"x": 1}),

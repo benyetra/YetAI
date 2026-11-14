@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
 from app.services.etl.nba import spread_projector as nsp
@@ -13,6 +13,7 @@ def test_run_writes_projection(monkeypatch):
     game.home_team_name = "Boston Celtics"
     game.away_team_name = "New York Knicks"
     game.spread_home = -4.5
+    game.game_time = datetime(2099, 1, 1)  # not started
 
     mock_db.query.return_value.order_by.return_value.all.return_value = []
     mock_db.query.return_value.all.return_value = []
@@ -46,6 +47,7 @@ def test_run_uses_ml_when_model_available(monkeypatch):
     game.home_team_name = "Boston Celtics"
     game.away_team_name = "New York Knicks"
     game.spread_home = -4.5
+    game.game_time = datetime(2099, 1, 1)  # not started
     game.total = 220.5
 
     mock_db.query.return_value.order_by.return_value.all.return_value = []

@@ -306,9 +306,9 @@ def test_pra_mean_is_the_sum_of_its_parts():
 # ---- a player ruled out after the overnight run ---------------------------------
 
 
-def test_drop_projection_for_today_deletes_only_that_players_row(db):
+def test_mark_projection_out_flags_only_that_players_row_and_keeps_it(db):
     from app.models.predictions_models import PointsProjections
-    from app.services.etl.nba._stale_rows import drop_projection_for_today
+    from app.services.etl.nba._stale_rows import mark_projection_out
 
     PointsProjections.__table__.create(db.get_bind())
     for pid, day in ((7, TODAY), (8, TODAY), (7, TODAY - timedelta(days=1))):
@@ -319,14 +319,22 @@ def test_drop_projection_for_today_deletes_only_that_players_row(db):
                 player_name=f"p{pid}",
                 opponent_team_name="Boston Celtics",
                 projected_points=20.0,
+                fanduel_line=19.5,
+                fanduel_over_under="o",
             )
         )
     db.commit()
 
-    assert drop_projection_for_today(db, PointsProjections, TODAY, 7) is True
-    assert drop_projection_for_today(db, PointsProjections, TODAY, 7) is False
-    left = {(r.player_id, r.date) for r in db.query(PointsProjections).all()}
-    assert left == {(8, TODAY), (7, TODAY - timedelta(days=1))}
+    assert mark_projection_out(db, PointsProjections, TODAY, 7) is True
+    sides = {
+        (r.player_id, r.date): (r.fanduel_line, r.fanduel_over_under)
+        for r in db.query(PointsProjections).all()
+    }
+    assert sides == {
+        (7, TODAY): (19.5, "OUT"),
+        (8, TODAY): (19.5, "o"),
+        (7, TODAY - timedelta(days=1)): (19.5, "o"),
+    }
 
 
 @pytest.mark.parametrize(
@@ -341,7 +349,7 @@ def test_drop_projection_for_today_deletes_only_that_players_row(db):
         ("generate_free_throws_made_predictions", "FreeThrowPredictions"),
     ],
 )
-def test_generators_remove_the_morning_row_of_a_player_now_out(module_name, model_name):
+def test_generators_flag_the_morning_row_of_a_player_now_out(module_name, model_name):
     import importlib
     from types import SimpleNamespace
     from unittest.mock import MagicMock
@@ -358,9 +366,10 @@ def test_generators_remove_the_morning_row_of_a_player_now_out(module_name, mode
     mock_db.query.return_value.filter.return_value.all.return_value = [player]
     patches = [
         patch.object(module, "SessionLocal", return_value=mock_db),
+        patch.object(module, "active_players_not_started", return_value=[player]),
         patch.object(module, "now_eastern", return_value=datetime(2026, 11, 20, 17)),
         patch.object(module, "_is_injured", return_value=(True, "out")),
-        patch.object(module, "drop_projection_for_today"),
+        patch.object(module, "mark_projection_out"),
     ]
     if hasattr(module, "get_metadata"):
         patches.append(patch.object(module, "get_metadata", return_value={}))
@@ -373,7 +382,7 @@ def test_generators_remove_the_morning_row_of_a_player_now_out(module_name, mode
         result = module.run()
 
     assert result["skipped_injured"] == 1
-    drop = mocks[3]
+    drop = mocks[4]
     drop.assert_called_once()
     args = drop.call_args[0]
     assert args[1].__name__ == model_name
