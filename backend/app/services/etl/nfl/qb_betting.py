@@ -331,6 +331,7 @@ def _run_qb_betting_core():
                         qb_ml_enabled,
                         recenter_qb_interval,
                         reinject_pass_yds_line,
+                        resolve_qb_model_version,
                         resolve_qb_model_yards,
                     )
 
@@ -363,6 +364,9 @@ def _run_qb_betting_core():
                     qb.prediction_method = production_method_for_published(
                         pub_method,
                         existing_method=qb.prediction_method,
+                    )
+                    qb.model_version = resolve_qb_model_version(
+                        pub_method=pub_method, ml_yards=ml_yards
                     )
                     model_yards = resolve_qb_model_yards(
                         tier_yards=float(tier_raw),

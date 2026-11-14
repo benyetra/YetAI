@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import pickle  # nosec B403 - artifacts from our own private bucket
-import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +20,8 @@ from app.services.etl.nfl.qb_features import (
     feature_names as qb_feature_names,
     resolve_yards_baseline,
 )
+
+from app.services.ml.model_store import S3Object
 
 BaselineMode = str  # "market" | "tier"
 
@@ -79,9 +80,12 @@ S3_PREFIX = "nfl/ml_models"
 MODEL_KEY = "qb_passing_yards"
 TIER_VERSION = "tier-v3"
 
+# _MODEL/_METADATA/_LOAD_FAILED hold local-file artifacts only (loaded once; the
+# files do not change). S3 artifacts live in _OBJECTS and refresh on a timer.
 _MODEL: object | None = None
 _METADATA: dict[str, Any] | None = None
 _LOAD_FAILED = False
+_OBJECTS: tuple[S3Object, S3Object] | None = None
 _LOCK = threading.Lock()
 
 _TRUTHY = frozenset({"1", "true", "yes"})
@@ -366,7 +370,7 @@ def production_method_for_published(
     if pub_method == "gbm":
         if existing_method in {"gbm_qb_residual", "gbm_qb_yards"}:
             return str(existing_method)
-        return "gbm_qb_residual" if _model_is_residual(_METADATA) else "gbm_qb_yards"
+        return "gbm_qb_residual" if _model_is_residual(_metadata()) else "gbm_qb_yards"
     return existing_method or "tier_table"
 
 
@@ -870,52 +874,79 @@ def _local_model_paths() -> tuple[Path, Path] | None:
     return None
 
 
-def _download_artifact(s3_key: str, local_path: Path) -> None:
-    import boto3
-
-    s3 = boto3.client("s3")
-    s3.download_file(S3_BUCKET, s3_key, str(local_path))
+def _unpickle(body: bytes) -> object:
+    return pickle.loads(body)  # nosec B301 - our own private bucket
 
 
-def _ensure_loaded() -> bool:
+def _s3_objects() -> tuple[S3Object, S3Object]:
+    global _OBJECTS
+    with _LOCK:
+        if _OBJECTS is None:
+            _OBJECTS = (
+                S3Object(f"{S3_PREFIX}/{MODEL_KEY}.pkl", _unpickle, bucket=S3_BUCKET),
+                S3Object(
+                    f"{S3_PREFIX}/{MODEL_KEY}_metadata.json",
+                    json.loads,
+                    bucket=S3_BUCKET,
+                ),
+            )
+        return _OBJECTS
+
+
+def _load_local(model_path: Path, meta_path: Path) -> None:
     global _MODEL, _METADATA, _LOAD_FAILED
-    if _MODEL is not None and _METADATA is not None:
-        return True
-    if _LOAD_FAILED:
-        return False
     with _LOCK:
         if _MODEL is not None and _METADATA is not None:
-            return True
-        if _LOAD_FAILED:
-            return False
+            return
         try:
-            local = _local_model_paths()
-            if local is not None:
-                model_path, meta_path = local
-                if not model_path.is_file() or not meta_path.is_file():
-                    raise FileNotFoundError(
-                        f"NFL QB model missing under {model_path.parent}"
-                    )
-                with model_path.open("rb") as f:
-                    _MODEL = pickle.load(f)  # nosec B301
-                _METADATA = json.loads(meta_path.read_text())
-            else:
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    tmp = Path(tmpdir)
-                    model_local = tmp / f"{MODEL_KEY}.pkl"
-                    meta_local = tmp / f"{MODEL_KEY}_metadata.json"
-                    _download_artifact(f"{S3_PREFIX}/{MODEL_KEY}.pkl", model_local)
-                    _download_artifact(
-                        f"{S3_PREFIX}/{MODEL_KEY}_metadata.json", meta_local
-                    )
-                    with model_local.open("rb") as f:
-                        _MODEL = pickle.load(f)  # nosec B301
-                    _METADATA = json.loads(meta_local.read_text())
-            return True
+            if not model_path.is_file() or not meta_path.is_file():
+                raise FileNotFoundError(
+                    f"NFL QB model missing under {model_path.parent}"
+                )
+            with model_path.open("rb") as f:
+                _MODEL = pickle.load(f)  # nosec B301
+            _METADATA = json.loads(meta_path.read_text())
         except Exception as exc:
             logger.info("NFL QB yards ML model unavailable: %s", exc)
             _LOAD_FAILED = True
-            return False
+
+
+def _current() -> tuple[object, dict[str, Any]] | None:
+    """(model, metadata) now in force, or None. S3 copies refresh on the shared
+    ``ML_MODEL_REFRESH_SECONDS`` interval and keep the last good pair on failure."""
+    if _MODEL is not None and _METADATA is not None:
+        return _MODEL, _METADATA
+    local = _local_model_paths()
+    if local is not None:
+        if not _LOAD_FAILED:
+            _load_local(*local)
+        return (_MODEL, _METADATA) if _MODEL is not None and _METADATA else None
+    model_obj, meta_obj = _s3_objects()
+    model, meta = model_obj.get(), meta_obj.get()
+    if model is None or meta is None:
+        return None
+    return model, meta
+
+
+def _ensure_loaded() -> bool:
+    return _current() is not None
+
+
+def _metadata() -> dict[str, Any] | None:
+    cur = _current()
+    return cur[1] if cur else None
+
+
+def _ml_version_token() -> str | None:
+    """Short unique tag of the loaded ML model: S3 manifest version, else metadata."""
+    if _MODEL is None and _OBJECTS is not None and _OBJECTS[0].version:
+        return _OBJECTS[0].version
+    cur = _current()
+    if cur is None:
+        return None
+    from app.services.ml_model_version import model_version_from_metadata
+
+    return model_version_from_metadata(cur[1], prefix="gbm-qb", fallback="ml")
 
 
 def model_available() -> bool:
@@ -923,16 +954,17 @@ def model_available() -> bool:
 
 
 def predict_yards_ml_loaded(features: Mapping[str, float]) -> float | None:
-    if not _ensure_loaded() or _MODEL is None:
+    cur = _current()
+    if cur is None:
         return None
-    meta = _METADATA or {}
+    model, meta = cur
     order = meta.get("features") or feature_names()
     residual = _model_is_residual(meta)
     baseline_mode = str(meta.get("baseline_mode") or "market")
     if baseline_mode not in {"market", "tier"}:
         baseline_mode = "market"
     ml = predict_yards_ml(
-        _MODEL,
+        model,
         features,
         feature_order=list(order),
         residual_target=residual,
@@ -948,15 +980,26 @@ def predict_yards_ml_loaded(features: Mapping[str, float]) -> float | None:
     return blend_ml_with_line_from_features(ml, features, w=w)
 
 
-def resolve_qb_model_version(*, ml_loaded: bool) -> str:
-    from app.services.ml_model_version import model_version_from_metadata
+def resolve_qb_model_version(*, pub_method: str, ml_yards: float | None) -> str:
+    """Version stamp for a published QB row.
 
-    if qb_ml_enabled() and ml_loaded and _METADATA:
-        prefix = "gbm-qb-residual" if _model_is_residual(_METADATA) else "gbm-qb-yards"
-        return model_version_from_metadata(
-            _METADATA, prefix=prefix, fallback=TIER_VERSION
-        )
-    return TIER_VERSION
+    ``tier-v3`` only when the ML term did not move the number; ``gbm`` rows carry
+    the model's own version; a shadow-ML soft anchor is ``tier-v3-<ml version>``
+    (the ML version's last token, so it stays unique inside the 20-char column).
+    """
+    from app.services.ml_model_version import (
+        model_version_from_metadata,
+        normalize_model_version,
+    )
+
+    if ml_yards is None or pub_method not in {"gbm", "soft_anchor"}:
+        return TIER_VERSION
+    meta = _metadata()
+    if pub_method == "gbm" and meta:
+        prefix = "gbm-qb-residual" if _model_is_residual(meta) else "gbm-qb-yards"
+        return model_version_from_metadata(meta, prefix=prefix, fallback=TIER_VERSION)
+    token = (_ml_version_token() or "ml").rsplit("-", 1)[-1]
+    return normalize_model_version(f"{TIER_VERSION}-{token}")
 
 
 def shadow_ml_yards_from_feature_importance(feature_importance: Any) -> float | None:
@@ -1010,9 +1053,10 @@ def enrich_qb_prediction_for_write(
         "prediction_method": prediction.get("prediction_method"),
         "features": {k: feats.get(k) for k in FEATURE_NAMES},
     }
-    if _METADATA and _METADATA.get("line_blend_w") is not None:
+    meta = _metadata() if ml_loaded else None
+    if meta and meta.get("line_blend_w") is not None:
         try:
-            feature_importance["line_blend_w"] = float(_METADATA["line_blend_w"])
+            feature_importance["line_blend_w"] = float(meta["line_blend_w"])
         except (TypeError, ValueError):
             pass
     if ml_yards is not None and not qb_ml_enabled():
@@ -1036,7 +1080,7 @@ def enrich_qb_prediction_for_write(
         ml_enabled=qb_ml_enabled(),
         anchor_alpha=alpha,
     )
-    version = resolve_qb_model_version(ml_loaded=ml_loaded)
+    version = resolve_qb_model_version(pub_method=pub_method, ml_yards=ml_yards)
     method = production_method_for_published(
         pub_method,
         existing_method=prediction.get("prediction_method") or "tier_table",
