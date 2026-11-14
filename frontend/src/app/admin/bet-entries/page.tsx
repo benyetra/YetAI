@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getApiUrl } from '@/lib/api-config';
+import { getApiUrl, parseApiErrorResponse } from '@/lib/api-config';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import AppLoading from '@/components/yetai/AppLoading';
@@ -23,6 +23,7 @@ import { sportsAPI } from '@/lib/api';
 import AdminOwensBets from '@/components/yetai/AdminOwensBets';
 import AdminYetaiBetsManage from '@/components/yetai/AdminYetaiBetsManage';
 import Link from 'next/link';
+import { SPORT_OPTIONS, BET_TYPE_OPTIONS } from './options';
 import { ArrowLeft } from 'lucide-react';
 
 /** Display label → Odds API sport key for game/prop fetches. */
@@ -35,7 +36,6 @@ const ADMIN_BET_SPORT_KEY_MAP: Record<string, string> = {
   'NCAA Football': 'americanfootball_ncaaf',
   'NCAA Basketball': 'basketball_ncaab',
   Soccer: 'soccer_epl',
-  Tennis: 'tennis_atp',
 };
 
 export default function AdminBetEntriesPage() {
@@ -400,8 +400,7 @@ export default function AdminBetEntriesPage() {
         setParlayReasoning('');
         setParlayConfidence(80);
       } else {
-        const error = await response.json();
-        setMessage({ type: 'error', text: error.detail || 'Failed to create parlay' });
+        setMessage({ type: 'error', text: await parseApiErrorResponse(response) });
       }
     } catch (error) {
       console.error('Error creating parlay:', error);
@@ -451,8 +450,7 @@ export default function AdminBetEntriesPage() {
         setSelectedGame(null);
         setAvailableGames([]);
       } else {
-        const error = await response.json();
-        setMessage({ type: 'error', text: error.detail || 'Failed to create bet' });
+        setMessage({ type: 'error', text: await parseApiErrorResponse(response) });
       }
     } catch (error) {
       console.error('Error creating bet:', error);
@@ -790,15 +788,7 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
                 className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Select Sport</option>
-                <option value="NFL">NFL</option>
-                <option value="NBA">NBA</option>
-                <option value="WNBA">WNBA</option>
-                <option value="MLB">MLB</option>
-                <option value="NHL">NHL</option>
-                <option value="NCAA Football">NCAA Football</option>
-                <option value="NCAA Basketball">NCAA Basketball</option>
-                <option value="Soccer">Soccer</option>
-                <option value="Tennis">Tennis</option>
+                {SPORT_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
 
@@ -840,14 +830,7 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
                 className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
               >
                 <option value="">{selectedGame ? "Select Bet Type" : "Select a game first"}</option>
-                <option value="Spread">Spread</option>
-                <option value="Moneyline">Moneyline</option>
-                <option value="Total (Over/Under)">Total (Over/Under)</option>
-                <option value="Puck Line">Puck Line</option>
-                <option value="Run Line">Run Line</option>
-                <option value="1st Half">1st Half</option>
-                <option value="1st Quarter">1st Quarter</option>
-                <option value="Player Props">Player Props</option>
+                {BET_TYPE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
 
@@ -935,7 +918,7 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
                   type="text"
                   value={formData.pick}
                   onChange={(e) => setFormData({...formData, pick: e.target.value})}
-                  placeholder={formData.bet_type ? "Select a bet type first" : "e.g., Chiefs -3.5, Over 228.5"}
+                  placeholder={formData.bet_type ? "Select a bet type first" : "Gradeable formats: Team -4.5 · Over 220.5 · Player Over 24.5 Points"}
                   disabled={!formData.bet_type}
                   className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
                 />
