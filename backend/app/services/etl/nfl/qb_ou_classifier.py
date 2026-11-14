@@ -6,7 +6,6 @@ import json
 import logging
 import os
 import pickle  # nosec B403 - artifacts from our private bucket / local models
-import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +15,8 @@ import numpy as np
 import pandas as pd
 
 from app.services.etl.nfl.qb_features import FEATURE_NAMES, feature_names
+from app.services.etl.nfl.qb_passing_yards_ml import qb_ml_enabled
+from app.services.ml.model_store import S3Object
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +25,14 @@ S3_PREFIX = "nfl/ml_models"
 MODEL_KEY = "qb_pass_yds_ou"
 _OU_FEATURE = "ou_line"
 
-_MODEL: object | None = None
-_METADATA: dict[str, Any] | None = None
-_LOAD_FAILED = False
+# A classifier no better than a coin flip must not drive O/U calls.
+COIN_FLIP_BRIER = 0.25
+BRIER_METRIC = "holdout_brier"
+
+# Local-file artifacts load once (the files do not change); S3 ones refresh.
+_LOCAL: tuple[object, dict[str, Any]] | None = None
+_LOCAL_FAILED = False
+_OBJECTS: tuple[S3Object, S3Object] | None = None
 _LOCK = threading.Lock()
 
 
@@ -246,50 +252,93 @@ def _local_paths() -> tuple[Path, Path] | None:
     return None
 
 
-def _ensure_loaded() -> bool:
-    global _MODEL, _METADATA, _LOAD_FAILED
-    if _MODEL is not None and _METADATA is not None:
-        return True
-    if _LOAD_FAILED:
-        return False
-    with _LOCK:
-        if _MODEL is not None and _METADATA is not None:
-            return True
-        if _LOAD_FAILED:
-            return False
-        try:
-            local = _local_paths()
-            if local is not None:
-                model_path, meta_path = local
-                if not model_path.is_file() or not meta_path.is_file():
-                    raise FileNotFoundError(str(model_path))
-                with model_path.open("rb") as f:
-                    _MODEL = pickle.load(f)  # nosec B301
-                _METADATA = json.loads(meta_path.read_text())
-            else:
-                import boto3
+def _unpickle(body: bytes) -> object:
+    return pickle.loads(body)  # nosec B301 - our own private bucket
 
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    tmp = Path(tmpdir)
-                    model_local = tmp / f"{MODEL_KEY}.pkl"
-                    meta_local = tmp / f"{MODEL_KEY}_metadata.json"
-                    s3 = boto3.client("s3")
-                    s3.download_file(
-                        S3_BUCKET, f"{S3_PREFIX}/{MODEL_KEY}.pkl", str(model_local)
-                    )
-                    s3.download_file(
-                        S3_BUCKET,
-                        f"{S3_PREFIX}/{MODEL_KEY}_metadata.json",
-                        str(meta_local),
-                    )
-                    with model_local.open("rb") as f:
-                        _MODEL = pickle.load(f)  # nosec B301
-                    _METADATA = json.loads(meta_local.read_text())
-            return True
-        except Exception as exc:
-            logger.info("NFL QB O/U classifier unavailable: %s", exc)
-            _LOAD_FAILED = True
-            return False
+
+def holdout_brier(metadata: Mapping[str, Any], manifest: Mapping[str, Any] | None) -> float | None:
+    """Holdout Brier from the S3 manifest (when it carries one), else metadata."""
+    if manifest and manifest.get("metric_name") == BRIER_METRIC:
+        raw = manifest.get("holdout_metric")
+    else:
+        raw = metadata.get(BRIER_METRIC)
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _usable(
+    model: object | None, meta: Mapping[str, Any] | None, manifest: Mapping[str, Any] | None
+) -> bool:
+    if model is None or meta is None:
+        return False
+    brier = holdout_brier(meta, manifest)
+    if brier is None or not brier < COIN_FLIP_BRIER:
+        logger.warning(
+            "NFL QB O/U classifier ignored: holdout Brier %s is not < %.2f",
+            brier,
+            COIN_FLIP_BRIER,
+        )
+        return False
+    return True
+
+
+def _from_local() -> tuple[object, dict[str, Any]] | None:
+    global _LOCAL, _LOCAL_FAILED
+    with _LOCK:
+        if _LOCAL is None and not _LOCAL_FAILED:
+            local = _local_paths()
+            try:
+                if local is None:
+                    raise FileNotFoundError("no local O/U classifier")
+                model_path, meta_path = local
+                with model_path.open("rb") as f:
+                    _LOCAL = (pickle.load(f), json.loads(meta_path.read_text()))  # nosec B301
+            except Exception as exc:
+                logger.info("NFL QB O/U local classifier unavailable: %s", exc)
+                _LOCAL_FAILED = True
+        return _LOCAL
+
+
+def _from_s3() -> tuple[object, dict[str, Any], dict[str, Any] | None] | None:
+    global _OBJECTS
+    with _LOCK:
+        if _OBJECTS is None:
+            _OBJECTS = (
+                S3Object(f"{S3_PREFIX}/{MODEL_KEY}.pkl", _unpickle, bucket=S3_BUCKET),
+                S3Object(
+                    f"{S3_PREFIX}/{MODEL_KEY}_metadata.json",
+                    json.loads,
+                    bucket=S3_BUCKET,
+                ),
+            )
+        model_obj, meta_obj = _OBJECTS
+    model, meta = model_obj.get(), meta_obj.get()
+    return None if model is None or meta is None else (model, meta, model_obj.manifest)
+
+
+def _current() -> tuple[object, dict[str, Any]] | None:
+    """(model, metadata) to score with, or None.
+
+    With ``NFL_QB_ML_ENABLED`` on (production) S3 is the source of truth and the
+    repo pickle is only the fallback; with it off the bundled shadow copy wins.
+    A classifier that fails the Brier gate is skipped, so callers fall back to
+    their non-classifier behaviour.
+    """
+    sources = (_from_s3, _from_local) if qb_ml_enabled() else (_from_local, _from_s3)
+    for load in sources:
+        got = load()
+        if got is None:
+            continue
+        model, meta, *rest = got
+        if _usable(model, meta, rest[0] if rest else None):
+            return model, meta
+    return None
+
+
+def _ensure_loaded() -> bool:
+    return _current() is not None
 
 
 def predict_over_probability_loaded(
@@ -298,14 +347,15 @@ def predict_over_probability_loaded(
     *,
     projected_yards: float | None = None,
 ) -> float | None:
-    if not _ensure_loaded() or _MODEL is None:
+    cur = _current()
+    if cur is None:
         return None
-    order = ou_model_feature_order(_METADATA)
+    model, meta = cur
     return predict_over_probability(
-        _MODEL,
+        model,
         features,
         ou_line,
-        feature_order=order,
+        feature_order=ou_model_feature_order(meta),
         projected_yards=projected_yards,
     )
 
