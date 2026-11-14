@@ -320,3 +320,49 @@ def test_atd_trainer_stamps_current_lambda_family(monkeypatch, tmp_path):
     rc, meta = run(False)
     assert rc == 1
     assert not cal.artifact_supports_current_lambda(meta)
+
+
+def test_qb_champion_refit_on_the_holdout_is_not_scored_in_sample(s3):
+    # C6: once a weekly refit is live it has trained on this season's holdout
+    # weeks; scoring it there is in-sample (MAE ~0) and would block every later
+    # refit. The gate must fall back to the champion's manifest metric instead.
+    s3.put(f"{PFX}/qb_passing_yards.pkl", pickle.dumps(Yards(0.0)), "e0")
+    meta = {
+        "features": ["tier_yards"],
+        "residual_target": True,
+        "baseline_mode": "tier",
+        "refit_all_rows": True,
+        "data_window": "2024w1..2026w9",
+    }
+    s3.put(f"{PFX}/qb_passing_yards_metadata.json", json.dumps(meta).encode(), "e0")
+    s3.put(
+        f"{PFX}/qb_passing_yards_manifest.json",
+        json.dumps({"holdout_metric": 40.0, "data_window": "2024w1..2026w9"}).encode(),
+        "e0",
+    )
+    X, y = _hold()
+    weeks = [(2026, 7), (2026, 8), (2026, 9), (2026, 10)]
+    out = tqm.upload_qb_model(
+        Yards(10.0),
+        {"features": ["tier_yards"], "data_window": "2024w1..2026w10"},
+        candidate_mae=10.0,
+        X_hold=X,
+        y_hold=y,
+        weeks_hold=weeks,
+    )
+    assert out["status"] == "uploaded"
+    assert out.get("champion_metric") == 40.0
+
+
+def test_qb_champion_not_refit_is_still_scored_on_the_holdout(s3):
+    _live_yards(s3, 0.0)
+    X, y = _hold()
+    out = tqm.upload_qb_model(
+        Yards(30.0),
+        {"features": ["tier_yards"]},
+        candidate_mae=30.0,
+        X_hold=X,
+        y_hold=y,
+        weeks_hold=[(2026, 7)] * 4,
+    )
+    assert out["status"] == "rejected_by_champion"

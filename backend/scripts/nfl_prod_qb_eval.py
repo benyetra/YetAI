@@ -649,6 +649,9 @@ def train_and_eval(
     if holdout_sink is not None:
         holdout_sink["yards"] = (X_test, y_test)
         holdout_sink["yards_mae"] = ml_mae_raw
+        holdout_sink["yards_weeks"] = [
+            (int(s), int(w)) for s, w in zip(meta_test["season"], meta_test["week"])
+        ]
 
     ablations = run_holdout_ablations(
         X_train=X_train,

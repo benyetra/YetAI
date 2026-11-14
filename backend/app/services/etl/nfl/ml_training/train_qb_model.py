@@ -49,12 +49,31 @@ def _live_metadata(meta_key: str) -> dict[str, Any]:
     return json.loads(raw)
 
 
-def live_yards_scorer(X_hold: pd.DataFrame, y_hold: Any) -> Callable[[bytes], float]:
+def _window_end(window: Any) -> tuple[int, int] | None:
+    """``"2024w1..2026w9"`` -> (2026, 9); None when absent or not season/week."""
+    try:
+        season, week = str(window).split("..")[-1].split("w")
+        return int(season), int(week)
+    except (TypeError, ValueError):
+        return None
+
+
+def live_yards_scorer(
+    X_hold: pd.DataFrame,
+    y_hold: Any,
+    weeks_hold: list[tuple[int, int]] | None = None,
+) -> Callable[[bytes], float]:
     """``score_champion``: yards MAE of the live QB model on the candidate holdout
-    (raw ML prediction, as the promote eval measures it)."""
+    (raw ML prediction, as the promote eval measures it). A live weekly refit
+    whose data window reaches into the holdout weeks (``weeks_hold``, one
+    (season, week) per row) has trained on them, so it is not scored there: the
+    raise makes gated_upload use its manifest holdout_metric instead."""
 
     def score(live_body: bytes) -> float:
         meta = _live_metadata(S3_META_KEY)
+        end = _window_end(meta.get("data_window")) if meta.get("refit_all_rows") else None
+        if end is not None and weeks_hold and min(map(tuple, weeks_hold)) <= end:
+            raise ValueError(f"live model trained through {end}, inside the holdout")
         live = pickle.loads(live_body)  # nosec B301 - our own private bucket
         order = meta.get("features") or qb_feature_names()
         residual = _model_is_residual(meta)
@@ -122,15 +141,16 @@ def upload_qb_model(
     candidate_mae: float,
     X_hold: pd.DataFrame,
     y_hold: Any,
+    weeks_hold: list[tuple[int, int]] | None = None,
 ) -> dict[str, Any]:
-    """Upload only if not worse than the live model on this holdout (yards MAE)."""
+    """Upload only if better than the live model on this holdout (yards MAE)."""
     return _gated(
         S3_OBJECT_KEY,
         model,
         metadata,
         candidate_metric=float(candidate_mae),
         metric_name="holdout_mae",
-        score_champion=live_yards_scorer(X_hold, y_hold),
+        score_champion=live_yards_scorer(X_hold, y_hold, weeks_hold),
         version_prefix="gbm-qb",
     )
 
@@ -186,6 +206,7 @@ def upload_local_artifacts(
             candidate_mae=holdout["yards_mae"],
             X_hold=holdout["yards"][0],
             y_hold=holdout["yards"][1],
+            weeks_hold=holdout.get("yards_weeks"),
         )
     if "ou" in holdout and (got := _load(OU_MODEL_KEY)):
         out[OU_MODEL_KEY] = upload_ou_model(
