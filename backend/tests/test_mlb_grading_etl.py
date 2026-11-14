@@ -4,10 +4,18 @@ import sys
 from datetime import date
 from unittest.mock import MagicMock, patch
 
-sys.modules.setdefault("app.services.etl.mlb.strikeouts", MagicMock())
-
-from app.services.etl.mlb import daily_projection_update as k_mod
-from app.services.etl.mlb import pipeline
+# Stub the heavy strikeouts module only while importing, so other test files
+# that import the real one are not poisoned.
+_real = sys.modules.pop("app.services.etl.mlb.strikeouts", None)
+sys.modules["app.services.etl.mlb.strikeouts"] = MagicMock()
+try:
+    from app.services.etl.mlb import daily_projection_update as k_mod
+    from app.services.etl.mlb import pipeline
+finally:
+    if _real is None:
+        sys.modules.pop("app.services.etl.mlb.strikeouts", None)
+    else:
+        sys.modules["app.services.etl.mlb.strikeouts"] = _real
 
 
 def test_run_actuals_phase_grades_every_lookback_date():
