@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
 from sqlalchemy import and_, func
 from sqlalchemy.orm import Session
 
-from app.models.database_models import User, YetAIBet
+from app.models.database_models import SubscriptionTier, User, YetAIBet
 from app.services.yetai_bets_demo import is_demo_yetai_bet
 
 
@@ -61,6 +61,51 @@ def public_record(db: Session, service: Any = None) -> Dict[str, Any]:
     }
 
 
+def legacy_performance(db: Session, service: Any = None, now: datetime | None = None):
+    """performance_30d / performance_7d in the shape the previously deployed login
+    panel reads (a bundle cached in a browser, or a frontend deployed after this
+    backend, calls ``performance_30d.win_rate.toFixed``): same population and
+    created_at windows as ``record``, $100 a pick, numbers (never null)."""
+    if service is None:
+        from app.services.yetai_bets_service_db import YetAIBetsServiceDB
+
+        service = YetAIBetsServiceDB()
+    now = now or datetime.utcnow()
+    rows = service._history_stat_rows(
+        SubscriptionTier.ELITE.value, db, now - timedelta(days=30)
+    )
+
+    def window(days: int, ago: int = 0):
+        lo, hi = now - timedelta(days=days + ago), now - timedelta(days=ago)
+        stats = service.compute_history_stats(
+            [r for r in rows if r["created_at"] and lo <= r["created_at"] < hi],
+            period_days=days,
+        )
+        return stats, round(stats["units"] * 100, 2)
+
+    s30, profit_30d = window(30)
+    s7, profit_7d = window(7)
+    _, profit_prev = window(7, ago=7)
+    if profit_prev != 0:
+        wow = (profit_7d - profit_prev) / abs(profit_prev) * 100
+    else:
+        wow = 100.0 if profit_7d > 0 else 0.0
+    return {
+        "performance_30d": {
+            "win_rate": s30["win_rate"] or 0.0,
+            "profit": profit_30d,
+            "total_bets": s30["graded"],
+            "wins": s30["won"],
+            "losses": s30["lost"],
+        },
+        "performance_7d": {
+            "win_rate": s7["win_rate"] or 0.0,
+            "profit": profit_7d,
+            "wow_change": round(wow, 1),
+        },
+    }
+
+
 def compute_platform_stats(db: Session) -> Dict[str, Any]:
     """Aggregate YetAI Bets performance for /api/platform/stats."""
     total_users = (
@@ -96,5 +141,6 @@ def compute_platform_stats(db: Session) -> Dict[str, Any]:
         "total_users": total_users,
         "total_winnings": round(total_winnings, 2),
         "record": record,
+        **legacy_performance(db),
         "user_avatars": user_avatars,
     }
