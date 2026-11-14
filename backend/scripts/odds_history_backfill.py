@@ -309,6 +309,10 @@ def events_params(d: date) -> dict:
 
 def run_fetch(games: list[dict], out: Path, args, key: str) -> int:
     f = Fetcher(out, args, key)
+    try:  # free call: the floor then applies from the first paid call
+        f.remaining = int(_quota(key)["x-requests-remaining"])
+    except (TypeError, ValueError, KeyError, requests.RequestException):
+        pass
     tags = args.snapshots.split(",")
     reg = f.regions
     per_call = 10 * len(args.markets.split(",")) * reg
@@ -389,24 +393,35 @@ def load_dir(db, directory: Path, apply: bool) -> dict:
     from app.models.predictions_models import OddsLineSnapshot as S
     from app.services import odds_snapshots as snaps
 
-    parsed = []
+    # Index first (event id + snapshot time only) and parse each file when it is loaded, so a
+    # season (thousands of files, millions of rows) never sits in memory at once.
+    index = []
     for p in sorted(directory.glob("odds/*/*.json")):
         rec = json.loads(p.read_text())
-        if rec.get("status") != 200:
+        body = rec.get("body")
+        if rec.get("status") != 200 or not isinstance(body, dict):
             continue
-        ts, rows = snaps.parse_historical(SPORT, rec.get("body"))
-        if ts is None or not rows:
+        data = body.get("data")
+        ts = snaps._naive_utc(body.get("timestamp"))
+        if ts is None or not isinstance(data, dict) or not data.get("id"):
             continue
-        parsed.append((rows[0]["event_id"], ts, rows))
-    parsed.sort(key=lambda x: (x[0], x[1]))
+        index.append((data["id"], ts, p))
+    index.sort(key=lambda x: (x[0], x[1]))
+
+    def parsed():
+        for eid, ts, p in index:
+            _ts, rows = snaps.parse_historical(SPORT, json.loads(p.read_text())["body"])
+            if rows:
+                yield eid, ts, rows
+
     c = {
-        "files": len(parsed),
+        "files": len(index),
         "loaded": 0,
         "already_loaded": 0,
         "inserted": 0,
         "touched": 0,
     }
-    for eid, ts, rows in parsed:
+    for eid, ts, rows in parsed():
         markets = {r["market"] for r in rows}
         seen = (
             db.query(S.id)
@@ -480,8 +495,8 @@ def _key() -> str:
     return key
 
 
-def _quota() -> dict:
-    r = requests.get(f"{API}/sports", params={"apiKey": _key()}, timeout=30)
+def _quota(key: str | None = None) -> dict:
+    r = requests.get(f"{API}/sports", params={"apiKey": key or _key()}, timeout=30)
     return {h: r.headers.get(h) for h in HEADERS}
 
 

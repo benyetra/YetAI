@@ -126,6 +126,8 @@ class FakeAPI:
         self.empty = empty
 
     def __call__(self, url, params=None, timeout=None):
+        if url.endswith("/sports"):  # free quota read before fetching; not counted
+            return self._resp(200, [], "0")
         self.calls.append((url, dict(params)))
         if self.statuses:
             st = self.statuses.pop(0)
