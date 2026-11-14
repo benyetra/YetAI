@@ -69,6 +69,13 @@ def gate_enabled() -> bool:
     return os.getenv("AUTO_PICK_RECORD_GATE_ENABLED", "true").strip().lower() == "true"
 
 
+def require_proven_record() -> bool:
+    """Opt-in: a key with fewer than min_picks effective graded calls is withheld too."""
+    return (
+        os.getenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false").strip().lower() == "true"
+    )
+
+
 def min_picks() -> int:
     return _env_number("AUTO_PICK_RECORD_MIN_PICKS", DEFAULT_MIN_PICKS, int)
 
@@ -112,6 +119,19 @@ def record_key(c: BetCandidate) -> RecordKey:
 
 def key_label(key: RecordKey) -> str:
     return "/".join(p for p in key if p)
+
+
+def drop_reason(rec: Optional[KeyRecord]) -> Optional[str]:
+    """Why the gate withholds a key, or None; ``rec`` None = no data for the key."""
+    if rec is not None and rec.withheld:
+        return "losing_record"
+    if (
+        gate_enabled()
+        and require_proven_record()
+        and (rec is None or rec.n_eff < min_picks())
+    ):
+        return "unproven_record"
+    return None
 
 
 def stake_units(odds: float, won: bool) -> float:
@@ -405,6 +425,40 @@ PROJECTION_LOADERS: dict[str, ProjectionLoader] = {
 }
 
 
+def _prop_keys(league: str, specs) -> set[RecordKey]:
+    return {(league, "player_prop", spec[1]) for spec in specs}
+
+
+def emitted_keys() -> dict[str, set[RecordKey]]:
+    """Keys each registered source can emit, by source class name.
+
+    Static: sources do not declare their keys. tests/auto_pick/test_record_gate.py fails
+    when a source registered in tasks.auto_pick._build_providers is missing here.
+    """
+    from app.services.auto_pick.sources.player_prop_source import _NBA_STAT_SPECS
+    from app.services.auto_pick.sources.wnba_player_prop_source import (
+        _WNBA_STAT_SPECS,
+    )
+
+    return {
+        "PlayerPropSource": _prop_keys("NBA", _NBA_STAT_SPECS),
+        "NBASpreadSource": {("NBA", "spread", None)},
+        "NBATotalsSource": {("NBA", "total", None)},
+        "NBAMoneylineSource": {("NBA", "moneyline", None)},
+        "MLBStrikeoutSource": {("MLB", "player_prop", "strikeouts")},
+        "MLBGameMoneylineSource": {("MLB", "moneyline", None)},
+        "NHLGoalieSavesSource": {("NHL", "player_prop", "saves")},
+        "NHLTotalsSource": {("NHL", "total", None)},
+        "NFLQBPassingSource": {("NFL", "player_prop", "passing_yards")},
+        "NFLReceivingYardsSource": {("NFL", "player_prop", "receiving_yards")},
+        "NFLSpreadSource": {("NFL", "spread", None)},
+        "NFLTotalsSource": {("NFL", "total", None)},
+        "WNBAPlayerPropSource": _prop_keys("WNBA", _WNBA_STAT_SPECS),
+        "WNBASpreadSource": {("WNBA", "spread", None)},
+        "WNBATotalsSource": {("WNBA", "total", None)},
+    }
+
+
 def load_projection_records(
     db: Session, now: datetime
 ) -> dict[RecordKey, tuple[int, int]]:
@@ -441,6 +495,9 @@ def gate_report(db: Session, now: datetime) -> list[dict]:
     """Per-key gate decision for the dry-run CLI (read-only: only the loaders run)."""
     rows = []
     records = load_records(db, now)
+    for keys in emitted_keys().values():
+        for key in keys:
+            records.setdefault(key, combine(key))
     for key, r in sorted(records.items(), key=lambda kv: key_label(kv[0])):
         rows.append(
             {
@@ -453,6 +510,15 @@ def gate_report(db: Session, now: datetime) -> list[dict]:
                 "n_eff": round(r.n_eff, 1),
                 "shrunk_roi": round(r.shrunk_roi, 4),
                 "withheld": r.withheld,
+                "state": (
+                    "WITHHELD losing"
+                    if r.withheld
+                    else "WITHHELD unproven"
+                    if drop_reason(r) == "unproven_record"
+                    else "unproven (would be withheld with AUTO_PICK_REQUIRE_PROVEN_RECORD)"
+                    if r.n_eff < min_picks()
+                    else "open"
+                ),
                 "qualifying_edge": (
                     round(fill_floor_edge(key[2]), 3)
                     if key[:2] == ("NBA", "player_prop") and key[2] in _NBA_STATS

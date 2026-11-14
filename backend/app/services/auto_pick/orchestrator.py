@@ -32,7 +32,7 @@ from app.services.auto_pick.candidate import (
 )
 from app.services.auto_pick.config_loader import load_scoring_config
 from app.services.auto_pick.context_builder import build_scoring_context
-from app.services.auto_pick.record_gate import key_label, record_key
+from app.services.auto_pick.record_gate import combine, drop_reason, key_label, record_key
 from app.services.auto_pick.scorer import ConfidenceScorer
 from app.services.auto_pick.parlay_selector import ParlaySelector, ScoredParlayPick
 from app.services.auto_pick.selector import (
@@ -421,9 +421,9 @@ class AutoPickOrchestrator:
         if reason:
             return reason
         c = sc.candidate
-        rec = self._records.get(record_key(c))
-        if rec is not None and rec.withheld:
-            return "losing_record"
+        reason = drop_reason(self._records.get(record_key(c)))
+        if reason:
+            return reason
         stat = (
             c.projection_metadata.get("stat")
             if c.market_type == MarketType.PLAYER_PROP
@@ -469,8 +469,11 @@ class AutoPickOrchestrator:
         withheld = {}
         for k in {record_key(sc.candidate) for sc in scored}:
             rec = (records or {}).get(k)
-            if rec is not None and rec.withheld:
-                withheld[key_label(rec.key)] = {
+            reason = drop_reason(rec)
+            if reason:
+                rec = rec or combine(k)
+                withheld[key_label(k)] = {
+                    "reason": reason,
                     "n_eff": round(rec.n_eff, 1),
                     "shrunk_roi": round(rec.shrunk_roi, 4),
                     "bet_n": rec.bet_n,

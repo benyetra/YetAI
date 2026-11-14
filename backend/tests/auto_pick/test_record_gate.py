@@ -27,6 +27,7 @@ REBOUNDS = ("NBA", "player_prop", "rebounds")
 def _env(monkeypatch):
     for k in (
         "AUTO_PICK_RECORD_GATE_ENABLED",
+        "AUTO_PICK_REQUIRE_PROVEN_RECORD",
         "AUTO_PICK_RECORD_MIN_PICKS",
         "AUTO_PICK_RECORD_WINDOW_DAYS",
         "AUTO_PICK_RECORD_MIN_ROI",
@@ -370,3 +371,49 @@ def test_gate_report_prints_each_key_and_writes_nothing(sqlite_db, capsys):
     assert "NBA/player_prop/points" in out and "WITHHELD" in out
     assert "min_edge" in out and "1.25" in out
     assert sqlite_db.query(YetAIBet).count() == bets_before
+
+
+def test_prove_in_mode_off_leaves_thin_and_missing_keys_open():
+    assert rg.drop_reason(None) is None
+    assert rg.drop_reason(combine(POINTS, proj_n=10, proj_hits=6)) is None
+
+
+def test_prove_in_mode_on_withholds_unproven_keys(monkeypatch):
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "true")
+    assert rg.drop_reason(None) == "unproven_record"
+    assert rg.drop_reason(combine(POINTS, proj_n=10, proj_hits=6)) == "unproven_record"
+    assert rg.drop_reason(combine(POINTS, proj_n=60, proj_hits=40)) is None
+    assert rg.drop_reason(combine(POINTS, proj_n=60, proj_hits=26)) == "losing_record"
+    monkeypatch.setenv("AUTO_PICK_RECORD_GATE_ENABLED", "false")
+    assert rg.drop_reason(None) is None
+
+
+def test_orchestrator_drops_unproven_key_with_reason(sqlite_db, monkeypatch):
+    from app.services.auto_pick.selector import SelectorConfig
+
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "true")
+    o = AutoPickOrchestrator(db=sqlite_db, providers=[], now=NOW)
+    o._records = {}
+    sc = type("S", (), {"candidate": _cand(1, league="NBA")})()
+    assert o._gate(sc, SelectorConfig(), set()) == "unproven_record"
+    assert o._summarize_drops([], {}) ["withheld_keys"] == {}
+
+
+def test_gate_report_lists_no_data_keys_with_state(sqlite_db, monkeypatch, capsys):
+    from app.services.auto_pick import __main__ as cli
+
+    rows = {r["key"]: r for r in rg.gate_report(sqlite_db, NOW)}
+    assert rows["NHL/player_prop/saves"]["state"].startswith("unproven (would be")
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "true")
+    rows = {r["key"]: r for r in rg.gate_report(sqlite_db, NOW)}
+    assert rows["NHL/player_prop/saves"]["state"] == "WITHHELD unproven"
+    cli.print_gate_report(list(rows.values()))
+    assert "WITHHELD unproven" in capsys.readouterr().out
+
+
+def test_every_registered_source_declares_its_keys():
+    from app.tasks.auto_pick import _build_providers
+
+    declared = rg.emitted_keys()
+    names = {type(p.source).__name__ for p in _build_providers(None)}
+    assert names <= set(declared), names - set(declared)

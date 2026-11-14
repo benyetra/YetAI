@@ -68,7 +68,7 @@ def print_gate_report(rows: list[dict]) -> None:
         print(
             f"{r['key']:34} {r['bet_n']:>5} {r['bet_units']:>7} {prior:>9} {hit:>6} "
             f"{r['n_eff']:>6} {r['shrunk_roi']:>8.2%} {qe:>8}  "
-            f"{'WITHHELD' if r['withheld'] else 'open'}"
+            f"{r['state']}"
         )
 
 
