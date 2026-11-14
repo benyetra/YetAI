@@ -130,7 +130,7 @@ def test_review_text_has_every_section_and_fixture_numbers(review_db):
     )
     assert len(review["misses"]["rows"]) == 10
     assert "v-test" in text
-    assert "CLV: closing lines are not stored for NBA, NFL, NHL" in text
+    assert "not stored" not in text
 
 
 def test_section_failure_is_isolated(review_db, monkeypatch):

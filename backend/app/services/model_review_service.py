@@ -16,6 +16,7 @@ import logging
 import re
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
+from statistics import mean, median
 from typing import Any, Callable, Optional
 
 from sqlalchemy import func
@@ -25,10 +26,15 @@ from app.models.database_models import BetType, YetAIBet
 from app.services.accuracy_shared import (
     edge_play_graded_counts,
     ou_call_graded_counts,
+    ou_call_graded_record,
+    ou_row_result,
 )
+from app.services.odds_math import breakeven_rate, units_for_result
 from app.services.auto_pick import record_gate
 from app.services.auto_pick.candidate import EASTERN
 from app.services.auto_pick.context_builder import _normalize_sport
+from app.services.odds_snapshots import closing_index, player_key
+from app.services.prop_clv import NBA_STAT_MARKET, clv_vs_close
 
 log = logging.getLogger(__name__)
 
@@ -59,8 +65,10 @@ def _norm(v: Any) -> str:
     return str(v)
 
 
-def _row(proj, line, actual, pick, ident, label, correct=None) -> dict:
+def _row(proj, line, actual, pick, ident, label, correct=None, **extra) -> dict:
+    """``extra``: NBA props add ``price`` (stored fanduel price) and ``best`` quote."""
     return {
+        **extra,
         "proj": proj,
         "line": line,
         "actual": actual,
@@ -69,6 +77,11 @@ def _row(proj, line, actual, pick, ident, label, correct=None) -> dict:
         "label": label,
         "ident": tuple(_norm(i) for i in ident),
     }
+
+
+def _best_quote(r: dict) -> Optional[tuple]:
+    q = (r.get("best_book"), r.get("best_line"), r.get("best_price"))
+    return q if None not in q else None
 
 
 def _nba_props(db, start, end) -> Loaded:
@@ -122,6 +135,8 @@ def _nba_props(db, start, end) -> Loaded:
                     r.get("fanduel_over_under"),
                     (cls.__tablename__, r["date"], r["player_id"]),
                     r.get("player_name") or f"player {r['player_id']}",
+                    price=r.get("fanduel_price"),
+                    best=_best_quote(r),
                 )
                 for r in rows
             ],
@@ -406,7 +421,7 @@ def stats(kind: str, rows: list[dict]) -> dict:
         for r in scored
         if r["line"] is not None
     ]
-    return {
+    out = {
         "graded": graded,
         "hits": hits,
         "hit_rate": _r(hits / graded, 4) if graded else None,
@@ -415,6 +430,28 @@ def stats(kind: str, rows: list[dict]) -> dict:
         "mae": _r(_mean([abs(e) for e in errs])),
         "line_mae": _r(_mean(line_errs)),
     }
+    if kind == "ou" and any("price" in r for r in rows):
+        _, _, units, priced = ou_call_graded_record(
+            rows,
+            line_field="line",
+            pick_field="pick",
+            actual_field="actual",
+            price_field="price",
+        )
+        prices = [
+            r["price"]
+            for r in rows
+            if r.get("price")
+            and ou_row_result(line=r["line"], pick=r["pick"], actual=r["actual"])
+            in ("hit", "miss")
+        ]
+        out["units"] = _r(units)
+        out["priced"] = priced
+        out["median_price"] = _r(median(prices), 0) if prices else None
+        out["breakeven_priced"] = (
+            _r(breakeven_rate(median(prices)), 4) if prices else None
+        )
+    return out
 
 
 # ---------- sections ----------
@@ -771,22 +808,96 @@ def _versions_section(db: Session, today: date) -> dict:
     }
 
 
-def _clv_section(db: Session) -> dict:
-    """Closing lines: nothing writes OddsHistory and no *_closing* column exists on any
-    projection / line table (game-lines rows are overwritten by the updaters), so there
-    is no stored close to measure auto bets against."""
-    from app.models.sports_models import OddsHistory
+# NHL / NFL review rows carry name (label), date (ident[1]), line and pick: join them too.
+_CLV_MARKETS = {
+    ("NHL", "player_prop", "saves"): "player_total_saves",
+    ("NFL", "player_prop", "receiving_yards"): "player_reception_yds",
+}
+# Not joinable from the review's row loaders (no player name / no loader at all).
+_CLV_UNJOINED = {
+    ("NFL", "player_prop", "passing_yards"): "passing rows carry a QB id, not a name",
+    ("NHL", "player_prop", "shots"): "the review has no shots loader",
+}
 
-    try:
-        n = db.query(func.count(OddsHistory.id)).scalar() or 0
-    except Exception:  # table absent: still no stored close
-        db.rollback()
-        n = None
+
+def _clv_for_key(key, rows, idx) -> dict:
+    market = _CLV_MARKETS.get(key) or NBA_STAT_MARKET.get(key[2] or "")
+    by_close: dict[tuple, list] = defaultdict(list)
+    for (d, m, p, _e), close in idx.items():
+        by_close[(d, m, p)].extend(close)
+    graded = priced = with_close = 0
+    units = 0.0
+    line_clvs, prob_clvs, minutes = [], [], []
+    for r in rows:
+        res = ou_row_result(line=r["line"], pick=r["pick"], actual=r["actual"])
+        if res not in ("hit", "miss"):
+            continue
+        graded += 1
+        book, line, price = r.get("best") or ("fanduel", r["line"], r.get("price"))
+        priced += bool(price)
+        units += units_for_result(res, price)
+        try:
+            day = date.fromisoformat(r["ident"][1])
+        except ValueError:
+            continue  # ident without a game date: cannot join
+        close = by_close.get((day, market, player_key(r["label"])))
+        side = "o" if r["pick"].strip().lower() in ("over", "o") else "u"
+        c = (
+            clv_vs_close(side, float(line), price, book, close, market)
+            if close
+            else None
+        )
+        if c is None:
+            continue
+        with_close += 1
+        line_clvs.append(c["line_clv"])
+        if c["prob_clv"] is not None:
+            prob_clvs.append(c["prob_clv"])
+        row = c["row"]
+        if row.commence_time and row.last_seen_at:
+            minutes.append((row.commence_time - row.last_seen_at).total_seconds() / 60)
     return {
-        "stored": False,
-        "sports": list(SPORTS),
-        "odds_history_rows": n,
-        "note": f"CLV: closing lines are not stored for {', '.join(SPORTS)}",
+        "key": record_gate.key_label(key),
+        "graded": graded,
+        "with_close": with_close,
+        "priced": priced,
+        "units": _r(units),
+        "mean_line_clv": _r(mean(line_clvs)) if line_clvs else None,
+        "median_line_clv": _r(median(line_clvs)) if line_clvs else None,
+        "mean_prob_clv": _r(mean(prob_clvs), 4) if prob_clvs else None,
+        "share_prob_positive": (
+            _r(sum(1 for v in prob_clvs if v > 0) / len(prob_clvs), 3)
+            if prob_clvs
+            else None
+        ),
+        "median_minutes_before_start": _r(median(minutes), 1) if minutes else None,
+    }
+
+
+def _clv_section(db: Session, today: date, cur: Optional[Loaded] = None) -> dict:
+    """Closing-line value of every graded prop call vs the snapshot store (odds_line_snapshots)."""
+    start = today - timedelta(days=MODEL_WINDOW_DAYS)
+    end = today - timedelta(days=1)
+    if cur is None:
+        cur = load_rows(db, start, end)
+    joined = {
+        k: rows
+        for k, (kind, rows) in cur.items()
+        if kind == "ou"
+        and k[1] == "player_prop"
+        and (k in _CLV_MARKETS or (k[0] == "NBA" and k[2] in NBA_STAT_MARKET))
+    }
+    markets = {_CLV_MARKETS.get(k) or NBA_STAT_MARKET[k[2]] for k in joined}
+    idx = closing_index(db, start, end, markets) if markets else {}
+    keys = [
+        c
+        for k in sorted(joined, key=lambda k: tuple(p or "" for p in k))
+        if (c := _clv_for_key(k, joined[k], idx))["graded"]
+    ]
+    return {
+        "stored": True,
+        "keys": keys,
+        "unjoined": {record_gate.key_label(k): why for k, why in _CLV_UNJOINED.items()},
     }
 
 
@@ -827,7 +938,7 @@ def build_review(db: Session, today: date) -> dict:
         "misses": _safe(db, _misses_section, db, today, cur),
         "disagreements": _safe(db, _disagreements_section, db, today, cur),
         "model_versions": _safe(db, _versions_section, db, today),
-        "clv": _safe(db, _clv_section, db),
+        "clv": _safe(db, _clv_section, db, today, cur),
     }
 
 
@@ -907,8 +1018,18 @@ def render_text(review: dict) -> str:
                 else f", hit trend {p['hit_rate_trend'] * 100:+.1f}pt"
             )
             mt = "" if p["mae_trend"] is None else f", MAE trend {p['mae_trend']:+.2f}"
+            priced = (
+                ""
+                if "units" not in p
+                else f", units {p['units']:+.1f} (priced {p['priced']}/{p['graded']})"
+                + (
+                    ""
+                    if p["breakeven_priced"] is None
+                    else f", breakeven {_pct(p['breakeven_priced'])} at median {p['median_price']:+.0f}"
+                )
+            )
             L.append(
-                f"  {p['key']}: {p['hits']}/{p['graded']} calls {_pct(p['hit_rate'])}{vs}; "
+                f"  {p['key']}: {p['hits']}/{p['graded']} calls {_pct(p['hit_rate'])}{vs}{priced}; "
                 f"bias {_num(p['bias'], True)}, MAE {_num(p['mae'])}, "
                 f"line MAE {_num(p['line_mae'])} (n={p['n']}){trend}{mt}"
             )
@@ -997,7 +1118,34 @@ def render_text(review: dict) -> str:
 
     L.append("== CLV ==")
     c = review["clv"]
-    L.append(_unavailable(c) or f"  {c['note']}")
+    if _unavailable(c):
+        L.append(_unavailable(c))
+    else:
+        L.append(
+            "  closing = last odds snapshot first seen before the start (+ = good)"
+        )
+        for k in c["keys"]:
+            head = f"  {k['key']}: {k['graded']} calls, {k['with_close']} with a close"
+            if not k["with_close"]:
+                L.append(f"{head}; no closing snapshots yet")
+                continue
+            prob = (
+                ""
+                if k["mean_prob_clv"] is None
+                else f", prob CLV {k['mean_prob_clv'] * 100:+.1f}pt ({_pct(k['share_prob_positive'])} > 0)"
+            )
+            mins = (
+                ""
+                if k["median_minutes_before_start"] is None
+                else f", close {k['median_minutes_before_start']:.0f} min before start"
+            )
+            L.append(
+                f"{head}; line CLV mean {k['mean_line_clv']:+.2f} / median "
+                f"{k['median_line_clv']:+.2f}{prob}{mins}, units {k['units']:+.1f} "
+                f"(priced {k['priced']}/{k['graded']})"
+            )
+        for k, why in c["unjoined"].items():
+            L.append(f"  {k}: no snapshot join yet ({why})")
     return "\n".join(L) + "\n"
 
 
