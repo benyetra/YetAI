@@ -3,30 +3,25 @@ from unittest.mock import MagicMock, patch
 
 from app.services.etl.nba import _spread_ml_predict as smp
 from app.services.etl.nba import spreads_accuracy_tracker as sat
+from tests.fake_s3 import Static
+
+WIN = {"split": "chronological", "test_mae": 9.0, "baseline_test_mae": 10.0}
 
 
 def test_predict_margin_when_model_loaded(monkeypatch):
-    monkeypatch.setattr(smp, "_LOAD_FAILED", False)
-
     class FakeModel:
         def predict(self, vec):
             return [4.2]
 
-    monkeypatch.setattr(smp, "_MODEL", FakeModel())
-    monkeypatch.setattr(
-        smp,
-        "_METADATA",
-        {"features": ["elo_diff", "pace_adj"]},
-    )
+    meta = {**WIN, "features": ["elo_diff", "pace_adj"]}
+    monkeypatch.setattr(smp, "_OBJECTS", (Static(FakeModel()), Static(meta)))
 
     margin = smp.predict_margin({"elo_diff": 12.0, "pace_adj": 0.3})
     assert margin == 4.2
 
 
 def test_predict_margin_none_when_not_loaded(monkeypatch):
-    monkeypatch.setattr(smp, "_MODEL", None)
-    monkeypatch.setattr(smp, "_METADATA", None)
-    monkeypatch.setattr(smp, "_LOAD_FAILED", True)
+    monkeypatch.setattr(smp, "_OBJECTS", (Static(None), Static(None)))
     assert smp.predict_margin({"elo_diff": 1.0}) is None
 
 

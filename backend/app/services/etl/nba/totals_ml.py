@@ -6,12 +6,13 @@ import json
 import logging
 import os
 import pickle  # nosec B403 - artifacts from our own private bucket
-import tempfile
 import threading
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from app.services.ml.model_store import S3Object
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ _FEATURE_NAMES: tuple[str, ...] = (
 
 _MODEL: object | None = None
 _METADATA: dict[str, Any] | None = None
-_LOAD_FAILED = False
+_OBJECTS: tuple[S3Object, S3Object] | None = None
 _LOCK = threading.Lock()
 
 _TRUTHY = frozenset({"1", "true", "yes"})
@@ -82,51 +83,48 @@ def _local_model_paths() -> tuple[Path, Path] | None:
     return root / f"{MODEL_KEY}.pkl", root / f"{MODEL_KEY}_metadata.json"
 
 
-def _download_artifact(s3_key: str, local_path: Path) -> None:
-    import boto3
-
-    s3 = boto3.client("s3")
-    s3.download_file(S3_BUCKET, s3_key, str(local_path))
+def _s3_objects() -> tuple[S3Object, S3Object]:
+    global _OBJECTS
+    if _OBJECTS is None:
+        _OBJECTS = (
+            S3Object(
+                f"{S3_PREFIX}/{MODEL_KEY}.pkl",
+                lambda b: pickle.loads(b),  # nosec B301
+                bucket=S3_BUCKET,
+            ),
+            S3Object(
+                f"{S3_PREFIX}/{MODEL_KEY}_metadata.json",
+                json.loads,
+                bucket=S3_BUCKET,
+            ),
+        )
+    return _OBJECTS
 
 
 def _ensure_loaded() -> bool:
-    global _MODEL, _METADATA, _LOAD_FAILED
-    if _MODEL is not None and _METADATA is not None:
-        return True
-    if _LOAD_FAILED:
-        return False
+    """Local override files load once; the S3 model refreshes on the shared
+    interval, keeps the last good copy on failure, and is never sticky."""
+    global _MODEL, _METADATA
     with _LOCK:
+        local = _local_model_paths()
+        if local is None:
+            model_obj, meta_obj = _s3_objects()
+            _MODEL, _METADATA = model_obj.get(), meta_obj.get()
+            return _MODEL is not None and _METADATA is not None
         if _MODEL is not None and _METADATA is not None:
             return True
-        if _LOAD_FAILED:
-            return False
         try:
-            local = _local_model_paths()
-            if local is not None:
-                model_path, meta_path = local
-                if not model_path.is_file() or not meta_path.is_file():
-                    raise FileNotFoundError(
-                        f"NBA totals model missing under {model_path.parent}"
-                    )
-                with model_path.open("rb") as f:
-                    _MODEL = pickle.load(f)  # nosec B301
-                _METADATA = json.loads(meta_path.read_text())
-            else:
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    tmp = Path(tmpdir)
-                    model_local = tmp / f"{MODEL_KEY}.pkl"
-                    meta_local = tmp / f"{MODEL_KEY}_metadata.json"
-                    _download_artifact(f"{S3_PREFIX}/{MODEL_KEY}.pkl", model_local)
-                    _download_artifact(
-                        f"{S3_PREFIX}/{MODEL_KEY}_metadata.json", meta_local
-                    )
-                    with model_local.open("rb") as f:
-                        _MODEL = pickle.load(f)  # nosec B301
-                    _METADATA = json.loads(meta_local.read_text())
+            model_path, meta_path = local
+            if not model_path.is_file() or not meta_path.is_file():
+                raise FileNotFoundError(
+                    f"NBA totals model missing under {model_path.parent}"
+                )
+            with model_path.open("rb") as f:
+                _MODEL = pickle.load(f)  # nosec B301
+            _METADATA = json.loads(meta_path.read_text())
             return True
         except Exception as exc:
             logger.info("NBA totals ML model unavailable: %s", exc)
-            _LOAD_FAILED = True
             return False
 
 

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from app.services.etl.nba import _spread_ml_predict as smp
+from tests.fake_s3 import Static
 from app.services.etl.nba._spread_features import (
     SPREAD_MODEL_FEATURES,
     compute_game_features,
@@ -123,20 +124,8 @@ def test_predictor_refuses_models_without_baseline_win():
 
 
 def test_predictor_ignores_ungated_model_on_load(monkeypatch):
-    import json
-    import pickle
-
-    monkeypatch.setattr(smp, "_MODEL", None)
-    monkeypatch.setattr(smp, "_METADATA", None)
-    monkeypatch.setattr(smp, "_LOAD_FAILED", False)
-
-    def download(key, path):
-        if key.endswith(".pkl"):
-            path.write_bytes(pickle.dumps({"fake": "model"}))
-        else:
-            path.write_text(json.dumps({"features": ["elo_diff"], "test_mae": 11.7}))
-
-    monkeypatch.setattr(smp, "_download_artifact", download)
+    meta = {"features": ["elo_diff"], "test_mae": 11.7}
+    monkeypatch.setattr(smp, "_OBJECTS", (Static(object()), Static(meta)))
     assert smp.model_available() is False
     assert smp.predict_margin({"elo_diff": 1.0}) is None
 
@@ -149,11 +138,13 @@ def test_predictor_passes_missing_values_as_nan(monkeypatch):
             seen["vec"] = vec
             return [1.0]
 
-    monkeypatch.setattr(smp, "_LOAD_FAILED", False)
-    monkeypatch.setattr(smp, "_MODEL", FakeModel())
-    monkeypatch.setattr(
-        smp, "_METADATA", {"features": ["elo_diff", "market_spread_home"]}
-    )
+    meta = {
+        "features": ["elo_diff", "market_spread_home"],
+        "split": "chronological",
+        "test_mae": 9.0,
+        "baseline_test_mae": 10.0,
+    }
+    monkeypatch.setattr(smp, "_OBJECTS", (Static(FakeModel()), Static(meta)))
     smp.predict_margin({"elo_diff": 2.0, "market_spread_home": None})
     assert seen["vec"][0][0] == 2.0 and math.isnan(seen["vec"][0][1])
 
