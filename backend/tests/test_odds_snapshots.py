@@ -92,9 +92,10 @@ def test_dedupe_change_and_reads(db):
     for o in mkt["outcomes"]:
         if o["description"] == who:
             o["point"] = old_line + 5
-    snaps.record_rows(
+    in_play = snaps.record_rows(
         db, snaps.parse_payload("basketball_nba", ev), datetime(2026, 11, 15, 1, 0)
     )
+    assert in_play == {"inserted": 0, "touched": 0}  # started game: not recorded
 
     close = [
         r

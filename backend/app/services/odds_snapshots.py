@@ -170,6 +170,11 @@ def record_rows(db, rows: list[dict], now: Optional[datetime] = None) -> dict:
     from app.models.predictions_models import OddsLineSnapshot as S
 
     now = now or datetime.utcnow()
+    # In-play odds are not pregame lines: a started game's rows are not recorded (and an
+    # unchanged in-play quote must not stretch the pregame close's last_seen_at).
+    rows = [
+        r for r in rows if r.get("commence_time") is None or r["commence_time"] > now
+    ]
     if not rows:
         return {"inserted": 0, "touched": 0}
     new_by_id: dict[tuple, list[dict]] = defaultdict(list)
