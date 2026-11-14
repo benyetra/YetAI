@@ -138,7 +138,7 @@ def test_loader_s3_client_has_short_timeouts_and_two_attempts(monkeypatch):
     ms.S3Object(KEY, bytes).get()
     cfg = seen["config"]
     assert cfg.connect_timeout <= 5 and cfg.read_timeout <= 15
-    assert cfg.retries["max_attempts"] == 2
+    assert cfg.retries["total_max_attempts"] == 2  # max_attempts=2 would mean 3 tries
 
 
 def test_manifest_version_and_missing_manifest(s3):

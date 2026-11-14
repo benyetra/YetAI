@@ -35,7 +35,7 @@ REFRESH_SECONDS = int(os.getenv("ML_MODEL_REFRESH_SECONDS", "3600"))
 RETRY_BACKOFF_SECONDS = 60
 # The loader sits on pipeline paths: fail fast instead of boto3's 60s defaults.
 _LOADER_S3_CONFIG = Config(
-    connect_timeout=3, read_timeout=10, retries={"max_attempts": 2}
+    connect_timeout=3, read_timeout=10, retries={"total_max_attempts": 2}
 )
 MAX_VERSION_LEN = 20
 
