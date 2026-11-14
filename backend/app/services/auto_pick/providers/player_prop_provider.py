@@ -63,6 +63,7 @@ class PlayerPropCandidateProvider:
                             "opponent_team_name": opponent,
                             "combined_score": r.get("combined_score"),
                             "game_id": r.get("game_id"),
+                            "book": r.get("book"),
                             "odds_assumed": bool(r.get("odds_assumed", False)),
                         },
                         away_team=away,

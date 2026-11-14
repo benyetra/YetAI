@@ -16,14 +16,26 @@ from __future__ import annotations
 import logging
 import time
 from collections import Counter
+from datetime import datetime
+from statistics import median
 from typing import Any, Tuple
 
 from app.core.config import settings
+from app.services import odds_math
 from app.services.odds_api_sync import sync_odds_get
 
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.the-odds-api.com/v4/sports"
+
+# Books read for player props. The Odds API bills markets x regions, and up to 10
+# ``bookmakers`` count as one region, so this list costs what FanDuel alone did
+# (confirmed 2026-11-14: 7 markets x these 10 books -> x-requests-last 7).
+# pinnacle is a reference (sharp consensus) only; see odds_math.REFERENCE_ONLY_BOOKS.
+PROP_BOOKS = (
+    "fanduel,draftkings,betmgm,williamhill_us,fanatics,"
+    "espnbet,betrivers,hardrockbet,pinnacle,ballybet"
+)
 
 # A single ETL pipeline run completes well within this window, so all player
 # lookups for the same (game, market) reuse one HTTP response. The next
@@ -132,7 +144,7 @@ def _bookmaker_matches(bookmaker: dict, bookmakers: str) -> bool:
 
 
 def _get_event_market_odds(
-    sport: str, event_id: str, market: str, *, bookmakers: str = "fanduel"
+    sport: str, event_id: str, market: str, *, bookmakers: str = PROP_BOOKS
 ) -> dict:
     """Return the event-odds payload for one market (memoized per run)."""
     cache_key = ("odds", sport, event_id, market, bookmakers)
@@ -199,16 +211,21 @@ def get_fanduel_line(
     market: str,
     projection: float,
     *,
-    bookmakers: str = "fanduel",
+    bookmakers: str = PROP_BOOKS,
 ) -> Tuple[float, float, str]:
-    """Return (line, american_price, 'o'|'u'|'n') for a player prop market."""
+    """Return (line, american_price, 'o'|'u'|'n') for a player prop market.
+
+    The default (NBA) request reads every PROP_BOOKS book but this still returns
+    FanDuel's line only; a caller passing its own list (WNBA) keeps matching it.
+    """
     data = _get_event_market_odds(sport, event_id, market, bookmakers=bookmakers)
     if not data:
         return 0.0, 0.0, "n"
+    match = "fanduel" if bookmakers == PROP_BOOKS else bookmakers
     wanted = _name_key(player_name)
     try:
         for bookmaker in data.get("bookmakers", []):
-            if not _bookmaker_matches(bookmaker, bookmakers):
+            if not _bookmaker_matches(bookmaker, match):
                 continue
             for mkt in bookmaker.get("markets", []):
                 if mkt.get("key") != market:
@@ -244,13 +261,54 @@ def get_fanduel_line(
 
 NBA_SPORT = "basketball_nba"
 
-# Odds API market keys for core player props (FanDuel bookmaker).
+
+def prop_quotes(
+    sport: str,
+    event_id: str,
+    player_name: str,
+    market: str,
+    *,
+    bookmakers: str = PROP_BOOKS,
+) -> list[odds_math.Quote]:
+    """One Quote per book listing the player. A book whose Over and Under points differ
+    gives two one-sided Quotes, so a price never travels with another line."""
+    data = _get_event_market_odds(sport, event_id, market, bookmakers=bookmakers)
+    wanted = _name_key(player_name)
+    quotes: list[odds_math.Quote] = []
+    for bookmaker in (data or {}).get("bookmakers", []):
+        book = (bookmaker.get("key") or "").lower()
+        for mkt in bookmaker.get("markets", []):
+            if mkt.get("key") != market:
+                continue
+            sides: dict[str, tuple[float, int | None]] = {}
+            for o in mkt.get("outcomes", []):
+                if _name_key(o.get("description")) != wanted or o.get("point") is None:
+                    continue
+                price = o.get("price")
+                sides[o.get("name")] = (
+                    float(o["point"]),
+                    int(price) if price else None,
+                )
+            over, under = sides.get("Over"), sides.get("Under")
+            if over and under and over[0] == under[0]:
+                quotes.append(odds_math.Quote(book, over[0], over[1], under[1]))
+            else:
+                if over:
+                    quotes.append(odds_math.Quote(book, over[0], over[1], None))
+                if under:
+                    quotes.append(odds_math.Quote(book, under[0], None, under[1]))
+    return quotes
+
+
+# Odds API market keys for NBA player props.
 PROP_MARKETS: dict[str, str] = {
     "points": "player_points",
     "rebounds": "player_rebounds",
     "assists": "player_assists",
     "three_pt_made": "player_threes",
     "pra": "player_points_rebounds_assists",
+    "steals": "player_steals",
+    "blocks": "player_blocks",
 }
 
 
@@ -263,7 +321,7 @@ def fetch_fanduel_prop_for_player(
     *,
     sport: str = NBA_SPORT,
     event_id: str | None = None,
-    bookmakers: str = "fanduel",
+    bookmakers: str = PROP_BOOKS,
 ) -> tuple[float | None, str | None, int | None]:
     """Resolve (line, pick side, American price of that side) for one player prop,
     or (None, None, None). The price is None when the book sent none."""
@@ -294,21 +352,45 @@ def apply_fanduel_to_projection(
     market: str,
     projection: float,
 ) -> bool:
-    """Set ``fanduel_line`` / ``fanduel_over_under`` / ``fanduel_price`` on a projection ORM row.
+    """Set ``fanduel_*`` (FanDuel only) and ``best_*`` (best of all PROP_BOOKS) on a
+    projection ORM row, and stamp ``projected_at``.
 
-    Returns True when a line was stored; an existing line is left untouched
-    when no fresh one can be fetched.
+    Returns True when a FanDuel line was stored; an existing line (and best_*) is
+    left untouched when no fresh one can be fetched.
     """
+    row.projected_at = datetime.utcnow()
     line, flag, price = fetch_fanduel_prop_for_player(
         team_name, opponent_team_name, player_name, market, projection
     )
-    if line is None:
+    stored = line is not None
+    if stored:
+        row.fanduel_line = line
+        row.fanduel_over_under = flag
+        row.fanduel_price = price  # never leave a stale price next to a new line
+    elif getattr(row, "fanduel_line", None) is not None:
         # A rerun that finds nothing must not wipe a line stored by an earlier run.
         # Re-derive the side from it (lifts an OUT flag: the player is active again).
-        if getattr(row, "fanduel_line", None) is not None:
-            row.fanduel_over_under = pick_side(projection, row.fanduel_line)
-        return False
-    row.fanduel_line = line
-    row.fanduel_over_under = flag
-    row.fanduel_price = price  # never leave a stale price next to a new line
-    return True
+        side = pick_side(projection, row.fanduel_line)
+        if side != row.fanduel_over_under and row.fanduel_over_under in ("o", "u"):
+            # The stored prices (FanDuel and best_*) were for the other side of the line.
+            row.fanduel_price = None
+            row.best_book = row.best_line = row.best_price = None
+        row.fanduel_over_under = side
+
+    event_id = get_event_id_for_game(NBA_SPORT, team_name, opponent_team_name)
+    quotes = prop_quotes(NBA_SPORT, event_id, player_name, market) if event_id else []
+    if quotes:
+        side = getattr(row, "fanduel_over_under", None)
+        if side not in ("o", "u"):
+            lines = [q.line for q in quotes if q.line is not None]
+            side = pick_side(projection, median(lines))
+        best = odds_math.best_quote(
+            quotes,
+            side,
+            projection=projection,
+            sd=odds_math.MARKET_SD.get(market, odds_math.DEFAULT_SD),
+        )
+        row.best_book = best.book if best else None
+        row.best_line = best.line if best else None
+        row.best_price = best.price if best else None
+    return stored

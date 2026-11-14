@@ -326,6 +326,7 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
             projected_field=proj_f,
             label=label,
             key=bk,
+            price_field="fanduel_price",
         )
         for rk, bk, label, _pc, _ac, proj_f, actual_f in _PROPS
     ]
@@ -378,6 +379,7 @@ def _overview_parts(
             line_field="fanduel_line",
             pick_field="fanduel_over_under",
             actual_field=actual_f,
+            price_field="fanduel_price",
         )
         parts.append(
             {

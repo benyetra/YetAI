@@ -1437,6 +1437,7 @@ class YetAIBetsServiceDB:
             else {}
         )
         factors["settlement"] = settlement
+        self._add_closing(db, bet, factors, now)
         bet.prediction_factors = factors
         if legs:
             bet.parlay_legs = legs
@@ -1456,6 +1457,54 @@ class YetAIBetsServiceDB:
         bet.result = clamp_yetai_result(text, max_len=200)
         self._mirror_in_savepoint(db, bet)
         return "void" if kind == "void" else "settled"
+
+    @staticmethod
+    def _add_closing(db: Session, bet: YetAIBet, factors: dict, now: datetime) -> None:
+        """Store the closing quote and CLV on an auto NBA prop once its game has started.
+
+        Never blocks settlement; nothing is written when no close exists yet."""
+        try:
+            g = factors.get("grading") or {}
+            ct = bet.commence_time
+            if (
+                factors.get("closing")
+                or str(
+                    getattr(bet.source, "value", getattr(bet, "source", None))
+                ).lower()
+                != "auto"
+                or g.get("league") != "NBA"
+                or g.get("market") != "player_prop"
+                or not ct
+                or ct.replace(tzinfo=None) > now.replace(tzinfo=None)
+            ):
+                return
+            from app.services.prop_clv import NBA_STAT_MARKET, clv_vs_close
+            from app.services.odds_snapshots import closing_quotes
+
+            market = NBA_STAT_MARKET.get(g.get("stat"))
+            side = {"over": "o", "under": "u"}.get(g.get("side"))
+            if not (market and side and g.get("player") and g.get("line") is not None):
+                return
+            day = date.fromisoformat(str(g["game_date"])[:10])
+            with db.begin_nested():  # a failed read must not abort the settlement
+                rows = closing_quotes(db, day, market, g["player"])
+            book = (factors.get("projection_metadata") or {}).get("book") or "fanduel"
+            c = clv_vs_close(side, float(g["line"]), bet.odds, book, rows, market)
+            if c is None:
+                return
+            r = c["row"]
+            factors["closing"] = {
+                "book": c["book"],
+                "line": c["line"],
+                "price": c["price"],
+                "observed_at": r.first_seen_at.isoformat(),
+                "last_seen_at": r.last_seen_at.isoformat(),
+                "line_clv": c["line_clv"],
+                "prob_clv": c["prob_clv"],
+                "books": c["books"],
+            }
+        except Exception:
+            logger.exception("YETAI_CLOSING_FAILED bet=%s", getattr(bet, "id", None))
 
     def _record_settlement_error(
         self, db: Session, bet_id: str, exc: Exception

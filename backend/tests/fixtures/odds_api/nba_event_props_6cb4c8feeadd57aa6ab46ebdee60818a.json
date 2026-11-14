@@ -1,0 +1,5303 @@
+{
+ "headers": {
+  "x-requests-last": "7",
+  "x-requests-used": "16840",
+  "x-requests-remaining": "3160"
+ },
+ "body": {
+  "id": "6cb4c8feeadd57aa6ab46ebdee60818a",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-11-15T00:10:00Z",
+  "home_team": "New Orleans Pelicans",
+  "away_team": "Denver Nuggets",
+  "bookmakers": [
+   {
+    "key": "fanduel",
+    "title": "FanDuel",
+    "markets": [
+     {
+      "key": "player_assists",
+      "last_update": "2026-11-14T20:45:00Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -142,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": 112,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 118,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -150,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": 100,
+        "point": 6.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -128,
+        "point": 6.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -132,
+        "point": 9.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 104,
+        "point": 9.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -106,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -120,
+        "point": 2.5
+       }
+      ]
+     },
+     {
+      "key": "player_points",
+      "last_update": "2026-11-14T20:45:00Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -130,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": 102,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -125,
+        "point": 7.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -102,
+        "point": 7.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -128,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Yves Missi",
+        "price": 100,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -106,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -120,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -113,
+        "point": 26.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -113,
+        "point": 26.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -115,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -111,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 102,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -130,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": 100,
+        "point": 24.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -128,
+        "point": 24.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -120,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -106,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": 100,
+        "point": 10.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -128,
+        "point": 10.5
+       }
+      ]
+     },
+     {
+      "key": "player_points_rebounds_assists",
+      "last_update": "2026-11-14T20:45:00Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -108,
+        "point": 30.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -118,
+        "point": 30.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -113,
+        "point": 25.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -113,
+        "point": 25.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -113,
+        "point": 34.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -113,
+        "point": 34.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -113,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -113,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -113,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -113,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -113,
+        "point": 48.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -113,
+        "point": 48.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -115,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -111,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -106,
+        "point": 29.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -120,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -128,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": 100,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -122,
+        "point": 14.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -104,
+        "point": 14.5
+       }
+      ]
+     },
+     {
+      "key": "player_rebounds",
+      "last_update": "2026-11-14T20:45:00Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -106,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -120,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -122,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Yves Missi",
+        "price": -104,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -120,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -104,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -115,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -111,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -142,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 112,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -156,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 122,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -154,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": 120,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -120,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -106,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -148,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": 116,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 114,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -146,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 124,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -160,
+        "point": 3.5
+       }
+      ]
+     },
+     {
+      "key": "player_steals",
+      "last_update": "2026-11-14T20:45:00Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": 140,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -188,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 128,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -172,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 162,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -220,
+        "point": 1.5
+       }
+      ]
+     },
+     {
+      "key": "player_threes",
+      "last_update": "2026-11-14T20:45:00Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 154,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -200,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 110,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -140,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -111,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -115,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": 138,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -178,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 126,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -162,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -178,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 136,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 130,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -166,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": 112,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -142,
+        "point": 2.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "fanatics",
+    "title": "Fanatics",
+    "markets": [
+     {
+      "key": "player_assists",
+      "last_update": "2026-11-14T20:44:43Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -145,
+        "point": 9.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 110,
+        "point": 9.5
+       }
+      ]
+     },
+     {
+      "key": "player_points",
+      "last_update": "2026-11-14T20:44:43Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -110,
+        "point": 24.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -120,
+        "point": 24.5
+       }
+      ]
+     },
+     {
+      "key": "player_points_rebounds_assists",
+      "last_update": "2026-11-14T20:44:43Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -120,
+        "point": 48.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -110,
+        "point": 48.5
+       }
+      ]
+     },
+     {
+      "key": "player_rebounds",
+      "last_update": "2026-11-14T20:44:43Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -150,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 115,
+        "point": 3.5
+       }
+      ]
+     },
+     {
+      "key": "player_threes",
+      "last_update": "2026-11-14T20:44:43Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -190,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 130,
+        "point": 2.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "williamhill_us",
+    "title": "Caesars",
+    "markets": [
+     {
+      "key": "player_assists",
+      "last_update": "2026-11-14T20:42:26Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 115,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -154,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -112,
+        "point": 6.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -120,
+        "point": 6.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -137,
+        "point": 9.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 104,
+        "point": 9.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -150,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": 112,
+        "point": 5.5
+       }
+      ]
+     },
+     {
+      "key": "player_points",
+      "last_update": "2026-11-14T20:42:26Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -106,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -127,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -122,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -109,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -121,
+        "point": 26.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -112,
+        "point": 26.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -127,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -106,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -114,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -117,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 100,
+        "point": 8.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -137,
+        "point": 8.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -106,
+        "point": 10.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -127,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -109,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -121,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -118,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -113,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -105,
+        "point": 24.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -127,
+        "point": 24.5
+       }
+      ]
+     },
+     {
+      "key": "player_rebounds",
+      "last_update": "2026-11-14T20:42:26Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -139,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 105,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -124,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -108,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -113,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -118,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -117,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -114,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -145,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": 110,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 120,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -159,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 122,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -164,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -150,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 118,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -127,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -105,
+        "point": 4.5
+       }
+      ]
+     },
+     {
+      "key": "player_threes",
+      "last_update": "2026-11-14T20:42:26Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -182,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 135,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": 109,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -145,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 106,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -141,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 124,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -170,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -179,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 133,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 129,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -173,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 143,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -193,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -117,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -114,
+        "point": 1.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "draftkings",
+    "title": "DraftKings",
+    "markets": [
+     {
+      "key": "player_assists",
+      "last_update": "2026-11-14T20:44:33Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 105,
+        "point": 10.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -138,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -113,
+        "point": 6.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -117,
+        "point": 6.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -139,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": 106,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 116,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -153,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -107,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -123,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -105,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -126,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -105,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -126,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -103,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -128,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -184,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 139,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -125,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -106,
+        "point": 1.5
+       }
+      ]
+     },
+     {
+      "key": "player_points",
+      "last_update": "2026-11-14T20:44:33Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -122,
+        "point": 26.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -105,
+        "point": 26.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -104,
+        "point": 24.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -123,
+        "point": 24.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -119,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -107,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -118,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -108,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -106,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -121,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -110,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -116,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -114,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -112,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -124,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -103,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -109,
+        "point": 10.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -117,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -104,
+        "point": 8.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -122,
+        "point": 8.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -112,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Yves Missi",
+        "price": -114,
+        "point": 5.5
+       }
+      ]
+     },
+     {
+      "key": "player_points_rebounds_assists",
+      "last_update": "2026-11-14T20:44:33Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -117,
+        "point": 49.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -112,
+        "point": 49.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -123,
+        "point": 34.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -107,
+        "point": 34.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -121,
+        "point": 29.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -108,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -107,
+        "point": 29.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -123,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -110,
+        "point": 26.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -119,
+        "point": 26.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -107,
+        "point": 21.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -123,
+        "point": 21.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -117,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -113,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -110,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -119,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -105,
+        "point": 15.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -126,
+        "point": 15.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -111,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -118,
+        "point": 13.5
+       }
+      ]
+     },
+     {
+      "key": "player_rebounds",
+      "last_update": "2026-11-14T20:44:33Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -138,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 104,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -115,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Yves Missi",
+        "price": -114,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -115,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -115,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -140,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": 106,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -129,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -102,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -106,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -124,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -156,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": 118,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -156,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 118,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -108,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -121,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 123,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -163,
+        "point": 3.5
+       }
+      ]
+     },
+     {
+      "key": "player_steals",
+      "last_update": "2026-11-14T20:44:33Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": 132,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -177,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 138,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -185,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 160,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -215,
+        "point": 1.5
+       }
+      ]
+     },
+     {
+      "key": "player_threes",
+      "last_update": "2026-11-14T20:44:33Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -162,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 123,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": 118,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -155,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -171,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 129,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -115,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -115,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 120,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -158,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 129,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -171,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 141,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -187,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 153,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -203,
+        "point": 1.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "betrivers",
+    "title": "BetRivers",
+    "markets": [
+     {
+      "key": "player_assists",
+      "last_update": "2026-11-14T20:44:19Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -107,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -127,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -167,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 123,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -118,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -115,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -143,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": 106,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -113,
+        "point": 6.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -120,
+        "point": 6.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -152,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": 112,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -108,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -125,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 110,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -150,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -107,
+        "point": 10.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -127,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 120,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -162,
+        "point": 3.5
+       }
+      ]
+     },
+     {
+      "key": "player_points",
+      "last_update": "2026-11-14T20:44:19Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -112,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Yves Missi",
+        "price": -121,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -129,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -105,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -117,
+        "point": 10.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -115,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -110,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -124,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -109,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -125,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -124,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -109,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -105,
+        "point": 8.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -129,
+        "point": 8.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -115,
+        "point": 27.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -117,
+        "point": 27.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -118,
+        "point": 24.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -114,
+        "point": 24.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -121,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -112,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -117,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -115,
+        "point": 12.5
+       }
+      ]
+     },
+     {
+      "key": "player_points_rebounds_assists",
+      "last_update": "2026-11-14T20:44:19Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -115,
+        "point": 50.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -117,
+        "point": 50.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -109,
+        "point": 30.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -124,
+        "point": 30.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -120,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -113,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -113,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -120,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -120,
+        "point": 35.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -113,
+        "point": 35.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -105,
+        "point": 26.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -129,
+        "point": 26.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -103,
+        "point": 21.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -132,
+        "point": 21.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -121,
+        "point": 29.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -112,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -113,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -120,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -115,
+        "point": 15.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -118,
+        "point": 15.5
+       }
+      ]
+     },
+     {
+      "key": "player_rebounds",
+      "last_update": "2026-11-14T20:44:19Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -177,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": 128,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 120,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -162,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 102,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -137,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -150,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": 110,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": 120,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -165,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -122,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -110,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -117,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Yves Missi",
+        "price": -117,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -136,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": 100,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 128,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -177,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -132,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -103,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -112,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -121,
+        "point": 5.5
+       }
+      ]
+     },
+     {
+      "key": "player_threes",
+      "last_update": "2026-11-14T20:44:19Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 117,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -159,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": 128,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -175,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 150,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -210,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 143,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -200,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -180,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 130,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -114,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -118,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 106,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -143,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": 128,
+        "point": 0.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -177,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -167,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 123,
+        "point": 2.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "ballybet",
+    "title": "Bally Bet",
+    "markets": [
+     {
+      "key": "player_assists",
+      "last_update": "2026-11-14T20:44:25Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -108,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 118,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 108,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -110,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -157,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -115,
+        "point": 6.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -148,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -120,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -175,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -109,
+        "point": 2.5
+       }
+      ]
+     },
+     {
+      "key": "player_blocks",
+      "last_update": "2026-11-14T20:44:25Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 148,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 155,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 170,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -113,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": 155,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 125,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 140,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": 170,
+        "point": 0.5
+       }
+      ]
+     },
+     {
+      "key": "player_points",
+      "last_update": "2026-11-14T20:44:25Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -118,
+        "point": 24.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -117,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -121,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -115,
+        "point": 27.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -124,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -105,
+        "point": 8.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -110,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -117,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -129,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -112,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -109,
+        "point": 18.5
+       }
+      ]
+     },
+     {
+      "key": "player_points_rebounds_assists",
+      "last_update": "2026-11-14T20:44:25Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -103,
+        "point": 21.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -120,
+        "point": 35.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -113,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -115,
+        "point": 15.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -121,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -113,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -120,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -109,
+        "point": 30.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -115,
+        "point": 50.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -105,
+        "point": 26.5
+       }
+      ]
+     },
+     {
+      "key": "player_rebounds",
+      "last_update": "2026-11-14T20:44:25Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 128,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -112,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -132,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -134,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -122,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": 120,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 120,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -175,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 102,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -117,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -148,
+        "point": 4.5
+       }
+      ]
+     },
+     {
+      "key": "player_steals",
+      "last_update": "2026-11-14T20:44:25Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": 155,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -127,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 145,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -106,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -143,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 170,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -245,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -225,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -230,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 175,
+        "point": 1.5
+       }
+      ]
+     },
+     {
+      "key": "player_threes",
+      "last_update": "2026-11-14T20:44:25Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -167,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 106,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": 128,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -114,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -180,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 143,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 150,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": 128,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 117,
+        "point": 1.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "espnbet",
+    "title": "theScore Bet",
+    "markets": [
+     {
+      "key": "player_assists",
+      "last_update": "2026-11-14T20:44:06Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -125,
+        "point": 9.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -105,
+        "point": 9.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -145,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": 110,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -110,
+        "point": 6.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -120,
+        "point": 6.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -105,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -125,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 105,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -140,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -110,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -120,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -190,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 140,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 115,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -150,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -125,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -105,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -110,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -120,
+        "point": 2.5
+       }
+      ]
+     },
+     {
+      "key": "player_points",
+      "last_update": "2026-11-14T20:44:06Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -105,
+        "point": 24.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -125,
+        "point": 24.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -110,
+        "point": 26.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -120,
+        "point": 26.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -120,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -110,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -105,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -125,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -125,
+        "point": 17.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -105,
+        "point": 17.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -120,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -110,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -125,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -105,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -125,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -105,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -105,
+        "point": 10.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -125,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -125,
+        "point": 7.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -105,
+        "point": 7.5
+       }
+      ]
+     },
+     {
+      "key": "player_points_rebounds_assists",
+      "last_update": "2026-11-14T20:44:06Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -110,
+        "point": 49.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -120,
+        "point": 49.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -120,
+        "point": 34.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -110,
+        "point": 34.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -125,
+        "point": 29.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -105,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -105,
+        "point": 29.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -125,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -115,
+        "point": 25.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -115,
+        "point": 25.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -110,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -120,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -105,
+        "point": 15.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -125,
+        "point": 15.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -125,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -105,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -120,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -110,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -110,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -120,
+        "point": 13.5
+       }
+      ]
+     },
+     {
+      "key": "player_rebounds",
+      "last_update": "2026-11-14T20:44:06Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -140,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 105,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -115,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -115,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -140,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": 105,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -125,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -105,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -115,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -115,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -120,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -110,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -150,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 115,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 125,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -165,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 125,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -165,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -160,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": 120,
+        "point": 1.5
+       }
+      ]
+     },
+     {
+      "key": "player_threes",
+      "last_update": "2026-11-14T20:44:06Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -180,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 135,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": 110,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -145,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -180,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 135,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -115,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -115,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 150,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -200,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 130,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -170,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 105,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -140,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 130,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -170,
+        "point": 1.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "betmgm",
+    "title": "BetMGM",
+    "markets": [
+     {
+      "key": "player_assists",
+      "last_update": "2026-11-14T20:44:52Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -175,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 130,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -125,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -105,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 120,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -160,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -105,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -125,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -135,
+        "point": 9.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 100,
+        "point": 9.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": 100,
+        "point": 6.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -135,
+        "point": 6.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -175,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": 130,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": 115,
+        "point": 6.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -155,
+        "point": 6.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -110,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -120,
+        "point": 2.5
+       }
+      ]
+     },
+     {
+      "key": "player_points",
+      "last_update": "2026-11-14T20:44:52Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -140,
+        "point": 17.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": 105,
+        "point": 17.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -105,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -125,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -105,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -125,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -105,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -125,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -115,
+        "point": 27.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -115,
+        "point": 27.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -105,
+        "point": 24.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -125,
+        "point": 24.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 100,
+        "point": 8.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -135,
+        "point": 8.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -140,
+        "point": 17.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": 105,
+        "point": 17.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -120,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -110,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -135,
+        "point": 9.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": 100,
+        "point": 9.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -120,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Yves Missi",
+        "price": -110,
+        "point": 4.5
+       }
+      ]
+     },
+     {
+      "key": "player_points_rebounds_assists",
+      "last_update": "2026-11-14T20:44:52Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -115,
+        "point": 49.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -115,
+        "point": 49.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -110,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -120,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -105,
+        "point": 35.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -125,
+        "point": 35.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -105,
+        "point": 29.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -125,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -125,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -105,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -105,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -125,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -125,
+        "point": 17.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -105,
+        "point": 17.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -120,
+        "point": 29.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -111,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -120,
+        "point": 14.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -111,
+        "point": 14.5
+       }
+      ]
+     },
+     {
+      "key": "player_rebounds",
+      "last_update": "2026-11-14T20:44:52Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -160,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": 120,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 110,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -150,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -115,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -115,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -105,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -125,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -120,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -111,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -135,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 100,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -130,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -105,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -130,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -105,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": 145,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -200,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -135,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": 100,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -140,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Yves Missi",
+        "price": 105,
+        "point": 5.5
+       }
+      ]
+     },
+     {
+      "key": "player_threes",
+      "last_update": "2026-11-14T20:44:52Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 120,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -160,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": 105,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -140,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 105,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -140,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 130,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -175,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": 110,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -150,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 130,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -175,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -175,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 130,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": 145,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -200,
+        "point": 2.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "hardrockbet",
+    "title": "Hard Rock Bet",
+    "markets": [
+     {
+      "key": "player_assists",
+      "last_update": "2026-11-14T20:43:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -110,
+        "point": 6.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -120,
+        "point": 6.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -105,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -125,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -135,
+        "point": 9.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 105,
+        "point": 9.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -175,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 135,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 120,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -155,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -145,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": 110,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -110,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -120,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 110,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -140,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -110,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -120,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -125,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -105,
+        "point": 1.5
+       }
+      ]
+     },
+     {
+      "key": "player_blocks",
+      "last_update": "2026-11-14T20:43:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 145,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -210,
+        "point": 1.5
+       }
+      ]
+     },
+     {
+      "key": "player_points",
+      "last_update": "2026-11-14T20:43:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -120,
+        "point": 26.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -110,
+        "point": 26.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -110,
+        "point": 24.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -120,
+        "point": 24.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -120,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -110,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -115,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -115,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -110,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -120,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -120,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -110,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -105,
+        "point": 10.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -125,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -105,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -125,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -115,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -115,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 100,
+        "point": 8.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -130,
+        "point": 8.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -120,
+        "point": 5.5
+       }
+      ]
+     },
+     {
+      "key": "player_points_rebounds_assists",
+      "last_update": "2026-11-14T20:43:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -110,
+        "point": 49.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -120,
+        "point": 49.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -105,
+        "point": 35.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -125,
+        "point": 35.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -115,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -115,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -105,
+        "point": 30.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -125,
+        "point": 30.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -110,
+        "point": 29.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -120,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -120,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -110,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -120,
+        "point": 20.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -110,
+        "point": 20.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -125,
+        "point": 14.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -105,
+        "point": 14.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": -110,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -120,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -120,
+        "point": 25.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -110,
+        "point": 25.5
+       }
+      ]
+     },
+     {
+      "key": "player_rebounds",
+      "last_update": "2026-11-14T20:43:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -115,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -115,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -140,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 105,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -155,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 120,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -110,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -120,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -115,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -115,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 120,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -155,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -145,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": 115,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": -150,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": 120,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -125,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -105,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 120,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -155,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "DeAndre Jordan",
+        "price": -145,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Yves Missi",
+        "price": -120,
+        "point": 5.5
+       }
+      ]
+     },
+     {
+      "key": "player_steals",
+      "last_update": "2026-11-14T20:43:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 130,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -190,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -240,
+        "point": 0.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": 165,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -170,
+        "point": 0.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 120,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -210,
+        "point": 0.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 150,
+        "point": 0.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": 130,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -185,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 175,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -260,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 150,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -220,
+        "point": 1.5
+       }
+      ]
+     },
+     {
+      "key": "player_threes",
+      "last_update": "2026-11-14T20:43:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -115,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -115,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -175,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 135,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 110,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -140,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 125,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -165,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -180,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 135,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 135,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -180,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": 115,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -145,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 145,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -190,
+        "point": 1.5
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "key": "pinnacle",
+    "title": "Pinnacle",
+    "markets": [
+     {
+      "key": "player_assists",
+      "last_update": "2026-11-14T20:44:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -111,
+        "point": 6.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -119,
+        "point": 6.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -137,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": 103,
+        "point": 5.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 128,
+        "point": 10.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -172,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 110,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -145,
+        "point": 3.5
+       }
+      ]
+     },
+     {
+      "key": "player_points",
+      "last_update": "2026-11-14T20:44:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 101,
+        "point": 13.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -133,
+        "point": 13.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -127,
+        "point": 12.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -104,
+        "point": 12.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": -125,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -106,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "DeMar DeRozan",
+        "price": 101,
+        "point": 10.5
+       },
+       {
+        "name": "Under",
+        "description": "DeMar DeRozan",
+        "price": -134,
+        "point": 10.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 102,
+        "point": 8.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -135,
+        "point": 8.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -106,
+        "point": 24.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -125,
+        "point": 24.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -107,
+        "point": 18.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -124,
+        "point": 18.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -111,
+        "point": 26.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -119,
+        "point": 26.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -159,
+        "point": 17.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": 119,
+        "point": 17.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": 117,
+        "point": 21.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -156,
+        "point": 21.5
+       }
+      ]
+     },
+     {
+      "key": "player_points_rebounds_assists",
+      "last_update": "2026-11-14T20:44:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -114,
+        "point": 35.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -116,
+        "point": 35.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -112,
+        "point": 29.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -118,
+        "point": 29.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 101,
+        "point": 49.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -134,
+        "point": 49.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -113,
+        "point": 30.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -117,
+        "point": 30.5
+       }
+      ]
+     },
+     {
+      "key": "player_rebounds",
+      "last_update": "2026-11-14T20:44:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": -146,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": 110,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -114,
+        "point": 3.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": -114,
+        "point": 3.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 116,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -155,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": 128,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": -171,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -118,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -112,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": -135,
+        "point": 11.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": 102,
+        "point": 11.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": -124,
+        "point": 4.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -107,
+        "point": 4.5
+       },
+       {
+        "name": "Over",
+        "description": "Zion Williamson",
+        "price": -109,
+        "point": 5.5
+       },
+       {
+        "name": "Under",
+        "description": "Zion Williamson",
+        "price": -122,
+        "point": 5.5
+       }
+      ]
+     },
+     {
+      "key": "player_threes",
+      "last_update": "2026-11-14T20:44:51Z",
+      "outcomes": [
+       {
+        "name": "Over",
+        "description": "Aaron Gordon",
+        "price": 138,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Aaron Gordon",
+        "price": -185,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Cameron Johnson",
+        "price": -188,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Cameron Johnson",
+        "price": 140,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Herb Jones",
+        "price": 148,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Herb Jones",
+        "price": -201,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Jamal Murray",
+        "price": -160,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Jamal Murray",
+        "price": 120,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Jeremiah Fears",
+        "price": -112,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Jeremiah Fears",
+        "price": -118,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Nikola Jokic",
+        "price": 102,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Nikola Jokic",
+        "price": -136,
+        "point": 1.5
+       },
+       {
+        "name": "Over",
+        "description": "Saddiq Bey",
+        "price": 119,
+        "point": 2.5
+       },
+       {
+        "name": "Under",
+        "description": "Saddiq Bey",
+        "price": -159,
+        "point": 2.5
+       },
+       {
+        "name": "Over",
+        "description": "Christian Braun",
+        "price": 122,
+        "point": 1.5
+       },
+       {
+        "name": "Under",
+        "description": "Christian Braun",
+        "price": -163,
+        "point": 1.5
+       }
+      ]
+     }
+    ]
+   }
+  ]
+ }
+}
