@@ -7,8 +7,9 @@ X is a player's integer stat ~ negative binomial, mean mu, variance phi * mu
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
-from scipy.stats import nbinom, poisson
+from scipy.special import betainc, pdtr, pdtrc
 
 # Pooled within-player var/mean, 2025-26 box scores, players with >= 20 games of >= 15 min.
 # These are unconditional (they include role changes) and so overstate the dispersion given the
@@ -34,22 +35,28 @@ MAX_SHIFT: dict[str, float] = {
 }
 
 
-def _dist(mu: float, phi: float):
+def _cdf_sf(k: float, mu: float, phi: float) -> tuple[float, float]:
+    """(P(X <= k), P(X > k)) for integer k via scipy.special (no frozen-dist overhead)."""
+    k = int(k)
+    if k < 0:
+        return 0.0, 1.0
     if phi <= 1.0001:
-        return poisson(mu)
-    return nbinom(mu / (phi - 1), 1 / phi)
+        return float(pdtr(k, mu)), float(pdtrc(k, mu))
+    n, p = mu / (phi - 1), 1 / phi
+    return float(betainc(n, k + 1, p)), float(betainc(k + 1, n, 1 - p))
 
 
 def p_over(line: float, mu: float, phi: float) -> float:
     """P(over wins | not a push). Half line L: P(X > L) = 1 - cdf(floor(L)).
     Integer line L: P(X > L) / (P(X > L) + P(X < L))."""
-    d = _dist(mu, phi)
     if line != math.floor(line):
-        return float(d.sf(math.floor(line)))
-    over, under = float(d.sf(line)), float(d.cdf(line - 1))
+        return _cdf_sf(math.floor(line), mu, phi)[1]
+    over = _cdf_sf(line, mu, phi)[1]
+    under = _cdf_sf(line - 1, mu, phi)[0]
     return over / (over + under)
 
 
+@lru_cache(maxsize=500_000)
 def mean_for(line: float, p: float, phi: float) -> float | None:
     """mu in [1e-6, 300] with p_over(line, mu, phi) = p (monotone in mu; bisection to 1e-10).
     None when p is outside [0.02, 0.98] or not bracketed."""
