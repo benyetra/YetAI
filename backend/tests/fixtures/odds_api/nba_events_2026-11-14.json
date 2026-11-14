@@ -1,0 +1,42 @@
+[
+ {
+  "id": "6cb4c8feeadd57aa6ab46ebdee60818a",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-11-15T00:10:00Z",
+  "home_team": "New Orleans Pelicans",
+  "away_team": "Denver Nuggets"
+ },
+ {
+  "id": "2cc2c254049b0bd0a6219f70cbb0b69a",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-11-15T00:40:00Z",
+  "home_team": "Cleveland Cavaliers",
+  "away_team": "Dallas Mavericks"
+ },
+ {
+  "id": "a7cb6062530bd69eb6caee84a015abd0",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-11-15T01:10:00Z",
+  "home_team": "Memphis Grizzlies",
+  "away_team": "Brooklyn Nets"
+ },
+ {
+  "id": "5773e80d52d3fba36b11be38ded62790",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-11-15T01:10:00Z",
+  "home_team": "Minnesota Timberwolves",
+  "away_team": "Chicago Bulls"
+ },
+ {
+  "id": "cb06267ae037a883ae6f71078d6e2aaa",
+  "sport_key": "basketball_nba",
+  "sport_title": "NBA",
+  "commence_time": "2026-11-15T01:10:00Z",
+  "home_team": "Miami Heat",
+  "away_team": "Detroit Pistons"
+ }
+]
