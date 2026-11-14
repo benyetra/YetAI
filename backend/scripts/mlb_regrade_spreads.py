@@ -25,6 +25,8 @@ from app.services.mlb_game_picks import derive_spread_recommendation_row, grade_
 
 def regraded_spread(actual: Any, proj: Any) -> bool | None:
     """spread_correct for one game from stored scores + projection (None = no call/push)."""
+    if actual.home_score is None or actual.away_score is None:
+        return actual.spread_correct  # no final score: leave as stored
     if proj.market_spread is None:
         return None
     pick = proj.spread_recommendation or derive_spread_recommendation_row(
