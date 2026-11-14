@@ -44,6 +44,7 @@ export default function YetaiBetsView() {
   const [selectedBet, setSelectedBet] = useState<BestBet | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -52,28 +53,20 @@ export default function YetaiBetsView() {
 
   useEffect(() => {
     if (!isAuthenticated || !user) return;
-    const load = async () => {
+    // Live picks and history load independently: one failing must not blank the other.
+    const token = localStorage.getItem('auth_token');
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    };
+
+    const loadLive = async () => {
       setLoadingBets(true);
-      setLoadingHistory(true);
       setError(null);
       try {
-        const token = localStorage.getItem('auth_token');
-        const headers = {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        };
-
-        const [liveRes, historyRes] = await Promise.all([
-          fetch(getApiUrl('/api/yetai-bets'), { headers }),
-          fetch(getApiUrl('/api/yetai-bets/history?days=90&limit=100'), { headers }),
-        ]);
-
-        if (!liveRes.ok || !historyRes.ok) {
-          setError(UNAVAILABLE);
-          return;
-        }
-
-        const liveData = await liveRes.json();
+        const res = await fetch(getApiUrl('/api/yetai-bets'), { headers });
+        if (!res.ok) throw new Error(`live ${res.status}`);
+        const liveData = await res.json();
         const liveList: BestBet[] = Array.isArray(liveData.bets) ? liveData.bets : [];
         setBets(liveList);
 
@@ -84,23 +77,36 @@ export default function YetaiBetsView() {
         } else {
           setModelConfidence(null);
         }
-
-        const data = await historyRes.json();
-        const list: YetaiHistoryBet[] = Array.isArray(data.bets) ? data.bets : [];
-        setHistoryBets(list);
-        setHistoryStats(data.stats ?? null);
-        const today = data.today;
-        setTodayWinRate(today?.win_rate ?? null);
-        const wk = data.last_7d;
-        setWeekRoi(wk?.graded ? Math.round((wk.units / wk.graded) * 100) : null);
       } catch (e) {
         console.error(e);
         setError(UNAVAILABLE);
       } finally {
         setLoadingBets(false);
+      }
+    };
+
+    const loadHistory = async () => {
+      setLoadingHistory(true);
+      setHistoryError(null);
+      try {
+        const res = await fetch(getApiUrl('/api/yetai-bets/history?days=90&limit=100'), { headers });
+        if (!res.ok) throw new Error(`history ${res.status}`);
+        const data = await res.json();
+        const list: YetaiHistoryBet[] = Array.isArray(data.bets) ? data.bets : [];
+        setHistoryBets(list);
+        setHistoryStats(data.stats ?? null);
+        setTodayWinRate(data.today?.win_rate ?? null);
+        const wk = data.last_7d;
+        setWeekRoi(wk?.graded ? Math.round((wk.units / wk.graded) * 100) : null);
+      } catch (e) {
+        console.error(e);
+        setHistoryError(UNAVAILABLE);
+      } finally {
         setLoadingHistory(false);
       }
     };
+
+    const load = () => Promise.all([loadLive(), loadHistory()]);
     load();
   }, [isAuthenticated, user, reloadKey]);
 
@@ -137,6 +143,7 @@ export default function YetaiBetsView() {
         historyStats={historyStats}
         historyLoading={loadingHistory}
         error={error}
+        historyError={historyError}
         onRetry={() => setReloadKey((k) => k + 1)}
       />
       <YetAIBetModal

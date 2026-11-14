@@ -19,8 +19,10 @@ export interface YetaiBetsScreenProps {
   historyBets?: YetaiHistoryBet[];
   historyStats?: YetaiHistoryStats | null;
   historyLoading?: boolean;
-  /** Set when the live/history request failed: shows an error state instead of "no picks". */
+  /** Set when the live-picks request failed: replaces the live tab, not the whole screen. */
   error?: string | null;
+  /** Set when the history request failed: replaces the history tab only. */
+  historyError?: string | null;
   onRetry?: () => void;
 }
 
@@ -34,6 +36,7 @@ export default function YetaiBetsScreen({
   historyStats = null,
   historyLoading = false,
   error = null,
+  historyError = null,
   onRetry,
 }: YetaiBetsScreenProps) {
   const [tab, setTab] = useState<YetaiBetsTab>('live');
@@ -76,9 +79,9 @@ export default function YetaiBetsScreen({
         </button>
       </div>
 
-      {error ? (
+      {(tab === 'live' ? error : historyError) ? (
         <div role="alert" className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)' }}>
-          <p style={{ marginBottom: 12 }}>{error}</p>
+          <p style={{ marginBottom: 12 }}>{tab === 'live' ? error : historyError}</p>
           {onRetry ? (
             <button type="button" className="chip" onClick={onRetry}>
               Retry
@@ -87,7 +90,7 @@ export default function YetaiBetsScreen({
         </div>
       ) : null}
 
-      {!error && tab === 'history' ? (
+      {!historyError && tab === 'history' ? (
         <YetaiBetsHistory bets={historyBets} stats={historyStats} loading={historyLoading} />
       ) : null}
 
