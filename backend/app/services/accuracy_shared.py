@@ -23,6 +23,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Iterable, Literal, Optional
 
+from app.services.odds_math import units_for_result
+
 Tone = Literal["good", "warn", "neutral"]
 
 
@@ -170,6 +172,7 @@ def ou_call_bucket(
     projected_field: str,
     label: str,
     key: str,
+    price_field: Optional[str] = None,
 ) -> AccuracyBucket:
     """O/U call accuracy across rows that carry a sportsbook line.
 
@@ -178,11 +181,14 @@ def ou_call_bucket(
 
     Reports primary = 'correct/total · NN%' and secondary = 'MAE X.XX
     · K push' where K is the push count (omitted if zero). MAE is over every
-    row with a projection and an actual, regardless of pick.
+    row with a projection and an actual, regardless of pick. With ``price_field``
+    the secondary also shows units won at each row's stored price ('+1.2u';
+    rows without a price count at -110).
     """
     total = 0
     correct = 0
     push = 0
+    units = 0.0
     abs_errors: list[float] = []
 
     for row in rows:
@@ -203,11 +209,15 @@ def ou_call_bucket(
         elif result in ("hit", "miss"):
             total += 1
             correct += result == "hit"
+            if price_field:
+                units += units_for_result(result, row.get(price_field))
 
     accuracy = correct / total if total else None
     mae = sum(abs_errors) / len(abs_errors) if abs_errors else None
 
     secondary_bits: list[str] = []
+    if price_field and total:
+        secondary_bits.append(f"{units:+.1f}u")
     if mae is not None:
         secondary_bits.append(f"MAE {mae:.2f}")
     if push:
@@ -438,13 +448,18 @@ def ou_call_graded_breakdown(
     line_field: str,
     pick_field: str,
     actual_field: str,
-) -> dict[str, int]:
+    price_field: Optional[str] = None,
+) -> dict[str, Any]:
     """Per-row counters for sportsbook O/U grading (mirrors ``ou_call_graded_counts``).
 
     ``rows_scanned`` counts input rows; skip buckets are mutually exclusive in
     scan order; ``graded_total`` / ``graded_correct`` match the overview numerator
-    and denominator.
+    and denominator. With ``price_field``: ``graded_units`` (units won at each graded
+    row's stored American price, -110 where it has none) and ``priced`` (graded rows
+    that had a price).
     """
+    graded_units = 0.0
+    priced = 0
     rows_scanned = 0
     missing_line = 0
     missing_pick = 0
@@ -477,7 +492,11 @@ def ou_call_graded_breakdown(
         else:
             graded_total += 1
             graded_correct += result == "hit"
-    return {
+            if price_field:
+                price = row.get(price_field)
+                priced += bool(price)
+                graded_units += units_for_result(result, price)
+    out: dict[str, Any] = {
         "rows_scanned": rows_scanned,
         "missing_line": missing_line,
         "missing_pick": missing_pick,
@@ -488,6 +507,30 @@ def ou_call_graded_breakdown(
         "graded_total": graded_total,
         "graded_correct": graded_correct,
     }
+    if price_field:
+        out["graded_units"] = graded_units
+        out["priced"] = priced
+    return out
+
+
+def ou_call_graded_record(
+    rows: Iterable[dict[str, Any]],
+    *,
+    line_field: str,
+    pick_field: str,
+    actual_field: str,
+    price_field: str,
+) -> tuple[int, int, float, int]:
+    """(correct, graded, units at stored price, graded rows with a price): the O/U
+    record valued at the price each call was really offered at (-110 without one)."""
+    b = ou_call_graded_breakdown(
+        rows,
+        line_field=line_field,
+        pick_field=pick_field,
+        actual_field=actual_field,
+        price_field=price_field,
+    )
+    return b["graded_correct"], b["graded_total"], b["graded_units"], b["priced"]
 
 
 def ou_call_graded_counts(
