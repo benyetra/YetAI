@@ -39,7 +39,7 @@ def test_unchanged_etag_does_not_redownload(s3):
     o = _obj()
     o.get()
     o.get()
-    assert len(s3.names("get")) == 2  # body + manifest probe, first load only
+    assert len(s3.names("get")) == 1  # body, first load only
 
 
 def test_no_recheck_inside_the_refresh_interval(s3, monkeypatch):
@@ -81,11 +81,64 @@ def test_corrupt_body_keeps_last_good_then_recovers(s3):
     assert o.get() == "fixed"
 
 
-def test_first_load_failure_is_not_sticky(s3):
-    o = _obj()
+def test_first_load_failure_retries_after_backoff_not_full_interval(s3, monkeypatch):
+    monkeypatch.setattr(ms, "REFRESH_SECONDS", 3600)  # the real interval
+    t = [0.0]
+    o = ms.S3Object(KEY, lambda b: b.decode(), clock=lambda: t[0])
     assert o.get() is None  # nothing in S3 yet
     s3.put(KEY, b"arrived", "e1")
-    assert o.get() == "arrived"
+    t[0] = ms.RETRY_BACKOFF_SECONDS / 2
+    assert o.get() is None  # still inside the backoff: no hammering S3
+    t[0] = ms.RETRY_BACKOFF_SECONDS + 1
+    assert o.get() == "arrived"  # picked up long before REFRESH_SECONDS
+    assert ms.RETRY_BACKOFF_SECONDS < 3600
+
+
+def test_manifest_is_reread_each_interval_even_if_model_etag_same(s3):
+    s3.put(KEY, b"m", "e1")
+    s3.put(MAN, json.dumps({"version": "xgb-1"}).encode(), "e1")
+    o = _obj()
+    o.get()
+    assert o.version == "xgb-1"
+    s3.put(MAN, json.dumps({"version": "xgb-2"}).encode(), "e2")  # upload raced
+    o.get()
+    assert o.version == "xgb-2"
+
+
+def test_unreadable_manifest_keeps_last_good_set(s3):
+    s3.put(KEY, b"m", "e1")
+    s3.put(MAN, json.dumps({"version": "xgb-1"}).encode(), "e1")
+    o = _obj()
+    o.get()
+    s3.put(KEY, b"m2", "e2")
+    s3.put(MAN, b"{not json", "e2")
+    assert o.get() == "m" and o.version == "xgb-1"  # no new model with old stamp
+
+
+def test_failed_refresh_retries_on_short_backoff(s3, monkeypatch):
+    monkeypatch.setattr(ms, "REFRESH_SECONDS", 3600)
+    t = [0.0]
+    s3.put(KEY, b"good", "e1")
+    o = ms.S3Object(KEY, lambda b: b.decode(), clock=lambda: t[0])
+    assert o.get() == "good"
+    t[0] = 3601
+    s3.fail_head = True
+    o.get()
+    s3.fail_head = False
+    s3.put(KEY, b"better", "e2")
+    t[0] = 3601 + ms.RETRY_BACKOFF_SECONDS + 1
+    assert o.get() == "better"
+
+
+def test_loader_s3_client_has_short_timeouts_and_two_attempts(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        ms.boto3, "client", lambda name, **kw: seen.update(kw) or FakeS3()
+    )
+    ms.S3Object(KEY, bytes).get()
+    cfg = seen["config"]
+    assert cfg.connect_timeout <= 5 and cfg.read_timeout <= 15
+    assert cfg.retries["max_attempts"] == 2
 
 
 def test_manifest_version_and_missing_manifest(s3):

@@ -25,11 +25,18 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 import boto3
+from botocore.config import Config
 
 logger = logging.getLogger(__name__)
 
 BUCKET = "yetibets"
 REFRESH_SECONDS = int(os.getenv("ML_MODEL_REFRESH_SECONDS", "3600"))
+# After a failed refresh, retry this soon instead of waiting a full interval.
+RETRY_BACKOFF_SECONDS = 60
+# The loader sits on pipeline paths: fail fast instead of boto3's 60s defaults.
+_LOADER_S3_CONFIG = Config(
+    connect_timeout=3, read_timeout=10, retries={"max_attempts": 2}
+)
 # A candidate may be this much (relative) worse than the live model and still ship.
 GATE_TOLERANCE = 0.005
 MAX_VERSION_LEN = 20
@@ -74,6 +81,7 @@ class S3Object:
         self._obj: Any = None
         self._token: str | None = None
         self._checked: float | None = None
+        self._last_ok = False
         self.manifest: dict | None = None
 
     @property
@@ -85,13 +93,16 @@ class S3Object:
         """Last good object (None until a load has succeeded)."""
         with self._lock:
             now = self._clock()
-            if self._checked is not None and now - self._checked < REFRESH_SECONDS:
+            wait = REFRESH_SECONDS if self._last_ok else min(RETRY_BACKOFF_SECONDS, REFRESH_SECONDS)
+            if self._checked is not None and now - self._checked < wait:
                 return self._obj
-            # Stamp first: a failure is retried next interval, not on every call.
+            # Stamp first so concurrent callers do not all hit S3 on a slow refresh.
             self._checked = now
             try:
                 self._refresh()
+                self._last_ok = True
             except Exception as exc:
+                self._last_ok = False
                 logger.warning(
                     "model refresh failed for s3://%s/%s (keeping %s): %s",
                     self.bucket,
@@ -102,24 +113,45 @@ class S3Object:
             return self._obj
 
     def _refresh(self) -> None:
-        s3 = boto3.client("s3")
-        head = s3.head_object(Bucket=self.bucket, Key=self.key)
-        token = str(head.get("ETag") or head.get("LastModified"))
+        """Object + manifest are one unit: swap both in only when both loaded.
+
+        Uploads write the manifest last, so when one exists its ETag is the
+        change signal (a model seen mid-upload is reloaded once the manifest
+        lands). Without a manifest (legacy / rolled-back model) the object's
+        own ETag is the signal.
+        """
+        s3 = boto3.client("s3", config=_LOADER_S3_CONFIG)
+        mkey = manifest_key(self.key)
+        m_token = self._head_token(s3, mkey)
+        if m_token:
+            token = f"manifest:{m_token}"
+        else:
+            token = f"object:{self._head_token(s3, self.key)}"
         if self._obj is not None and token == self._token:
             return
-        body = s3.get_object(Bucket=self.bucket, Key=self.key)["Body"].read()
-        obj = self._deserialize(body)
-        self._obj, self._token = obj, token
-        self.manifest = self._load_manifest(s3)
+        manifest = None
+        if m_token:
+            raw = get_bytes(s3, self.bucket, mkey)
+            if raw is None:
+                raise RuntimeError("manifest vanished mid-refresh")
+            manifest = json.loads(raw)
+        body = get_bytes(s3, self.bucket, self.key)
+        if body is None:
+            raise RuntimeError("object missing")
+        self._obj, self._token, self.manifest = self._deserialize(body), token, manifest
         logger.info("loaded s3://%s/%s (version=%s)", self.bucket, self.key, self.version)
 
-    def _load_manifest(self, s3) -> dict | None:
+    def _head_token(self, s3, key: str) -> str | None:
+        """ETag/LastModified, or None when the key does not exist."""
         try:
-            raw = get_bytes(s3, self.bucket, manifest_key(self.key))
-            return json.loads(raw) if raw else None
+            head = s3.head_object(Bucket=self.bucket, Key=key)
         except Exception as exc:
-            logger.warning("manifest unreadable for %s: %s", self.key, exc)
-            return None
+            if _is_missing(exc):
+                if key == self.key:
+                    raise
+                return None
+            raise
+        return str(head.get("ETag") or head.get("LastModified"))
 
 
 def _dir(key: str) -> str:
