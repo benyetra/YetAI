@@ -32,6 +32,7 @@ from app.services.etl.nba._spread_ml_predict import (
     predict_margin,
 )
 from app.services.etl.wnba._db_upsert import upsert_many
+from app.services.ml_model_version import s3_object_version_date
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,13 @@ def run() -> dict:
     today = now_eastern().date()
     end = today + timedelta(days=1)
     use_ml = model_available()
+    ml_version = None
+    if use_ml:
+        # Same fallback as the props: manifest/metadata tag, else the S3 object's date.
+        ml_version = get_model_version()
+        if not ml_version:
+            day = s3_object_version_date("nba/ml_models/xgb_spread.pkl")
+            ml_version = f"xgb-{day}" if day else "ml-unversioned"
 
     db = SessionLocal()
     upsert_rows: list[dict] = []
@@ -134,9 +142,7 @@ def run() -> dict:
                         "method": projection_method,
                     },
                     "model_version": (
-                        (get_model_version() or "ml-unversioned")
-                        if projection_method == "ml"
-                        else "elo-pace-v1"
+                        ml_version if projection_method == "ml" else "elo-pace-v1"
                     ),
                     "created_at": datetime.utcnow(),
                 }
