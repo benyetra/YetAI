@@ -217,7 +217,7 @@ def test_review_shadow_grading(sqlite_db):  # noqa: F811
     bins = {b["bin"]: b for b in t["calibration"]}
     assert bins["0.6-0.7"]["n"] == 1 and bins["0.6-0.7"]["observed"] == 1.0
     assert t["brier_half"] == pytest.approx(0.25)
-    assert "CLV pending: no snapshot table" in sec["clv"]["note"]
+    assert "CLV pending" in sec["clv"]["note"]
     text = ms.render_text({**_empty_review(today), "shadow": sec})
     assert "Residual shadow" in text and "1/2" in text and "CLV pending" in text
 
@@ -228,7 +228,7 @@ def _empty_review(today):
     return {
         "date": today.isoformat(),
         **dict.fromkeys(keys, gone),
-        "clv": {"note": "n"},
+        "clv": {"keys": [], "unjoined": {}},
     }
 
 
@@ -253,26 +253,32 @@ def test_review_clv_with_snapshots(sqlite_db):  # noqa: F811
     _shadow(db, y, 1, "rebounds", 1.0, 0.6, actual=8.0)  # over call at 5.5
     _shadow(db, y, 2, "rebounds", -1.0, 0.4, actual=8.0)  # under call at 5.5
     db.commit()
-    db.execute(
-        text(
-            "CREATE TABLE odds_line_snapshots (game_date DATE, market TEXT, player_key TEXT, "
-            "book TEXT, line FLOAT, over_price INT, under_price INT, first_seen_at TIMESTAMP, "
-            "commence_time TIMESTAMP)"
-        )
-    )
+    from datetime import datetime
+
+    from app.models.predictions_models import OddsLineSnapshot
+
     rows = [  # (key, line, first_seen_at): later pre-start observation wins; post-start ignored
-        ("p 1", 5.5, "2026-11-13 10:00"),
-        ("p 1", 6.5, "2026-11-13 22:00"),
-        ("p 1", 9.5, "2026-11-14 02:00"),
-        ("p 2", 6.0, "2026-11-13 22:00"),
+        ("p 1", 5.5, datetime(2026, 11, 13, 10)),
+        ("p 1", 6.5, datetime(2026, 11, 13, 22)),
+        ("p 1", 9.5, datetime(2026, 11, 14, 2)),
+        ("p 2", 6.0, datetime(2026, 11, 13, 22)),
     ]
-    for key, line, seen in rows:
-        db.execute(
-            text(
-                "INSERT INTO odds_line_snapshots VALUES ('2026-11-13','player_rebounds',:k,'fanduel',"
-                ":l,-110,-110,:s,'2026-11-14 00:00')"
-            ),
-            {"k": key, "l": line, "s": seen},
+    for i, (key, line, seen) in enumerate(rows):
+        db.add(
+            OddsLineSnapshot(
+                sport="basketball_nba",
+                event_id=f"e{i}",
+                commence_time=datetime(2026, 11, 14, 0),
+                game_date=date(2026, 11, 13),
+                market="player_rebounds",
+                player_key=key,
+                book="fanduel",
+                line=line,
+                over_price=-110,
+                under_price=-110,
+                first_seen_at=seen,
+                last_seen_at=seen,
+            )
         )
     db.commit()
     clv = ms._shadow_section(db, today)["clv"]
@@ -295,7 +301,7 @@ def _load_migration():
 def test_migration_creates_table_twice_and_downgrades():
     mig = _load_migration()
     assert mig.revision == "20261114_nba_prop_shadow" and len(mig.revision) <= 32
-    assert mig.down_revision == "20261114_recent_games_game_id"
+    assert mig.down_revision == "20261114_odds_line_snapshots"
     engine = create_engine("sqlite://")
     with engine.begin() as conn:
         with Operations.context(MigrationContext.configure(conn)):
