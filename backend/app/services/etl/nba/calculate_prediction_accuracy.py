@@ -389,14 +389,18 @@ DEFAULT_BACKFILL_DAYS = 2
 
 def _backfill_days() -> int:
     """Days re-graded each night (yesterday included). Grading costs about five
-    minutes per day, and older days are almost all already-graded rows, so the
-    default is short; ``NBA_ACCURACY_BACKFILL_DAYS`` widens it for a catch-up."""
-    raw = os.getenv("NBA_ACCURACY_BACKFILL_DAYS", "").strip()
-    try:
-        return max(1, int(raw)) if raw else DEFAULT_BACKFILL_DAYS
-    except ValueError:
-        logger.warning("Bad NBA_ACCURACY_BACKFILL_DAYS=%r; using default", raw)
-        return DEFAULT_BACKFILL_DAYS
+    queries per date, so the default is short. ``NBA_ACCURACY_BACKFILL_DAYS``
+    widens it for a catch-up; else ``NBA_GRADING_LOOKBACK_DAYS`` (shared with the
+    other NBA graders) applies."""
+    for name in ("NBA_ACCURACY_BACKFILL_DAYS", "NBA_GRADING_LOOKBACK_DAYS"):
+        raw = os.getenv(name, "").strip()
+        if not raw:
+            continue
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            logger.warning("Bad %s=%r; ignoring", name, raw)
+    return DEFAULT_BACKFILL_DAYS
 
 
 def run(backfill_days: int | None = None) -> dict:
