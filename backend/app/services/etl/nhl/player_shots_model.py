@@ -4,8 +4,9 @@ NHL Player Shots Prediction Model
 The formula the 2026-27 backtest supports (scripts/nhl_backtest_2026.py, 7,574
 skater-games): the plain shrunk shots-per-game rate (K=10) — lined MAE 1.304 vs
 the line's 1.303, corr 0.300 vs 0.313 (the old multiplier stack: MAE 1.795, corr
-0.123). Ice-time trend, opponent shots allowed, home ice and last-10 blends each
-moved MAE by < 0.002 and are not in the model.
+0.123). Opponent shots allowed x home ice gained 0.0025 MAE (bootstrap 95% CI
+-0.0003..0.0054, not shown to help); ice-time trend, the old bucketed ice-time
+multiplier (1.350 lined) and a last-10 blend did not help. None is in the model.
 """
 
 from datetime import date

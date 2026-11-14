@@ -345,8 +345,12 @@ def shots_backtest(g, sk, pri, lines, dates):
         dressed_last = set(
             prior_games[prior_games.game_id.isin(last_game_by_team.values)].pid
         )
-        tr, lg = team_rates(g, d, pri, 10)
+        tr, lg = team_rates(
+            g, d, pri, TOT_K, TOT_PRIOR
+        )  # the team table production builds
         pos_toi = prior_games.groupby("pos").toi.mean()
+        played = {t for t, v in tr.items() if v["n"] > 0}
+        mean_sa = np.mean([tr[t]["sa"] for t in played]) if played else lg["sf"]
         today = reg[reg.date == d]
         for _, r in today.iterrows():
             if r.pid not in agg.index:
@@ -378,10 +382,16 @@ def shots_backtest(g, sk, pri, lines, dates):
                 else 0.92 if toi < 900 else 1.0
             )  # fmt: skip
             opp = tr[r.opp]
-            row["k10_opp"] = base * opp["sa"] / lg["sf"]
-            hf = (lg["home_sf"] if r.home else lg["away_sf"]) / lg["sf"]
+            # As production computes them (player_shots_model): the opponent's
+            # shrunk shots allowed over the mean of the teams' shrunk rates, and
+            # this season's raw home (away) team shots over the home/away mean.
+            of = opp["sa"] / mean_sa
+            hf = (lg["home_sf"] if r.home else lg["away_sf"]) / (
+                (lg["home_sf"] + lg["away_sf"]) / 2
+            )
+            row["k10_opp"] = base * of
             row["k10_home"] = base * hf
-            row["k10_opp_home"] = base * opp["sa"] / lg["sf"] * hf
+            row["k10_opp_home"] = base * (of * hf)
             if r.pid in l10.index:
                 b = l10.loc[r.pid]
                 row["k10_l10"] = 0.5 * base + 0.5 * b.s10 / b.n10
