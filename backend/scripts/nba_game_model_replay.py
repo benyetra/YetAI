@@ -529,6 +529,29 @@ def report_winprob(finals, lines, rows, cur, chosen, season):
         f"chosen margin / {s_fit}",
         [(logistic(chosen(r), s_fit), r["won"]) for r in cur],
     )
+    s_pool = fit_scale(prior + [(r["market"], r["won"]) for r in cur])
+    calibration(
+        f"sensitivity only: chosen margin / {s_pool} (scale fitted on both seasons, in sample)",
+        [(logistic(chosen(r), s_pool), r["won"]) for r in cur],
+    )
+    # The moneyline source's rule: the model's own part must be >= 0.02 and agree.
+    n = w = 0
+    units = 0.0
+    for r in with_ml:
+        p = logistic(chosen(r), s_fit)
+        edge, part = p - r["ml"][0], p - logistic(r["market"], s_fit)
+        if abs(part) < 0.02 or (edge > 0) != (part > 0) or edge == 0:
+            continue
+        home = edge > 0
+        price = r["ml"][1] if home else r["ml"][2]
+        won = (r["actual"] > 0) == home
+        n += 1
+        w += won
+        units += (price / 100 if price > 0 else 100 / -price) if won else -1
+    print(
+        f"  moneyline candidates the source keeps (model part >= 0.02, same sign): n={n}"
+        f" won {hit_str(w, n)} ROI {units / n if n else float('nan'):+.3f}"
+    )
     # Moneyline candidates the auto-pick source would build (flat 1u at the line price).
     for name, f in (
         ("as published", lambda r: r["published_p"]),
