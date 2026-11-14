@@ -23,7 +23,7 @@ def _mock_db(rows_by_model):
     return db
 
 
-def test_returns_six_nfl_buckets():
+def test_returns_seven_nfl_buckets():
     qb_p = SimpleNamespace(
         qb_player_id="qb1",
         predicted_passing_yards=275.0,
@@ -46,6 +46,7 @@ def test_returns_six_nfl_buckets():
     assert keys == [
         "qb_passing_ou",
         "qb_passing_mae",
+        "recv_yds_ou",
         "kicker_fg_mae",
         "spread_ats",
         "totals_ou",
@@ -61,7 +62,7 @@ def test_unavailable_when_no_rows():
     db = _mock_db({})
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     assert out["available"] is False
-    assert len(out["buckets"]) == 6
+    assert len(out["buckets"]) == 7
 
 
 def test_anytime_td_brier_bucket_when_actuals_exist():
