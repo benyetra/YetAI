@@ -59,6 +59,9 @@ def _bet(
     bet.created_at = datetime(2026, 5, 22, 12, 0, 0)
     bet.prediction_factors = {}
     bet.parlay_legs = None
+    bet.commence_time = None  # publish gates: gradeable, not started
+    bet.home_team = "Los Angeles Lakers"
+    bet.away_team = "Boston Celtics"
     return bet
 
 
@@ -280,7 +283,10 @@ async def test_edit_selection_drops_grading_block_odds_only_keeps_it():
     assert "grading" in bet.prediction_factors  # unchanged text
 
     await edit("b1", EditPickRequest(selection="Celtics ML"), _={}, db=db)
-    assert bet.prediction_factors == {"event_id": "e1"}
+    assert "grading" not in bet.prediction_factors
+    assert bet.prediction_factors["event_id"] == "e1"
+    odds_edit, sel_edit = bet.prediction_factors["edits"]
+    assert odds_edit["field"] == "odds" and sel_edit["dropped_grading"] == grading
     assert bet.selection == "Celtics ML"
 
 

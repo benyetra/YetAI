@@ -11,24 +11,30 @@ export type YetaiBetsTab = 'live' | 'history';
 
 export interface YetaiBetsScreenProps {
   picks: DesignPick[];
-  hitRate?: number;
+  /** Today's win rate from the backend; null = nothing graded today. */
+  hitRate?: number | null;
   roiLabel?: string;
   modelConfidence?: string;
   onAddToSlip?: (pick: DesignPick) => void;
   historyBets?: YetaiHistoryBet[];
   historyStats?: YetaiHistoryStats | null;
   historyLoading?: boolean;
+  /** Set when the live/history request failed: shows an error state instead of "no picks". */
+  error?: string | null;
+  onRetry?: () => void;
 }
 
 export default function YetaiBetsScreen({
   picks,
-  hitRate = 0,
+  hitRate = null,
   roiLabel,
   modelConfidence,
   onAddToSlip,
   historyBets = [],
   historyStats = null,
   historyLoading = false,
+  error = null,
+  onRetry,
 }: YetaiBetsScreenProps) {
   const [tab, setTab] = useState<YetaiBetsTab>('live');
   const [filter, setFilter] = useState('All');
@@ -70,11 +76,22 @@ export default function YetaiBetsScreen({
         </button>
       </div>
 
-      {tab === 'history' ? (
+      {error ? (
+        <div role="alert" className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)' }}>
+          <p style={{ marginBottom: 12 }}>{error}</p>
+          {onRetry ? (
+            <button type="button" className="chip" onClick={onRetry}>
+              Retry
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!error && tab === 'history' ? (
         <YetaiBetsHistory bets={historyBets} stats={historyStats} loading={historyLoading} />
       ) : null}
 
-      {tab === 'live' ? (
+      {!error && tab === 'live' ? (
         <>
       <div className="stat-grid" style={{ marginBottom: 18 }}>
         <StatTile
@@ -83,7 +100,7 @@ export default function YetaiBetsScreen({
               <Target size={12} /> Today&apos;s hit rate
             </>
           }
-          value={hitRate ? `${hitRate}%` : '—'}
+          value={hitRate === null ? '—' : `${hitRate}%`}
           deltaKind="up"
         />
         <StatTile

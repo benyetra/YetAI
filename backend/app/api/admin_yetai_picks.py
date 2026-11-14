@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from types import SimpleNamespace
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -14,8 +15,13 @@ from app.core.auth import require_admin
 from app.models.database_models import AutoPickRun, YetAIBet, SubscriptionTier
 from app.services.auto_pick.diagnostics import get_run_diagnostics
 from app.services.yetai_bets_service_db import (
+    YetAIBetsServiceDB,
     clamp_yetai_result,
+    pick_started,
+    publish_gate_reason,
+    publish_gates_enabled,
     set_yetai_auto_grade_hold,
+    yetai_pick_ungradeable_reason,
 )
 
 router = APIRouter(prefix="/api/admin/yetai-picks", tags=["admin-yetai-picks"])
@@ -24,6 +30,9 @@ PENDING_STATUS = "pending_approval"
 ACTIVE_STATUS = "active"
 REJECTED_STATUS = "rejected"
 REOPENABLE_STATUSES = frozenset({"won", "lost", "pushed", "void", "expired"})
+NON_EDITABLE_STATUSES = frozenset(
+    {"won", "lost", "pushed", "void", "expired", "rejected"}
+)
 EXPIRABLE_STATUSES = frozenset({"pending", "active", "pending_approval"})
 
 
@@ -129,6 +138,12 @@ async def approve(
             status_code=400,
             detail=f"Cannot approve a bet in status '{bet.status}'",
         )
+    if publish_gates_enabled() and pick_started(bet.commence_time):
+        raise HTTPException(
+            status_code=400, detail="Game has started; reject this pick instead"
+        )
+    if reason := publish_gate_reason(bet):
+        raise HTTPException(status_code=400, detail=reason)
     bet.status = ACTIVE_STATUS
     db.commit()
     return _serialize(bet)
@@ -159,6 +174,7 @@ async def reopen(
     }
     if bet.parlay_legs:
         bet.parlay_legs = _clear_parlay_leg_results(bet.parlay_legs)
+    YetAIBetsServiceDB().mirror_to_linked_copies(db, bet)
     db.commit()
     return _serialize(bet)
 
@@ -182,6 +198,7 @@ async def expire_pick(
     bet.status = REJECTED_STATUS if bet.status == PENDING_STATUS else "void"
     bet.settled_at = datetime.utcnow()
     bet.result = clamp_yetai_result("Admin expired (stale pick)")
+    YetAIBetsServiceDB().mirror_to_linked_copies(db, bet)
     db.commit()
     return _serialize(bet)
 
@@ -208,6 +225,7 @@ async def reject(
             status_code=400,
             detail=f"Cannot reject a bet in status '{bet.status}'",
         )
+    YetAIBetsServiceDB().mirror_to_linked_copies(db, bet)
     db.commit()
     return _serialize(bet)
 
@@ -219,22 +237,70 @@ async def edit(
     _: dict = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Edit editable fields on any pending pick (tier_requirement, reasoning, selection, odds, title)."""
+    """Edit a pick that is not settled and has not started; every change is audited
+    in prediction_factors["edits"]."""
     bet = db.query(YetAIBet).filter(YetAIBet.id == pick_id).first()
     if not bet:
         raise HTTPException(status_code=404, detail="Pick not found")
+    if bet.status in NON_EDITABLE_STATUSES:
+        raise HTTPException(
+            status_code=409, detail=f"Cannot edit a bet in status '{bet.status}'"
+        )
+    if pick_started(bet.commence_time):
+        raise HTTPException(status_code=409, detail="Game has started; cannot edit")
     updates = payload.model_dump(exclude_unset=True)
-    pf = bet.prediction_factors
-    if (
-        "selection" in updates
-        and updates["selection"] != bet.selection
-        and isinstance(pf, dict)
-        and "grading" in pf
-    ):
-        # Settlement prefers the grading block; drop it so the new text is graded.
-        bet.prediction_factors = {k: v for k, v in pf.items() if k != "grading"}
+    pf = (
+        dict(bet.prediction_factors) if isinstance(bet.prediction_factors, dict) else {}
+    )
+    now = datetime.utcnow().isoformat() + "Z"
+    admin_id = _.get("id") if isinstance(_, dict) else None
+    entries = []
+    for field, val in updates.items():
+        old = getattr(bet, field)
+        if val == old:
+            continue
+        entries.append(
+            {
+                "field": field,
+                "old": getattr(old, "value", old),
+                "new": getattr(val, "value", val),
+                "at": now,
+                "by": admin_id,
+            }
+        )
+    selection_changed = any(e["field"] == "selection" for e in entries)
+    if selection_changed and "grading" in pf:
+        # Settlement prefers the grading block; drop it so the new text is graded,
+        # but keep the old block in the audit entry.
+        entries[next(i for i, e in enumerate(entries) if e["field"] == "selection")][
+            "dropped_grading"
+        ] = pf.pop("grading")
+    if selection_changed:
+        # Judge the edited row without saving it (ORM attrs are only set below).
+        candidate = SimpleNamespace(
+            **{
+                c: getattr(bet, c, None)
+                for c in (
+                    "sport",
+                    "bet_type",
+                    "title",
+                    "home_team",
+                    "away_team",
+                    "commence_time",
+                    "created_at",
+                    "parlay_legs",
+                )
+            },
+            selection=updates["selection"],
+            prediction_factors=pf,
+        )
+        if reason := yetai_pick_ungradeable_reason(candidate):
+            raise HTTPException(status_code=400, detail=reason)
     for field, val in updates.items():
         setattr(bet, field, val)
+    if entries:
+        pf["edits"] = [*pf.get("edits", []), *entries]
+        bet.prediction_factors = pf
     db.commit()
     return _serialize(bet)
 
@@ -246,7 +312,12 @@ async def approve_all(
 ):
     """Bulk-approve every pending_approval pick in one shot."""
     rows = db.query(YetAIBet).filter(YetAIBet.status == PENDING_STATUS).all()
+    approved, skipped = [], []
     for bet in rows:
+        if reason := publish_gate_reason(bet):
+            skipped.append({"id": bet.id, "reason": reason})
+            continue
         bet.status = ACTIVE_STATUS
+        approved.append(bet.id)
     db.commit()
-    return {"approved": [b.id for b in rows]}
+    return {"approved": approved, "skipped": skipped}

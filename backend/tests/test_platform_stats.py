@@ -51,10 +51,8 @@ def test_compute_platform_stats_uses_status_not_result(monkeypatch):
         []
     )
 
+    monkeypatch.setattr(ps, "public_record", lambda _db: {"label": "L", "stats": {}})
     data = ps.compute_platform_stats(db)
 
     assert data["total_winnings"] == pytest.approx(90.91, rel=0.01)
-    assert data["performance_30d"]["total_bets"] == 2
-    assert data["performance_30d"]["wins"] == 1
-    assert data["performance_30d"]["losses"] == 1
-    assert data["performance_30d"]["profit"] == pytest.approx(-9.09, rel=0.05)
+    assert data["record"]["label"] == "L"

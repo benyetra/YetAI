@@ -354,7 +354,6 @@ class SimpleUnifiedBetService:
         from app.services.player_prop_verification_service import (
             PlayerPropVerificationService,
         )
-        from app.services.yetai_bets_service_db import YetAIBetsServiceDB
 
         candidates = (
             db.query(SimpleUnifiedBet)
@@ -368,7 +367,6 @@ class SimpleUnifiedBetService:
         )
 
         prop_service = PlayerPropVerificationService(db)
-        yetai_service = YetAIBetsServiceDB()
         updated = 0
         changed = False
 
@@ -377,17 +375,8 @@ class SimpleUnifiedBetService:
             if "mlb" not in sport and "baseball" not in sport:
                 continue
 
-            yetai = prop_service._resolve_yetai_pick(bet)
-            if yetai and not bet.yetai_bet_id:
-                bet.yetai_bet_id = yetai.id
-
-            if (
-                yetai
-                and (yetai.status or "").lower() == "won"
-                and yetai_service.sync_unified_from_yetai_pick(db, yetai, bet)
-            ):
-                updated += 1
-                changed = True
+            # Linked copies mirror their pick (sync_linked_unified_for_user); never re-grade.
+            if prop_service.is_yetai_linked(bet):
                 continue
 
             prop_result = await prop_service.verify_single_prop(bet)

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Layers, Loader2, RefreshCw, Trash2 } from 'lucide-react';
+import { Ban, Layers, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { getApiUrl } from '@/lib/api-config';
 
 export type YetaiAdminBet = {
@@ -29,6 +29,7 @@ const STATUS_BADGE: Record<string, string> = {
   pushed: 'badge badge-warning',
   rejected: 'badge badge-error',
   expired: 'badge',
+  void: 'badge',
 };
 
 function authHeaders(): HeadersInit {
@@ -84,33 +85,39 @@ export default function AdminYetaiBetsManage({ refreshToken = 0 }: AdminYetaiBet
     const s = (bet.status || '').toLowerCase();
     if (filter === 'all') return true;
     if (filter === 'live') return s === 'pending' || s === 'active';
-    if (filter === 'settled') return s === 'won' || s === 'lost' || s === 'pushed';
+    if (filter === 'settled') return s === 'won' || s === 'lost' || s === 'pushed' || s === 'void';
     if (filter === 'pending_approval') return s === 'pending_approval';
     if (filter === 'rejected') return s === 'rejected' || s === 'expired';
     return true;
   });
 
-  const remove = async (bet: YetaiAdminBet) => {
+  // pending_approval/rejected never reached users -> hard delete.
+  // pending/active were shown -> pull via reject (voided, stays in history).
+  const act = async (bet: YetaiAdminBet, pull: boolean) => {
     const label = bet.bet_category === 'parlay' ? bet.game || 'Parlay' : bet.pick;
     const confirmed = confirm(
-      `Permanently delete this YetAI bet?\n\n${label}\n${bet.game || ''}\n\nThis hard-deletes the row and cannot be undone. It will disappear from Predictions for subscribers.`,
+      pull
+        ? `Pull this YetAI bet?\n\n${label}\n${bet.game || ''}\n\nUsers already saw it, so it stays in history as void ("Pulled by admin") and does not count toward the record.`
+        : `Delete this YetAI bet?\n\n${label}\n${bet.game || ''}\n\nIt was never shown to users. This removes the row and cannot be undone.`,
     );
     if (!confirmed) return;
 
     setBusyId(bet.id);
     setError(null);
     try {
-      const res = await fetch(getApiUrl(`/api/admin/yetai-bets/${bet.id}`), {
-        method: 'DELETE',
-        headers: authHeaders(),
-      });
+      const res = await fetch(
+        getApiUrl(
+          pull ? `/api/admin/yetai-picks/${bet.id}/reject` : `/api/admin/yetai-bets/${bet.id}`,
+        ),
+        { method: pull ? 'POST' : 'DELETE', headers: authHeaders() },
+      );
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || `HTTP ${res.status}`);
+        throw new Error(typeof body.detail === 'string' ? body.detail : `HTTP ${res.status}`);
       }
       await load();
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Delete failed');
+      setError(e instanceof Error ? e.message : pull ? 'Pull failed' : 'Delete failed');
     } finally {
       setBusyId(null);
     }
@@ -122,7 +129,7 @@ export default function AdminYetaiBetsManage({ refreshToken = 0 }: AdminYetaiBet
         <div>
           <h2 className="text-xl font-semibold">Manage YetAI Bets</h2>
           <p className="text-sm muted mt-1">
-            Hard-delete bets you created here or approved from pending picks.
+            Delete bets that were never shown to users (pending approval / rejected). Pull live bets: they stay in history as void.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -208,20 +215,29 @@ export default function AdminYetaiBetsManage({ refreshToken = 0 }: AdminYetaiBet
                       </span>
                     </td>
                     <td className="py-2 pr-3 text-right">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm text-red-400 hover:text-red-300"
-                        onClick={() => remove(bet)}
-                        disabled={isBusy}
-                        title="Hard delete"
-                      >
-                        {isBusy ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <Trash2 className="w-3 h-3" />
-                        )}
-                        <span className="sr-only">Delete</span>
-                      </button>
+                      {(() => {
+                        const pull = statusKey === 'pending' || statusKey === 'active';
+                        const del = statusKey === 'pending_approval' || statusKey === 'rejected';
+                        if (!pull && !del) return null;
+                        return (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm text-red-400 hover:text-red-300"
+                            onClick={() => act(bet, pull)}
+                            disabled={isBusy}
+                            title={pull ? 'Pull (void)' : 'Delete'}
+                          >
+                            {isBusy ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : pull ? (
+                              <Ban className="w-3 h-3" />
+                            ) : (
+                              <Trash2 className="w-3 h-3" />
+                            )}
+                            <span className="sr-only">{pull ? 'Pull' : 'Delete'}</span>
+                          </button>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );

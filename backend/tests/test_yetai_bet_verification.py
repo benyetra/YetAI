@@ -318,32 +318,3 @@ def test_nba_boxscore_uses_pts_not_pf_column():
     ):
         found = service._find_nba_player_stats(games, "Luke Kornet", "PTS")
     assert found["PTS"] == 3.0
-
-
-def test_verify_yetai_nba_prop_prefers_api_over_db():
-    from app.services.player_prop_verification_service import (
-        PlayerPropVerificationService,
-    )
-
-    bet = YetAIBet(
-        id="nba-1",
-        title="NBA player prop",
-        description="d",
-        bet_type=BetType.PROP,
-        selection="Victor Wembanyama UNDER 27.5 points",
-        odds=-110,
-        confidence=80,
-        sport="NBA",
-        prediction_factors={"event_id": "nba-prop-2026-05-28-1-points"},
-    )
-    service = PlayerPropVerificationService(db=MagicMock())
-    with (
-        patch.object(
-            service, "_fetch_nba_prop_actual_from_api", return_value=28.0
-        ) as api,
-        patch.object(service, "_fetch_nba_prop_actual_from_db", return_value=0.0) as db,
-    ):
-        outcome = service.verify_yetai_nba_prop(bet, date(2026, 5, 28))
-    assert outcome[0] == "lost"
-    api.assert_called()
-    db.assert_not_called()

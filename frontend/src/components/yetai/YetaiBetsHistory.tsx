@@ -14,7 +14,8 @@ export interface YetaiHistoryStats {
   lost: number;
   pushed: number;
   void?: number;
-  win_rate: number;
+  graded?: number;
+  win_rate: number | null;
   units: number;
   settled?: number;
 }
@@ -119,7 +120,7 @@ export default function YetaiBetsHistory({
           <div className="card stat-tile">
             <div className="section-sub">Win rate ({stats.period_days}d)</div>
             <div className="mono" style={{ fontSize: 22, fontWeight: 500 }}>
-              {stats.win_rate}%
+              {stats.win_rate === null ? '—' : `${stats.win_rate}%`}
             </div>
             <div className="section-sub" style={{ marginTop: 4 }}>
               {stats.won}W · {stats.lost}L

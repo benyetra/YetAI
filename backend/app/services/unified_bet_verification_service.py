@@ -36,6 +36,9 @@ from app.models.simple_unified_bet_model import (
     BetStatus,
     BetType,
 )
+from app.services.player_prop_verification_service import (
+    PlayerPropVerificationService,
+)
 from app.services.optimized_odds_api_service import get_optimized_odds_service
 from app.core.config import settings
 
@@ -133,7 +136,11 @@ class UnifiedBetVerificationService:
                 .all()
             )
             pending_bets = []
+            linked_check = PlayerPropVerificationService(db)
             for bet in candidate_bets:
+                # Copies of a YetAI pick mirror the pick; the mirror owns them.
+                if linked_check.is_yetai_linked(bet):
+                    continue
                 if bet.status == BetStatus.PENDING:
                     pending_bets.append(bet)
                     continue
@@ -340,6 +347,11 @@ class UnifiedBetVerificationService:
                     "success": False,
                     "error": f"Bet already settled ({bet.status.value})",
                 }
+            if PlayerPropVerificationService(db).is_yetai_linked(bet):
+                return {
+                    "success": False,
+                    "error": "Bet copies a YetAI pick and follows the pick's grade",
+                }
 
             result: Optional[UnifiedBetResult] = None
             if self._is_prop_bet(bet):
@@ -467,6 +479,8 @@ class UnifiedBetVerificationService:
         db: Optional[Session] = None,
     ) -> Optional[UnifiedBetResult]:
         """Verify a single bet against completed games"""
+        if db is not None and PlayerPropVerificationService(db).is_yetai_linked(bet):
+            return None  # linked copies mirror their YetAI pick
 
         # Props (incl. YetAI picks with UUID event ids) use sport stats APIs, not Odds scores.
         if self._is_prop_bet(bet):
@@ -730,7 +744,10 @@ class UnifiedBetVerificationService:
         )
 
         results: List[UnifiedBetResult] = []
+        linked_check = PlayerPropVerificationService(db)
         for parlay in pending_parlays:
+            if linked_check.is_yetai_linked(parlay):
+                continue  # mirrors its YetAI pick
             status, result_amount, reasoning = self._evaluate_parlay(parlay, db=db)
             if status != BetStatus.PENDING:
                 results.append(

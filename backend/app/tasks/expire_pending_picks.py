@@ -18,8 +18,6 @@ log = logging.getLogger(__name__)
 PENDING_STATUS = "pending_approval"
 REJECTED_STATUS = "rejected"
 STALE_HOURS = 24
-# Allow admin approval through in-progress games (matches live board window).
-APPROVAL_GRACE_AFTER_TIPOFF = timedelta(hours=4)
 
 
 @celery_app.task(name="auto_pick.expire_pending")
@@ -35,7 +33,7 @@ def expire_pending_picks() -> int:
                 tipoff = row.commence_time
                 if tipoff.tzinfo is not None:
                     tipoff = tipoff.replace(tzinfo=None)
-                if tipoff + APPROVAL_GRACE_AFTER_TIPOFF <= now:
+                if tipoff <= now:
                     expired.append(row)
                 continue
             if (

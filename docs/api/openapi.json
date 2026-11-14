@@ -3879,7 +3879,7 @@
           "admin-yetai-picks"
         ],
         "summary": "Edit",
-        "description": "Edit editable fields on any pending pick (tier_requirement, reasoning, selection, odds, title).",
+        "description": "Edit a pick that is not settled and has not started; every change is audited\nin prediction_factors[\"edits\"].",
         "operationId": "edit_api_admin_yetai_picks__pick_id__patch",
         "security": [
           {

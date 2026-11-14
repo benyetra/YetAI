@@ -149,11 +149,6 @@ class YetAIBet(BaseModel):
     created_by_admin: int  # admin user ID
 
 
-class UpdateYetAIBetRequest(BaseModel):
-    status: Optional[BetStatus] = None
-    result: Optional[str] = None
-
-
 class YetAIBetResponse(BaseModel):
     bets: List[YetAIBet]
     total_count: int
