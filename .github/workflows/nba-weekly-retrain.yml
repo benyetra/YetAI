@@ -66,7 +66,7 @@ jobs:
               --stat "$MODEL" --start "$START" --end "$END" --upload | tee train.log
           fi
           # Gate outcomes are not failures: the live model is simply kept.
-          if grep -Eq "below_baseline|gate_failed|insufficient_data|rejected_by_champion" train.log; then
+          if grep -Eq "below_baseline|gate_failed|insufficient_data|rejected_by_champion|rejected_by_line_gate" train.log; then
             echo "::warning::$MODEL did not pass its gate; kept the live model"
             exit 0
           fi
