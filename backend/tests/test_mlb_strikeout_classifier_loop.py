@@ -139,7 +139,8 @@ def test_gated_upload_rejects_worse_candidate(s3, monkeypatch):
 
 
 def test_gated_upload_first_upload_and_better_candidate(s3, monkeypatch):
-    _patched_train(monkeypatch, lambda c: 0.2)
+    briers = iter([0.2, 0.2, 0.1])  # candidate then champion rescore, then a better one
+    _patched_train(monkeypatch, lambda c: next(briers, 0.1))
     assert cm.train_and_persist()["status"] == "first_upload"
     assert cm.S3_KEY in s3.objects and "mlb/strikeout_model_manifest.json" in s3.objects
-    assert cm.train_and_persist()["status"] == "uploaded"  # equal metric is not worse
+    assert cm.train_and_persist()["status"] == "rejected_by_champion"  # a tie is not better

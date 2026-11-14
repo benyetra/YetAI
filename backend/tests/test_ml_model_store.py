@@ -181,9 +181,50 @@ def test_worse_candidate_is_not_uploaded(s3):
     assert s3.names("put") == [] and s3.objects[KEY] == b"LIVE"
 
 
-def test_candidate_within_tolerance_ships(s3):
+def test_candidate_not_strictly_better_is_not_uploaded(s3):
     s3.put(KEY, b"LIVE", "e1")
-    assert _upload(5.0 * (1 + ms.GATE_TOLERANCE / 2))["status"] == "uploaded"
+    for metric in (5.0, 5.0 * (1 + 0.001)):  # tie, tiny regression
+        out = _upload(metric)
+        assert out["status"] == "rejected_by_champion"
+    assert s3.names("put") == [] and s3.objects[KEY] == b"LIVE"
+
+
+def _live_with_window(s3, window):
+    s3.put(KEY, b"LIVE", "e1")
+    s3.put(MAN, json.dumps({"data_window": window, "holdout_metric": 5.0}).encode(), "e1")
+
+
+def test_unchanged_data_window_is_not_uploaded_even_if_better(s3):
+    _live_with_window(s3, "2025-10-01..2026-11-01")  # same as _upload's window
+    out = _upload(4.0)
+    assert out["status"] == "rejected_by_champion"
+    assert out["reason"] == "unchanged_data_window"
+    assert s3.names("put") == [] and s3.objects[KEY] == b"LIVE"
+
+
+def test_grown_data_window_with_better_candidate_ships(s3):
+    """The NBA weekly retrain: window end moves forward each week."""
+    _live_with_window(s3, "2025-10-01..2026-10-25")
+    out = _upload(4.0)
+    assert out["status"] == "uploaded"
+    assert json.loads(s3.objects[MAN])["data_window"] == "2025-10-01..2026-11-01"
+
+
+def test_weekly_nba_style_cycle_through_upload_gated_pickle(s3):
+    from app.services.ml import upload_to_s3 as u
+
+    def go(window, mae):
+        return u.upload_gated_pickle(
+            KEY,
+            {"m": 1},
+            {"data_window": window},
+            candidate_metric=mae,
+            score_champion=lambda b: 5.0,
+        )["status"]
+
+    assert go("2025-10-01..2026-11-01", 4.0) == "first_upload"
+    assert go("2025-10-01..2026-11-01", 3.0) == "rejected_by_champion"  # rerun, same data
+    assert go("2025-10-01..2026-11-08", 3.0) == "uploaded"  # a week later
 
 
 def test_better_candidate_archives_champion_before_put(s3):
@@ -228,7 +269,7 @@ def test_higher_is_better_metric(s3):
 
 def test_rollback_dry_run_vs_apply(s3):
     s3.put(KEY, b"V1", "e1")
-    first = _upload(5.0)  # live V1 exists -> archived on the next upload
+    first = _upload(4.0)  # live V1 exists -> archived on the next upload
     s3.put(KEY, b"V2-live", "e9")
     s3.put("nba/ml_models/archive/20260101T000000/xgb_points.pkl", b"V1", "e1")
     stamps = ms.list_archive_stamps(KEY)

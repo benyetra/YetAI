@@ -8,7 +8,7 @@ worker. Uploads overwrote the live model without checking it was better.
   ``REFRESH_SECONDS``, reloads on change, and keeps the last good object when
   S3 or the deserializer fails.
 * ``gated_upload``: score the live model on the candidate's holdout, refuse a
-  worse candidate, archive the live objects, then write the new ones plus a
+  candidate that is not strictly better or whose data window is unchanged, archive the live objects, then write the new ones plus a
   manifest (``<model>_manifest.json``) carrying the version tag.
 * ``rollback``: restore an archived set (itself archived first, so undoable).
   CLI: ``backend/scripts/ml_model_rollback.py``.
@@ -37,8 +37,6 @@ RETRY_BACKOFF_SECONDS = 60
 _LOADER_S3_CONFIG = Config(
     connect_timeout=3, read_timeout=10, retries={"max_attempts": 2}
 )
-# A candidate may be this much (relative) worse than the live model and still ship.
-GATE_TOLERANCE = 0.005
 MAX_VERSION_LEN = 20
 
 
@@ -179,9 +177,9 @@ def _copy(s3, bucket: str, src: str, dst: str) -> bool:
         raise
 
 
-def _worse(candidate: float, champion: float, lower_is_better: bool) -> bool:
-    slack = GATE_TOLERANCE * abs(champion)
-    return candidate > champion + slack if lower_is_better else candidate < champion - slack
+def _not_better(candidate: float, champion: float, lower_is_better: bool) -> bool:
+    """A tie is not better: re-shipping an equal model only fragments versions."""
+    return candidate >= champion if lower_is_better else candidate <= champion
 
 
 def gated_upload(
@@ -197,7 +195,9 @@ def gated_upload(
     version_prefix: str = "xgb",
     bucket: str = BUCKET,
 ) -> dict[str, Any]:
-    """Upload ``body`` only if it is not worse than the live model.
+    """Upload ``body`` only if it is strictly better than the live model and was
+    trained on a different data window (``manifest_extra["data_window"]``, when
+    both the live manifest and the candidate carry one).
 
     ``score_champion(live_body)`` scores the live model on the CANDIDATE's
     holdout (same rows, same metric). If it raises, the live manifest's
@@ -213,6 +213,23 @@ def gated_upload(
     live = get_bytes(s3, bucket, model_key)
     champion: float | None = None
     reason: str | None = None
+    window = (manifest_extra or {}).get("data_window")
+    live_manifest: dict[str, Any] = {}
+    if live is not None:
+        try:
+            raw = get_bytes(s3, bucket, mkey)
+            live_manifest = json.loads(raw) if raw else {}
+        except Exception:
+            live_manifest = {}
+    if window and live_manifest.get("data_window") == window:
+        logger.warning("skipped %s: data window %s unchanged", model_key, window)
+        return {
+            "status": "rejected_by_champion",
+            "reason": "unchanged_data_window",
+            "data_window": window,
+            "metric_name": metric_name,
+            "candidate_metric": candidate_metric,
+        }
     if live is None:
         status = "first_upload"
     else:
@@ -222,8 +239,7 @@ def gated_upload(
         except Exception as exc:
             logger.warning("could not score live %s on the holdout: %s", model_key, exc)
             try:
-                raw = get_bytes(s3, bucket, mkey)
-                champion = float(json.loads(raw)["holdout_metric"]) if raw else None
+                champion = float(live_manifest["holdout_metric"])
             except Exception:
                 champion = None
             reason = (
@@ -232,9 +248,9 @@ def gated_upload(
                 else "champion_unscorable"
             )
 
-    if champion is not None and _worse(candidate_metric, champion, lower_is_better):
+    if champion is not None and _not_better(candidate_metric, champion, lower_is_better):
         logger.warning(
-            "rejected %s: candidate %s=%.4f worse than champion %.4f",
+            "rejected %s: candidate %s=%.4f not better than champion %.4f",
             model_key,
             metric_name,
             candidate_metric,
