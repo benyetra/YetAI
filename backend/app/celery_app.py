@@ -11,6 +11,7 @@ WebSocket + Twilio only.
 
 from celery import Celery
 from celery.schedules import crontab
+from kombu import Queue
 
 from app.core.redis_broker import pick_redis_url
 
@@ -53,6 +54,27 @@ celery_app.conf.update(
     redis_socket_timeout=15,
 )
 
+# === Queues ===
+# Time-critical, short YetAI Bets work has its own queue so it is never stuck
+# behind an hour-long ETL task on a concurrency=1 worker. Routing lives only
+# here (task_routes, by task name); everything else stays on the default queue.
+# A worker started without -Q consumes every queue in task_queues, so the
+# single-worker deployment keeps running both (see app/worker_role.py and
+# docs/runbooks/bets-worker.md).
+DEFAULT_QUEUE = "celery"
+BETS_QUEUE = "yetai_bets"
+BETS_QUEUE_TASKS = (
+    "yetai_bets.settle",
+    "yetai_bets.settlement_alert",
+    "auto_pick.yetai_bets",
+    "auto_pick.expire_pending",
+    # Seconds per run, and useless after tip-off: the window is the 25 minutes before.
+    "app.tasks.etl_pipeline.nba.close_capture",
+)
+celery_app.conf.task_default_queue = DEFAULT_QUEUE
+celery_app.conf.task_queues = (Queue(DEFAULT_QUEUE), Queue(BETS_QUEUE))
+celery_app.conf.task_routes = {name: {"queue": BETS_QUEUE} for name in BETS_QUEUE_TASKS}
+
 # Use the custom DB-backed scheduler so admin edits to the 7 catalog
 # orchestrators' schedules take effect within ~30s without restarting beat.
 celery_app.conf.beat_scheduler = "app.core.db_scheduler.DatabaseScheduler"
@@ -94,6 +116,13 @@ celery_app.conf.beat_schedule = {
     "nba-close-capture": {
         "task": "app.tasks.etl_pipeline.nba.close_capture",
         "schedule": crontab(minute="*/10", hour="11-23"),  # ET (celery tz)
+        "options": {"expires": 540},
+    },
+    # Watches the yetai_bets queue from the default queue: alerts when nothing
+    # is consuming it (backlog), which a task on that queue could never report.
+    "yetai-bets-queue-watch": {
+        "task": "app.tasks.health.bets_queue_watch",
+        "schedule": crontab(minute="*/10"),
         "options": {"expires": 540},
     },
     # Before the 17:30 auto-pick: refreshed NHL starters + saves lines (goalies only).
@@ -292,12 +321,17 @@ if auto_picks_enabled():
         "task": "auto_pick.yetai_bets",
         "schedule": crontab(hour=11, minute=0),
         "kwargs": {"reserve_slots": 1},
+        # Drops a copy redelivered ~24h later (visibility_timeout) after a worker
+        # was killed mid-run, while still allowing a run that starts a little late.
+        "options": {"expires": 10800},
     }
     celery_app.conf.beat_schedule["auto_pick_yetai_bets_topup"] = {
         "task": "auto_pick.yetai_bets",
         "schedule": crontab(hour=EVENING_RUN_ET.hour, minute=EVENING_RUN_ET.minute),
+        "options": {"expires": 10800},
     }
     celery_app.conf.beat_schedule["expire_pending_yetai_picks"] = {
         "task": "auto_pick.expire_pending",
         "schedule": crontab(minute="*/5"),
+        "options": {"expires": 240},
     }
