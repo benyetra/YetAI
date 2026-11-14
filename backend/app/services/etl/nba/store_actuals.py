@@ -228,7 +228,9 @@ def resolve_actuals(
     )
     box = {
         r.player_id: r
-        for r in db.query(RecentGames).filter(RecentGames.game_date == target_date)
+        for r in db.query(RecentGames)
+        .filter(RecentGames.game_date == target_date)
+        .all()
     }
     value_fn = _value_fn(cfg)
     matches = []
@@ -242,7 +244,7 @@ def resolve_actuals(
     actuals_model = cfg["actuals_model"]
     stale = [
         a
-        for a in db.query(actuals_model).filter(actuals_model.date == target_date)
+        for a in db.query(actuals_model).filter(actuals_model.date == target_date).all()
         if a.player_id not in keep
         and (a.player_id in projected or a.player_id not in box)
     ]
