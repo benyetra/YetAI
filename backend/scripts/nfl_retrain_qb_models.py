@@ -33,7 +33,9 @@ def _holdout_mask(meta: pd.DataFrame, *, holdout_season: int) -> np.ndarray:
     return (meta["season"] == holdout_season).to_numpy()
 
 
-def train_and_eval(seasons: list[int]) -> dict[str, Any]:
+def train_and_eval(
+    seasons: list[int], holdout_sink: dict[str, Any] | None = None
+) -> dict[str, Any]:
     from app.services.etl.nfl.ml_training.build_qb_dataset_nflverse import (
         build_from_nflverse,
     )
@@ -101,6 +103,9 @@ def train_and_eval(seasons: list[int]) -> dict[str, Any]:
     ml_mae = _mae(y_test, ml_pred)
     lift = (tier_mae - ml_mae) / tier_mae if tier_mae > 0 else 0.0
     promote = lift >= _PROMOTE_LIFT
+    if holdout_sink is not None:
+        holdout_sink["yards"] = (X_test, y_test)
+        holdout_sink["yards_mae"] = ml_mae
 
     report: dict[str, Any] = {
         "status": "ok",
@@ -165,9 +170,12 @@ def train_and_eval(seasons: list[int]) -> dict[str, Any]:
         ou_rows.append(build_ou_feature_row(feats, float(line)))
         ou_labels.append(1 if actual > float(line) else 0)
     if len(ou_rows) >= 60 and len(set(ou_labels)) > 1:
+        ou_holdout: dict[str, Any] = {}
         ou_model, ou_meta = train_qb_ou_classifier(
-            pd.DataFrame(ou_rows), pd.Series(ou_labels)
+            pd.DataFrame(ou_rows), pd.Series(ou_labels), holdout_sink=ou_holdout
         )
+        if holdout_sink is not None:
+            holdout_sink["ou"] = (ou_holdout["X"], ou_holdout["y"])
         report["ou_classifier"] = {
             "status": "ok",
             "metadata": ou_meta,
@@ -217,35 +225,20 @@ def train_and_eval(seasons: list[int]) -> dict[str, Any]:
     return report
 
 
-def maybe_upload(report: dict[str, Any]) -> dict[str, Any]:
-    import boto3
+def maybe_upload(
+    report: dict[str, Any], holdout: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Gated upload: each model ships only if not worse than the live one on this
+    run's holdout (O/U also needs Brier < 0.25). See train_qb_model."""
+    from app.services.etl.nfl.ml_training.train_qb_model import upload_local_artifacts
 
-    from app.services.etl.nfl.qb_ou_classifier import MODEL_KEY as OU_KEY
-    from app.services.etl.nfl.qb_ou_classifier import S3_BUCKET, S3_PREFIX
-    from app.services.etl.nfl.qb_passing_yards_ml import MODEL_KEY
-
-    s3 = boto3.client("s3")
-    uploaded = {}
-    mapping = {
-        MODEL_KEY: (
-            _MODELS_DIR / f"{MODEL_KEY}.pkl",
-            _MODELS_DIR / f"{MODEL_KEY}_metadata.json",
-        ),
-        OU_KEY: (
-            _MODELS_DIR / f"{OU_KEY}.pkl",
-            _MODELS_DIR / f"{OU_KEY}_metadata.json",
-        ),
+    results = upload_local_artifacts(_MODELS_DIR, holdout or {})
+    report["s3_upload"] = results
+    report["s3_uploaded"] = {
+        k: v
+        for k, v in results.items()
+        if v.get("status") in {"first_upload", "uploaded"}
     }
-    for key, (model_path, meta_path) in mapping.items():
-        if not model_path.is_file() or not meta_path.is_file():
-            continue
-        s3.upload_file(str(model_path), S3_BUCKET, f"{S3_PREFIX}/{key}.pkl")
-        s3.upload_file(str(meta_path), S3_BUCKET, f"{S3_PREFIX}/{key}_metadata.json")
-        uploaded[key] = {
-            "model": f"s3://{S3_BUCKET}/{S3_PREFIX}/{key}.pkl",
-            "metadata": f"s3://{S3_BUCKET}/{S3_PREFIX}/{key}_metadata.json",
-        }
-    report["s3_uploaded"] = uploaded
     return report
 
 
@@ -261,10 +254,11 @@ def main() -> int:
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
     seasons = [int(s.strip()) for s in args.seasons.split(",") if s.strip()]
-    report = train_and_eval(seasons)
+    holdout: dict[str, Any] = {}
+    report = train_and_eval(seasons, holdout_sink=holdout)
     if args.upload and report.get("status") == "ok":
         try:
-            report = maybe_upload(report)
+            report = maybe_upload(report, holdout)
         except Exception as exc:
             report["s3_upload_error"] = str(exc)
     print(json.dumps(report, indent=2, default=str))

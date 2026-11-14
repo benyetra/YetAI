@@ -46,9 +46,6 @@ from app.services.etl.mlb.odds_utils import (
 )
 from app.services.etl.mlb.offsets import apply_shrunk_offsets
 
-# Lazy-loaded on first use; None when pickle/S3 artifact is missing.
-over_under_clf = None
-
 _STRIKEOUT_RETRAIN_HINT = (
     "Retrain: cd backend && PYTHONPATH=. python scripts/mlb_retrain_strikeouts.py"
 )
@@ -120,18 +117,18 @@ def maybe_apply_bpp_k_prior(
 
 
 def _get_over_under_classifier():
-    """Load strikeout O/U classifier once; return None when artifact is missing."""
-    global over_under_clf
-    if over_under_clf is not None:
-        return over_under_clf
-    over_under_clf = load_classifier()
-    if over_under_clf is None:
+    """Current strikeout O/U classifier; None when no artifact has loaded.
+
+    ``load_classifier`` refreshes from S3 on the shared interval and keeps the
+    last good copy, so nothing is cached (or failed) here."""
+    clf = load_classifier()
+    if clf is None:
         logger.warning(
             "Strikeout classifier not loaded; ML O/U path disabled (regression + "
             "negbin/line heuristics still run). %s",
             _STRIKEOUT_RETRAIN_HINT,
         )
-    return over_under_clf
+    return clf
 
 
 def classifier_prob_over(

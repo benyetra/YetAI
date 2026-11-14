@@ -27,7 +27,13 @@ from app.services.etl._spread_model import (
 from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._spread_features import build_game_features
-from app.services.etl.wnba._spread_ml_predict import model_available, predict_margin
+from app.services.etl.wnba._spread_ml_predict import (
+    get_metadata,
+    get_model_version,
+    model_available,
+    predict_margin,
+)
+from app.services.ml_model_version import model_version_from_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +166,16 @@ def run() -> dict:
                         "pace_adj": pace_adj,
                         "method": projection_method,
                     },
+                    "model_version": (
+                        (
+                            get_model_version()
+                            or model_version_from_metadata(
+                                get_metadata(), prefix="xgb", fallback="xgb-spread-v1"
+                            )
+                        )
+                        if projection_method == "ml"
+                        else "elo-pace-v1"
+                    ),
                     "created_at": datetime.utcnow(),
                 }
             )

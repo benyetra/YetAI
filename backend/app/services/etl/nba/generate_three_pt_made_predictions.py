@@ -27,6 +27,7 @@ from app.services.etl.nba._fanduel_lines import (
 )
 from app.services.etl.nba._feature_engineering import build_features
 from app.services.etl.nba._ml_predict import predict
+from app.services.ml_model_version import resolve_nba_prop_model_version
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,7 @@ def run() -> dict:
                     )
 
                 fd_price_val = int(fd_price) if fd_line > 0 and fd_price else None
+                mv = resolve_nba_prop_model_version(STAT)
                 existing = (
                     db.query(ThreePointProjections)
                     .filter(
@@ -123,6 +125,7 @@ def run() -> dict:
                 )
                 if existing:
                     existing.projected_three_pt_made = projected
+                    existing.model_version = mv
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
                     if fd_line > 0:
@@ -144,6 +147,7 @@ def run() -> dict:
                             player_name=player.player_name,
                             opponent_team_name=player.opponent_team_name,
                             projected_three_pt_made=projected,
+                            model_version=mv,
                             fanduel_line=fd_line if fd_line > 0 else None,
                             fanduel_over_under=(fd_flag if fd_flag != "n" else None),
                             fanduel_price=fd_price_val,

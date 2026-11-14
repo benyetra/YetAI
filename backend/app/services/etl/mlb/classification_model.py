@@ -10,7 +10,8 @@ import joblib
 import numpy as np
 import pandas as pd
 from sqlalchemy import text
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.metrics import brier_score_loss
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import GradientBoostingClassifier
@@ -18,6 +19,7 @@ from sklearn.calibration import CalibratedClassifierCV
 
 from app.services.etl.mlb._db import db_session
 from app.services.etl.mlb._mlb_utils import read_csv_anywhere
+from app.services.ml import model_store
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,6 +30,12 @@ logger = logging.getLogger(__name__)
 MODEL_LOCAL_PATH = os.path.join(os.path.dirname(__file__), "strikeout_model.pkl")
 S3_BUCKET = "yetibets"
 S3_KEY = "mlb/strikeout_model.pkl"
+
+# Serving copy: re-checked against S3 on the shared refresh interval, last good
+# copy kept on failure, never read from local disk (see model_store.S3Object).
+_CLF = model_store.S3Object(
+    S3_KEY, lambda b: joblib.load(BytesIO(b)), bucket=S3_BUCKET
+)
 
 # ----------------------------
 # Park factors (venue -> park_id -> factor)
@@ -116,6 +124,27 @@ def park_factor_for_venue(venue_name: str, fallback: float = 1.0) -> float:
 # ----------------------------
 # Data loading for training
 # ----------------------------
+def _days_rest(df: pd.DataFrame) -> pd.Series:
+    """Days since the pitcher's previous graded start, as serving computes it
+    (``fetch_last_start_date``): looked up over ALL graded starts, not just the
+    rows that also have a projection, and 7 when there is no previous start."""
+    try:
+        result = db_session.execute(
+            text("SELECT date, pitcher_id FROM pred_strikeout_actuals")
+        )
+        starts = pd.DataFrame(result.fetchall(), columns=result.keys())
+    except Exception as e:
+        logger.warning(f"days_rest from all actuals skipped: {e}")
+        starts = df[["date", "pitcher_id"]]
+    starts = starts.assign(date=pd.to_datetime(starts["date"])).drop_duplicates()
+    starts = starts.sort_values(["pitcher_id", "date"])
+    starts["days_rest"] = starts.groupby("pitcher_id")["date"].diff().dt.days
+    merged = df[["date", "pitcher_id"]].merge(
+        starts, on=["date", "pitcher_id"], how="left"
+    )
+    return pd.Series(merged["days_rest"].fillna(7).to_numpy(), index=df.index)
+
+
 def load_training_data() -> pd.DataFrame:
     """
     Build features from historical projections/actuals.
@@ -155,10 +184,12 @@ def load_training_data() -> pd.DataFrame:
 
     # Historical rows have no opposing batter id — neutral matchup (see matchup_adjusted_strikeouts).
     # Do not call matchup per row: that triggers StatsAPI/ProfileStore and stalls retrain for hours.
+    # Serving passes the real lineup matchup factor, but it is not stored on
+    # pred_strikeout_projections (only matchup_source is), so history cannot
+    # reproduce it. The tree model never splits on a constant, so this is inert.
     df["matchup_factor"] = 1.0
     df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values(["pitcher_id", "date"])
-    df["days_rest"] = df.groupby("pitcher_id")["date"].diff().dt.days.fillna(7)
+    df["days_rest"] = _days_rest(df)
 
     # NEW: distance to line
     df["proj_minus_line"] = df["projected_strikeouts"] - df["threshold"]
@@ -181,24 +212,28 @@ def load_training_data() -> pd.DataFrame:
 # ----------------------------
 # Model train / load helpers
 # ----------------------------
-def _train_classifier(df: pd.DataFrame):
-    X = df[
-        [
-            "projected_strikeouts",
-            "proj_ip",
-            "proj_ab",
-            "threshold",
-            "matchup_factor",
-            "days_rest",
-            "park_factor",
-            "proj_minus_line",
-        ]
-    ]  # <- added
-    y = df["over_label"]
+FEATURES = [
+    "projected_strikeouts",
+    "proj_ip",
+    "proj_ab",
+    "threshold",
+    "matchup_factor",
+    "days_rest",
+    "park_factor",
+    "proj_minus_line",
+]
 
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+
+def _train_classifier(df: pd.DataFrame):
+    """Chronological 60/20/20: fit on the oldest rows, calibrate on the next,
+    score on the newest. Returns (calibrated model, holdout X, holdout y)."""
+    df = df.sort_values("date", kind="stable")
+    n = len(df)
+    fit_end, cal_end = int(n * 0.6), int(n * 0.8)
+    X, y = df[FEATURES], df["over_label"]
+    X_train, y_train = X.iloc[:fit_end], y.iloc[:fit_end]
+    X_cal, y_cal = X.iloc[fit_end:cal_end], y.iloc[fit_end:cal_end]
+    X_hold, y_hold = X.iloc[cal_end:], y.iloc[cal_end:]
     pipe = Pipeline(
         [
             ("scaler", StandardScaler()),
@@ -212,7 +247,7 @@ def _train_classifier(df: pd.DataFrame):
             "gbc__learning_rate": [0.05, 0.1],
             "gbc__max_depth": [3, 4],
         },
-        cv=5,
+        cv=TimeSeriesSplit(n_splits=5),
         scoring="accuracy",
         n_jobs=-1,
     )
@@ -220,59 +255,48 @@ def _train_classifier(df: pd.DataFrame):
     best = grid.best_estimator_
 
     calib = CalibratedClassifierCV(best, cv="prefit")
-    calib.fit(X_val, y_val)
-    logger.info(f"Validation accuracy: {calib.score(X_val, y_val):.4f}")
-    return calib
+    calib.fit(X_cal, y_cal)
+    logger.info(
+        f"Holdout accuracy: {calib.score(X_hold, y_hold):.4f} "
+        f"brier: {_brier(calib, X_hold, y_hold):.4f}"
+    )
+    return calib, X_hold, y_hold
 
 
-def train_and_persist() -> str:
+def _brier(clf, X, y) -> float:
+    return float(brier_score_loss(y, clf.predict_proba(X)[:, 1]))
+
+
+def train_and_persist() -> dict:
+    """Train, then replace the live classifier only if its Brier score on the
+    holdout is not worse than the live model's on the same rows. Returns the
+    gated_upload result (status first_upload/uploaded/rejected_by_champion)."""
     df = load_training_data()
     if df.empty:
         raise RuntimeError("No training data available")
-    clf = _train_classifier(df)
-    # Save locally
-    joblib.dump(clf, MODEL_LOCAL_PATH)
-    logger.info(f"Saved classifier to {MODEL_LOCAL_PATH}")
-    # Optionally push to S3
-    try:
-        s3 = boto3.client("s3")
-        with open(MODEL_LOCAL_PATH, "rb") as f:
-            s3.upload_fileobj(f, S3_BUCKET, S3_KEY)
-        logger.info(f"Uploaded model to s3://{S3_BUCKET}/{S3_KEY}")
-    except Exception as e:
-        logger.warning(f"S3 upload skipped: {e}")
-    return MODEL_LOCAL_PATH
+    clf, X_hold, y_hold = _train_classifier(df)
+    buf = BytesIO()
+    joblib.dump(clf, buf)
+    result = model_store.gated_upload(
+        S3_KEY,
+        buf.getvalue(),
+        candidate_metric=_brier(clf, X_hold, y_hold),
+        metric_name="holdout_brier",
+        score_champion=lambda live: _brier(
+            joblib.load(BytesIO(live)), X_hold, y_hold
+        ),
+        manifest_extra={"holdout_rows": int(len(y_hold)), "rows": int(len(df))},
+        version_prefix="gb",
+        bucket=S3_BUCKET,
+    )
+    logger.info(f"Strikeout classifier upload: {result['status']}")
+    return result
 
 
 def load_classifier():
-    """
-    Try local first, then S3. Returns a scikit-learn estimator or None.
-    """
-    # local
-    if os.path.exists(MODEL_LOCAL_PATH):
-        try:
-            logger.info(f"Loading classifier from {MODEL_LOCAL_PATH}")
-            return joblib.load(MODEL_LOCAL_PATH)
-        except Exception as e:
-            logger.warning(f"Local load failed: {e}")
-
-    # s3
-    try:
-        logger.info(f"Fetching classifier from s3://{S3_BUCKET}/{S3_KEY}")
-        s3 = boto3.client("s3")
-        obj = s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
-        body = obj["Body"].read()
-        clf = joblib.load(BytesIO(body))
-        # cache locally
-        try:
-            with open(MODEL_LOCAL_PATH, "wb") as f:
-                f.write(body)
-        except Exception:
-            pass
-        return clf
-    except Exception as e:
-        logger.warning(f"S3 load failed: {e}")
-        return None
+    """Current serving classifier from S3 (refreshed on the shared interval,
+    last good copy kept on failure), or None until one has loaded."""
+    return _CLF.get()
 
 
 def probe_classifier_load() -> dict:
@@ -350,8 +374,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.retrain:
         try:
-            path = train_and_persist()
-            print(f"⚙️  Retrain complete → {path}")
+            result = train_and_persist()
+            print(f"⚙️  Retrain complete → {result['status']}")
         except Exception as e:
             logger.error(f"Retrain failed: {e}")
             sys.exit(1)

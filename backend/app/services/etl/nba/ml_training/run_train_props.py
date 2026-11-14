@@ -1,4 +1,4 @@
-"""End-to-end NBA prop XGB retrain: dataset → train → MAE gate → optional S3 upload."""
+"""End-to-end NBA prop XGB retrain: dataset → train → MAE gate → champion-gated S3 upload."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from app.services.etl.nba.ml_training import (
 )
 from app.services.etl.nba._feature_engineering import FEATURES_VERSION
 from app.services.etl.nba.ml_training.config import NBA_ML_CONFIG
-from app.services.etl.nba.prop_calibration import fit_residual_calibration
+from app.services.etl.nba.prop_calibration import fit_time_ordered
 from app.services.ml import dataset_cache
 from app.services.ml.train_model import split
 from app.services.ml_model_version import model_version_from_metadata
@@ -136,15 +136,20 @@ def run(
         chronological=True,
     )
     metadata = _enrich_metadata(stat_col, metadata)
+    metadata["data_window"] = f"{season_start}..{season_end}"
 
     _, X_hold, _, y_hold = split(features_df, target, chronological=True)
     holdout_preds = model.predict(X_hold)
     holdout_actuals = y_hold.values
     holdout_lines = np.round(holdout_actuals.astype(float) * 2) / 2
-    cal_params = fit_residual_calibration(
+    # Fit on the earlier holdout rows, gate on the later ones (not served yet:
+    # NBA_PROP_CALIBRATION_ENABLED stays off).
+    cal_params, cal_info = fit_time_ordered(
         stat_col, holdout_preds, holdout_actuals, holdout_lines
     )
     metadata["prop_calibration"] = cal_params.to_dict()
+    metadata["prop_calibration_eval"] = cal_info
+    logger.info("NBA %s prop calibration (time-ordered): %s", stat_col, cal_info)
 
     # Judge on the holdout only: validating on every row would include the 80%
     # the model trained on.
@@ -210,7 +215,26 @@ def run(
     }
 
     if upload:
-        keys = upload_to_s3.upload(stat_col, model, metadata)
-        result["s3_keys"] = keys
+        # Only replace the live model if it is not worse on this same holdout.
+        out = upload_to_s3.upload_gated(
+            stat_col,
+            model,
+            metadata,
+            candidate_metric=validation["mae"],
+            score_champion=upload_to_s3.live_scorer(stat_col, X_hold, y_hold),
+        )
+        result["gate"] = out
+        if out["status"] == "rejected_by_champion":
+            logger.warning(
+                "NBA %s candidate rejected: holdout MAE %.3f vs live %.3f",
+                stat_col,
+                out["candidate_metric"],
+                out["champion_metric"],
+            )
+            result["status"] = "rejected_by_champion"
+        else:
+            result["s3_keys"] = {
+                k: out[k] for k in ("model_key", "metadata_key", "manifest_key")
+            }
 
     return result

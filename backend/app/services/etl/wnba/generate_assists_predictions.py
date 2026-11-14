@@ -17,7 +17,8 @@ from app.services.etl.wnba._feature_engineering import (
     apply_expected_minutes,
     build_features,
 )
-from app.services.etl.wnba._ml_predict import predict
+from app.services.etl.wnba._ml_predict import get_metadata, predict
+from app.services.ml_model_version import model_version_from_metadata
 from app.services.etl.wnba._prop_lines import (
     attach_prop_market_fields,
     freeze_prop_rows,
@@ -77,6 +78,9 @@ def run() -> dict:
                 "player_name": p.player_name,
                 "opponent_team_name": p.opponent_team_name,
                 "projected_assists": projected,
+                "model_version": model_version_from_metadata(
+                    get_metadata(STAT), prefix="xgb", fallback=f"xgb-{STAT}-v1"
+                ),
                 "market_line": None,
                 "edge": None,
                 "recommendation": "NO_PLAY",

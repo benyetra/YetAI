@@ -2,10 +2,10 @@
 
 Port of the YetiBets/scripts/nba/ml_models/predict.py ML path, generalized
 across stat types. Each trained `xgb_<stat>.pkl` artifact lives in
-s3://yetibets/nba/ml_models/ alongside its `xgb_<stat>_metadata.json`. On first
-use per stat we download both into a temp dir and cache the loaded model +
-metadata in module-level per-stat dicts so subsequent calls in the same worker
-process are zero-IO.
+s3://yetibets/nba/ml_models/ alongside its `xgb_<stat>_metadata.json`. Each
+stat is an `S3Object` pair (model + metadata) held in memory and re-checked
+against S3 at most once per `ML_MODEL_REFRESH_SECONDS`, so a weekly retrain
+reaches running workers without a restart.
 
 Exposed callables:
   * `predict(stat, features_dict) -> float`
@@ -23,14 +23,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import pickle  # nosec B403 - model artifacts loaded from our own private S3 bucket
-import tempfile
 import threading
 from typing import Optional
 
 import numpy as np
 import pandas as pd
+
+from app.services.ml.model_store import S3Object
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +49,8 @@ SUPPORTED_STATS: tuple[str, ...] = (
     "blocks",
 )
 
-_TMP_DIR = tempfile.gettempdir()
-
-# Per-stat model + metadata caches. Populated lazily by _ensure_loaded(stat).
-_models: dict[str, object] = {}
-_metadatas: dict[str, dict] = {}
+# Per-stat (model, metadata) S3Objects. Created lazily by _objects(stat).
+_OBJECTS: dict[str, tuple[S3Object, S3Object]] = {}
 _load_lock = threading.Lock()
 
 
@@ -62,23 +59,6 @@ def _s3_keys(stat: str) -> tuple[str, str]:
         f"nba/ml_models/xgb_{stat}.pkl",
         f"nba/ml_models/xgb_{stat}_metadata.json",
     )
-
-
-def _local_paths(stat: str) -> tuple[str, str]:
-    return (
-        os.path.join(_TMP_DIR, f"xgb_{stat}.pkl"),
-        os.path.join(_TMP_DIR, f"xgb_{stat}_metadata.json"),
-    )
-
-
-def _download_from_s3(bucket: str, key: str, local_path: str) -> None:
-    """Pull a single object from S3 onto local disk. Uses boto3's default
-    credential chain (env vars / IAM role)."""
-    import boto3  # imported lazily so the module imports cheap when unused
-
-    s3 = boto3.client("s3")
-    logger.info("Downloading s3://%s/%s -> %s", bucket, key, local_path)
-    s3.download_file(bucket, key, local_path)
 
 
 def _fix_model_gpu_id(model):
@@ -99,38 +79,32 @@ def _fix_model_gpu_id(model):
     return model
 
 
-def _ensure_loaded(stat: str) -> None:
-    """Idempotently populate the per-stat model + metadata. Re-uses the
-    on-disk cache across worker invocations; only hits S3 on cold start."""
+def _load_model(body: bytes):
+    # nosec B301 - artifact is fetched from our own private S3 bucket
+    return _fix_model_gpu_id(pickle.loads(body))  # nosec B301
+
+
+def _objects(stat: str) -> tuple[S3Object, S3Object]:
     if stat not in SUPPORTED_STATS:
         raise ValueError(f"Unsupported stat {stat!r}; supported: {SUPPORTED_STATS}")
-    if stat in _models and stat in _metadatas:
-        return
     with _load_lock:
-        if stat in _models and stat in _metadatas:
-            return
+        if stat not in _OBJECTS:
+            model_key, meta_key = _s3_keys(stat)
+            _OBJECTS[stat] = (
+                S3Object(model_key, _load_model, bucket=S3_BUCKET),
+                S3Object(meta_key, json.loads, bucket=S3_BUCKET),
+            )
+        return _OBJECTS[stat]
 
-        model_key, meta_key = _s3_keys(stat)
-        local_model, local_meta = _local_paths(stat)
 
-        if not os.path.exists(local_model):
-            _download_from_s3(S3_BUCKET, model_key, local_model)
-        if not os.path.exists(local_meta):
-            _download_from_s3(S3_BUCKET, meta_key, local_meta)
-
-        with open(local_model, "rb") as f:
-            # nosec B301 - artifact is fetched from our own private S3 bucket
-            model = pickle.load(f)  # nosec B301
-        _models[stat] = _fix_model_gpu_id(model)
-
-        with open(local_meta, "r") as f:
-            _metadatas[stat] = json.load(f)
-
-        logger.info(
-            "Loaded XGBoost %s model (n_features=%s)",
-            stat,
-            _metadatas[stat].get("n_features"),
-        )
+def _ensure_loaded(stat: str) -> tuple[object, dict]:
+    """Current (model, metadata) for `stat`; refreshes from S3 on the shared
+    interval and keeps the last good pair if S3 fails."""
+    model_obj, meta_obj = _objects(stat)
+    model, metadata = model_obj.get(), meta_obj.get()
+    if model is None or metadata is None:
+        raise RuntimeError(f"NBA {stat} model unavailable from S3")
+    return model, metadata
 
 
 def _feature_order(metadata: dict) -> list[str]:
@@ -149,15 +123,13 @@ def get_feature_names(stat: Optional[str] = None) -> list[str]:
     generate_points_predictions.py).
     """
     target = stat or "points"
-    _ensure_loaded(target)
-    return _feature_order(_metadatas[target])
+    return _feature_order(_ensure_loaded(target)[1])
 
 
 def get_metadata(stat: Optional[str] = None) -> dict:
     """Expose the full metadata dict (for test_mae, model_version, etc.)."""
     target = stat or "points"
-    _ensure_loaded(target)
-    return dict(_metadatas[target])
+    return dict(_ensure_loaded(target)[1])
 
 
 def get_holdout_mae(stat: str) -> float | None:
@@ -174,8 +146,11 @@ def get_holdout_mae(stat: str) -> float | None:
 
 
 def get_model_version(stat: str) -> str | None:
-    """Promotion tag from metadata JSON, if present."""
-    meta = get_metadata(stat)
+    """Manifest version (written by the gated upload), else metadata JSON's."""
+    _, meta = _ensure_loaded(stat)
+    manifest_version = _objects(stat)[0].version
+    if manifest_version:
+        return manifest_version
     version = meta.get("model_version")
     if version is not None and str(version).strip():
         return str(version).strip()
@@ -189,9 +164,7 @@ def predict(stat: str, features: dict) -> float:
     YetiBets/scripts/nba/ml_models/predict.py — features not produced by the
     extractor are filled with zeros before model.predict).
     """
-    _ensure_loaded(stat)
-    model = _models[stat]
-    metadata = _metadatas[stat]
+    model, metadata = _ensure_loaded(stat)
 
     feature_names = _feature_order(metadata)
     row = {name: features.get(name, 0) for name in feature_names}

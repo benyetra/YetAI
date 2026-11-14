@@ -54,8 +54,10 @@ def main(argv: list[str] | None = None) -> int:
     from app.services.etl.nfl.anytime_td_backtest import (
         grade_week_from_weekly_records,
         resolve_walk_forward_seasons,
+        run_walk_forward_backtest,
     )
     from app.services.etl.nfl.anytime_td_calibration import (
+        CONVERSION_RATE_FAMILY_RZ_GL,
         fit_position_gbm_bundle,
         save_calibration_artifact,
     )
@@ -71,12 +73,16 @@ def main(argv: list[str] | None = None) -> int:
         seasons = resolve_walk_forward_seasons(load_live=True)
 
     train_rows: list[dict] = []
+    weekly_by_season: dict[int, list] = {}
+    pbp_by_season: dict[int, list] = {}
     for season in seasons:
         records, _src = load_weekly_records_with_fallback(int(season), max_lookback=0)
         if not records:
             logger.warning("skip season %s — no weekly", season)
             continue
         pbp = load_pbp_records_nflverse(int(season))
+        weekly_by_season[int(season)] = records
+        pbp_by_season[int(season)] = pbp
         for week in range(args.start_week, args.end_week + 1):
             graded = grade_week_from_weekly_records(
                 int(season),
@@ -91,6 +97,27 @@ def main(argv: list[str] | None = None) -> int:
     if model is None:
         logger.error("failed to fit residual GBM bundle (n=%s)", len(train_rows))
         return 1
+
+    # Gate: only stamp the family serving accepts if the walk-forward backtest
+    # (reusing the data loaded above) beats the repo's gate thresholds.
+    try:
+        bt = run_walk_forward_backtest(
+            seasons=sorted(weekly_by_season),
+            start_week=args.start_week,
+            end_week=args.end_week,
+            weekly_by_season=weekly_by_season,
+            pbp_by_season=pbp_by_season,
+        )
+        gate_passed = bool(bt.get("passes_gate"))
+        gate_meta = {
+            "passes_gate": gate_passed,
+            "metrics": bt.get("metrics"),
+            "gate": bt.get("gate"),
+        }
+    except Exception as exc:  # cannot evaluate => not validated
+        logger.exception("walk-forward gate could not be evaluated")
+        gate_passed = False
+        gate_meta = {"passes_gate": False, "error": repr(exc)}
 
     meta = {
         "trained_at": datetime.now(timezone.utc).isoformat(),
@@ -118,9 +145,12 @@ def main(argv: list[str] | None = None) -> int:
         ),
         "hier_p_family": "poisson_except_rb_negbin",
         "rb_td_dispersion": RB_TD_DISPERSION,
-        # Must match anytime_td_calibration.CONVERSION_RATE_FAMILY_RZ_GL so
-        # inference will blend this artifact (post-#125 RZ/GL λ semantics).
-        "conversion_rate_family": "rz_gl",
+        # Serving accepts only CONVERSION_RATE_FAMILY_RZ_GL (the family the current
+        # λ code declares); a failed/unevaluable gate stamps a family it refuses.
+        "conversion_rate_family": (
+            CONVERSION_RATE_FAMILY_RZ_GL if gate_passed else "rz_gl_unvalidated"
+        ),
+        "walk_forward_gate": gate_meta,
     }
     mpath, jpath = save_calibration_artifact(
         model,
@@ -129,6 +159,9 @@ def main(argv: list[str] | None = None) -> int:
         meta_path=args.meta_path,
     )
     logger.info("wrote %s and %s (n_train=%s)", mpath, jpath, len(train_rows))
+    if not gate_passed:
+        logger.error("walk-forward gate failed; artifact stamped rz_gl_unvalidated")
+        return 1
     return 0
 
 

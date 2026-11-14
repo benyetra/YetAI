@@ -25,10 +25,10 @@ from app.services.etl.nba._fanduel_lines import (
     line_diagnostics,
 )
 from app.services.etl.nba.prop_calibration import maybe_attach_p_over
-from app.services.etl.nba._ml_predict import get_metadata, predict
+from app.services.etl.nba._ml_predict import predict
 from app.services.ml_model_version import (
     attach_model_version,
-    model_version_from_metadata,
+    resolve_nba_prop_model_version,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,7 +59,7 @@ def run() -> dict:
     lines_attached = 0
     rows_written = 0
 
-    model_version = model_version_from_metadata(get_metadata(STAT), prefix="xgb")
+    model_version = resolve_nba_prop_model_version(STAT)
 
     db = SessionLocal()
     try:

@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from app.services.etl.nba import _spread_ml_predict as smp
+from tests.fake_s3 import Static
 from app.services.etl.nba._spread_features import (
     SPREAD_MODEL_FEATURES,
     compute_game_features,
@@ -90,7 +91,15 @@ def _run(monkeypatch, signal_from_market):
     uploads = []
     monkeypatch.setattr(tsm, "build", lambda s, e: _dataset(signal_from_market))
     monkeypatch.setattr(
-        tsm, "upload_spread_model", lambda m, md: uploads.append(md) or {"k": 1}
+        tsm.upload_to_s3,
+        "upload_gated",
+        lambda stat, m, md, **kw: uploads.append(md)
+        or {
+            "status": "uploaded",
+            "model_key": "k",
+            "metadata_key": "m",
+            "manifest_key": "mm",
+        },
     )
     out = tsm.run(
         season_start=date(2024, 10, 1), season_end=date(2026, 6, 30), upload=True
@@ -112,6 +121,44 @@ def test_gate_uploads_model_that_beats_elo(monkeypatch):
     assert uploads[0]["test_mae"] < uploads[0]["baseline_test_mae"]
 
 
+def test_champion_rejection_is_reported_and_not_uploaded(monkeypatch):
+    monkeypatch.setattr(tsm, "build", lambda s, e: _dataset(True))
+    monkeypatch.setattr(
+        tsm.upload_to_s3,
+        "upload_gated",
+        lambda stat, m, md, **kw: {
+            "status": "rejected_by_champion",
+            "candidate_metric": kw["candidate_metric"],
+            "champion_metric": 1.0,
+        },
+    )
+    out = tsm.run(
+        season_start=date(2024, 10, 1), season_end=date(2026, 6, 30), upload=True
+    )
+    assert out["status"] == "rejected_by_champion" and "s3_keys" not in out
+
+
+def test_spread_reports_market_mae_and_gates_on_it(monkeypatch):
+    out, uploads = _run(monkeypatch, signal_from_market=True)
+    md = uploads[0]
+    assert md["n_market_rows"] > 0 and md["market_test_mae"] is not None
+    assert md["model_mae_on_market_rows"] < md["market_test_mae"]
+
+    # A model that loses to the line (on enough lined rows) is not shipped.
+    monkeypatch.setattr(
+        tsm,
+        "market_holdout_mae",
+        lambda *a: {
+            "n_market_rows": 100,
+            "market_test_mae": 1.0,
+            "model_mae_on_market_rows": 2.0,
+        },
+    )
+    out, uploads = _run(monkeypatch, signal_from_market=True)
+    assert out["status"] == "below_baseline"
+    assert out["reason"] == "does_not_beat_market_line" and not uploads
+
+
 def test_predictor_refuses_models_without_baseline_win():
     assert not smp.beats_baseline({"test_mae": 11.7})  # pre-gate upload
     assert not smp.beats_baseline({"test_mae": 11.7, "baseline_test_mae": 11.2})
@@ -123,20 +170,8 @@ def test_predictor_refuses_models_without_baseline_win():
 
 
 def test_predictor_ignores_ungated_model_on_load(monkeypatch):
-    import json
-    import pickle
-
-    monkeypatch.setattr(smp, "_MODEL", None)
-    monkeypatch.setattr(smp, "_METADATA", None)
-    monkeypatch.setattr(smp, "_LOAD_FAILED", False)
-
-    def download(key, path):
-        if key.endswith(".pkl"):
-            path.write_bytes(pickle.dumps({"fake": "model"}))
-        else:
-            path.write_text(json.dumps({"features": ["elo_diff"], "test_mae": 11.7}))
-
-    monkeypatch.setattr(smp, "_download_artifact", download)
+    meta = {"features": ["elo_diff"], "test_mae": 11.7}
+    monkeypatch.setattr(smp, "_OBJECTS", (Static(object()), Static(meta)))
     assert smp.model_available() is False
     assert smp.predict_margin({"elo_diff": 1.0}) is None
 
@@ -149,11 +184,13 @@ def test_predictor_passes_missing_values_as_nan(monkeypatch):
             seen["vec"] = vec
             return [1.0]
 
-    monkeypatch.setattr(smp, "_LOAD_FAILED", False)
-    monkeypatch.setattr(smp, "_MODEL", FakeModel())
-    monkeypatch.setattr(
-        smp, "_METADATA", {"features": ["elo_diff", "market_spread_home"]}
-    )
+    meta = {
+        "features": ["elo_diff", "market_spread_home"],
+        "split": "chronological",
+        "test_mae": 9.0,
+        "baseline_test_mae": 10.0,
+    }
+    monkeypatch.setattr(smp, "_OBJECTS", (Static(FakeModel()), Static(meta)))
     smp.predict_margin({"elo_diff": 2.0, "market_spread_home": None})
     assert seen["vec"][0][0] == 2.0 and math.isnan(seen["vec"][0][1])
 

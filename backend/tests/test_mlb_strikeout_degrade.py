@@ -33,11 +33,10 @@ def strikeouts_module():
 
 
 def test_strikeouts_imports_when_classifier_missing(strikeouts_module):
-    assert strikeouts_module.over_under_clf is None
+    assert strikeouts_module._get_over_under_classifier() is None
 
 
 def test_get_over_under_classifier_returns_none_without_raise(strikeouts_module):
-    strikeouts_module.over_under_clf = None
     with patch.object(
         strikeouts_module, "load_classifier", return_value=None
     ) as load_mock:

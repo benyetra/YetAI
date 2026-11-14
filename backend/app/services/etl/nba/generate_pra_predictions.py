@@ -257,6 +257,7 @@ def run() -> dict:
                     "fanduel_line": fd_line,
                     "fanduel_over_under": fd_flag,
                     "fanduel_price": fd_price,
+                    "model_version": "sum-pra-v1",  # sum of the P/R/A projections
                 }
                 if existing:
                     if fd_line is None:

@@ -72,6 +72,14 @@ def test_validate_fails_gate_for_unrealistic_threshold(small_dataset):
         assert result["passes_gate"] is False
 
 
+OK_UPLOAD = {
+    "status": "uploaded",
+    "model_key": "k",
+    "metadata_key": "m",
+    "manifest_key": "mm",
+}
+
+
 def test_upload_calls_s3_put(monkeypatch, small_dataset):
     calls = []
 
@@ -110,8 +118,8 @@ def test_run_pipeline_mocked_build_and_upload(small_dataset, monkeypatch):
     )
     upload_calls = []
     monkeypatch.setattr(
-        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload",
-        lambda stat, model, meta: upload_calls.append(stat) or {"model_key": "k"},
+        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload_gated",
+        lambda stat, model, meta, **kw: upload_calls.append(stat) or OK_UPLOAD,
     )
 
     out = run_train_props.run(
@@ -134,7 +142,7 @@ def test_run_gate_failed_skips_upload(small_dataset, monkeypatch):
     )
     upload_calls = []
     monkeypatch.setattr(
-        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload",
+        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload_gated",
         lambda *a, **k: upload_calls.append(1),
     )
     with patch.dict(validate_model.MAE_GATE, {"points": 0.01}):
@@ -194,7 +202,7 @@ def test_chronological_split_holds_out_the_latest_rows(small_dataset):
 def test_run_requires_beating_the_recent_average(small_dataset, monkeypatch):
     feats, target = small_dataset
     monkeypatch.setattr(
-        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload",
+        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload_gated",
         lambda *a, **k: pytest.fail("must not upload"),
     )
     # A recent average that is almost exactly the answer can't be beaten.
@@ -226,8 +234,8 @@ def test_run_requires_beating_the_recent_average(small_dataset, monkeypatch):
     )
     uploads = []
     monkeypatch.setattr(
-        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload",
-        lambda stat, model, meta: uploads.append(stat) or {"model_key": "k"},
+        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload_gated",
+        lambda stat, model, meta, **kw: uploads.append(stat) or OK_UPLOAD,
     )
     out = run_train_props.run(
         "points",
@@ -296,3 +304,106 @@ def test_props_train_with_the_shallow_setting(small_dataset, monkeypatch):
     hp = out["metadata"]["hyperparams"]
     assert hp["max_depth"] == 2 and hp["n_estimators"] == 300
     assert hp["min_child_weight"] == 50
+
+
+def test_run_rejected_by_champion_when_live_model_is_better(small_dataset, monkeypatch):
+    feats, target = small_dataset
+    monkeypatch.setattr(
+        "app.services.etl.nba.ml_training.run_train_props.build_training_dataset.build",
+        lambda stat, start, end: (feats, target),
+    )
+    seen = {}
+
+    def gated(stat, model, meta, *, candidate_metric, score_champion, **kw):
+        seen.update(stat=stat, metric=candidate_metric, meta=meta)
+        return {
+            "status": "rejected_by_champion",
+            "candidate_metric": candidate_metric,
+            "champion_metric": candidate_metric - 1,
+        }
+
+    monkeypatch.setattr(
+        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload_gated",
+        gated,
+    )
+    out = run_train_props.run(
+        "points",
+        season_start=date(2024, 10, 1),
+        season_end=date(2025, 4, 30),
+        upload=True,
+    )
+    assert out["status"] == "rejected_by_champion"
+    assert "s3_keys" not in out
+    assert seen["metric"] == out["validation"]["mae"]
+    assert seen["meta"]["data_window"] == "2024-10-01..2025-04-30"
+
+
+class ColumnA:
+    def predict(self, X):
+        assert list(X.columns) == ["a", "gone"] and (X["gone"] == 0).all()
+        return X["a"].to_numpy()
+
+
+class ConstModel:
+    def __init__(self, v):
+        self.v = v
+
+    def predict(self, X):
+        return np.full(len(X), self.v)
+
+
+def test_score_live_mae_uses_live_feature_list_and_zero_fills(monkeypatch):
+    import json
+    import pickle
+
+    from app.services.ml import upload_to_s3 as shared
+    from tests.fake_s3 import FakeS3
+
+    s3 = FakeS3(
+        {
+            "nba/ml_models/xgb_points_metadata.json": json.dumps(
+                {"features": ["a", "gone"]}  # "gone" is not in the new frame
+            ).encode()
+        }
+    )
+    monkeypatch.setattr(shared.boto3, "client", lambda *_a, **_k: s3)
+
+    X = pd.DataFrame({"a": [1.0, 2.0], "other": [9.0, 9.0]})
+    score = shared.score_live_mae(NBA_ML_CONFIG, "points", X, [2.0, 2.0])
+    assert score(pickle.dumps(ColumnA())) == 0.5
+
+
+def test_run_end_to_end_gate_rejects_worse_candidate_without_put(
+    small_dataset, monkeypatch
+):
+    """Real model_store against a fake S3 whose live model is better."""
+    import json
+    import pickle
+
+    from app.services.ml import model_store
+    from tests.fake_s3 import FakeS3
+
+    feats, target = small_dataset
+    monkeypatch.setattr(
+        "app.services.etl.nba.ml_training.run_train_props.build_training_dataset.build",
+        lambda stat, start, end: (feats, target),
+    )
+    s3 = FakeS3(
+        {
+            # unscorable live model (no metadata) -> falls back to manifest metric
+            "nba/ml_models/xgb_points.pkl": pickle.dumps(ConstModel(0)),
+            "nba/ml_models/xgb_points_manifest.json": json.dumps(
+                {"holdout_metric": 0.0001}
+            ).encode(),
+        }
+    )
+    monkeypatch.setattr(model_store.boto3, "client", lambda *_a, **_k: s3)
+    monkeypatch.setattr("app.services.ml.upload_to_s3.boto3.client", lambda *_a, **_k: s3)
+    out = run_train_props.run(
+        "points",
+        season_start=date(2024, 10, 1),
+        season_end=date(2025, 4, 30),
+        upload=True,
+    )
+    assert out["status"] == "rejected_by_champion"
+    assert s3.names("put") == [] and s3.names("copy") == []

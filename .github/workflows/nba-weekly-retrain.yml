@@ -2,8 +2,10 @@ name: NBA Weekly Retrain
 
 # Keeps the NBA models learning from new games. Each model retrains on the last
 # two seasons plus the current one and uploads only if it passes its own gate
-# (props: MAE limit; spread: must beat Elo on the same holdout). A model that
-# fails its gate is reported as a warning and the live model stays as it is.
+# (props: MAE limit; spread: must beat Elo on the same holdout) and is not worse
+# than the live model on that holdout (rejected_by_champion). The live model is
+# archived before any replacement; roll back with scripts/ml_model_rollback.py.
+# A model that fails a gate is reported as a warning and the live model stays.
 # Requires the same secrets as nba-train-props.yml (RAILWAY_TOKEN, AWS_*).
 
 on:
@@ -64,7 +66,7 @@ jobs:
               --stat "$MODEL" --start "$START" --end "$END" --upload | tee train.log
           fi
           # Gate outcomes are not failures: the live model is simply kept.
-          if grep -Eq "below_baseline|gate_failed|insufficient_data" train.log; then
+          if grep -Eq "below_baseline|gate_failed|insufficient_data|rejected_by_champion" train.log; then
             echo "::warning::$MODEL did not pass its gate; kept the live model"
             exit 0
           fi

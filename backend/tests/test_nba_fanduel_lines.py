@@ -155,9 +155,10 @@ def _run_generator_with_fd_mock(module, *, projected: float, market_key: str):
         stack.enter_context(
             patch.object(module, "_is_injured", return_value=(False, None))
         )
-        stack.enter_context(patch.object(module, "get_metadata", return_value={}))
         stack.enter_context(
-            patch.object(module, "model_version_from_metadata", return_value="xgb-test")
+            patch.object(
+                module, "resolve_nba_prop_model_version", return_value="xgb-test"
+            )
         )
         fd = stack.enter_context(
             patch.object(module, "apply_fanduel_to_projection", return_value=True)
@@ -228,8 +229,9 @@ def test_generators_coverage_pct_partial_lines():
         patch.object(pts_mod, "_is_injured", return_value=(False, None)),
         patch.object(pts_mod, "build_points_features", return_value={"x": 1}),
         patch.object(pts_mod, "predict_points", return_value=20.0),
-        patch.object(pts_mod, "get_metadata", return_value={}),
-        patch.object(pts_mod, "model_version_from_metadata", return_value="xgb-test"),
+        patch.object(
+            pts_mod, "resolve_nba_prop_model_version", return_value="xgb-test"
+        ),
         patch.object(
             pts_mod,
             "apply_fanduel_to_projection",
