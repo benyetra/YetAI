@@ -98,6 +98,7 @@ def _nhl_rows(
             {
                 "id": p.id,
                 "game_date": p.game_date,
+                "model_version": getattr(p, "model_version", None),
                 "predicted_saves": p.predicted_saves,
                 "saves_line": p.saves_line,
                 "betting_pick": (
@@ -124,6 +125,7 @@ def _nhl_rows(
             {
                 "id": p.id,
                 "game_date": p.game_date,
+                "model_version": getattr(p, "model_version", None),
                 "predicted_shots": p.predicted_shots,
                 "shots_line": p.shots_line,
                 "betting_pick": _parse_pick(p.betting_recommendation),
@@ -147,6 +149,7 @@ def _nhl_rows(
             {
                 "id": p.id,
                 "game_date": p.game_date,
+                "model_version": getattr(p, "model_version", None),
                 "predicted_total_goals": p.predicted_total_goals,
                 "draftkings_ou_line": p.draftkings_ou_line,
                 "betting_pick": _parse_pick(p.betting_recommendation),

@@ -353,10 +353,23 @@ def _nba_spread(db, start, end):
     }
 
 
+# NHL rows written before the 2026-11-14 input repair (YetAI-5p8) came from stale
+# inputs and the old formulas: they say nothing about the repaired model, so the
+# record (and the prove-in) starts from the repaired rows only.
+NHL_PRE_REPAIR_MODEL_VERSIONS = (None, "", "heuristic-v1")
+
+
 def _nhl(db, start, end):
     from app.services.nhl_accuracy_service import _nhl_rows
 
-    sets = _nhl_rows(db, start=start, end=end)
+    sets = {
+        part: [
+            r
+            for r in rows
+            if r.get("model_version") not in NHL_PRE_REPAIR_MODEL_VERSIONS
+        ]
+        for part, rows in _nhl_rows(db, start=start, end=end).items()
+    }
     return {
         ("NHL", "player_prop", "saves"): ou_call_graded_counts(
             sets["goalie"],
