@@ -69,8 +69,10 @@ def collect(bets, now: datetime, stuck_after: timedelta = STUCK_AFTER):
                 due = (b.created_at or now) + NO_COMMENCE_GRACE + stuck_after
             if due < now:
                 stuck += 1
-        elif b.status == "void" and b.settled_at and b.settled_at >= now - timedelta(
-            hours=24
+        elif (
+            b.status == "void"
+            and b.settled_at
+            and b.settled_at >= now - timedelta(hours=24)
         ):
             voids.append((str(b.id), b.result or "no reason recorded"))
     return stuck, sorted(voids)

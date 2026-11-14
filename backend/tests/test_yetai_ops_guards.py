@@ -111,7 +111,9 @@ def sent(monkeypatch):
         last["sig"] = signature
 
     monkeypatch.setattr(alert, "_send", send)
-    monkeypatch.setattr(alert, "SessionLocal", lambda: SimpleNamespace(close=lambda: None))
+    monkeypatch.setattr(
+        alert, "SessionLocal", lambda: SimpleNamespace(close=lambda: None)
+    )
     monkeypatch.delenv("YETAI_SETTLEMENT_ALERTS_ENABLED", raising=False)
 
     def run(rows):
