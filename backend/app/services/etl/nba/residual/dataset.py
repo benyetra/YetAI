@@ -232,7 +232,8 @@ def load_inputs(conn, start, end) -> dict[str, pd.DataFrame]:
         by_name = game_lines[f"{side}_team_name"].map(
             lambda n: name_to_id.get(_norm_team(n))
         )
-        game_lines[f"{side}_id"] = game_lines[f"{side}_team_id"].fillna(by_name)
+        ids = pd.to_numeric(game_lines[f"{side}_team_id"], errors="coerce")
+        game_lines[f"{side}_id"] = ids.where(ids.notna(), pd.to_numeric(by_name))
     lines = []
     snap = _snapshot_query(conn, lo, e)
     projs = {stat: _projection_lines(conn, stat, lo, e) for stat in STAT_COLUMN}
