@@ -72,6 +72,9 @@ class NHLGoalieSavesSource:
         for r in rows:
             if r.predicted_saves is None:
                 continue
+            # A superseded starter's row stays on record (ETL flags it), never a pick.
+            if r.was_scratch:
+                continue
 
             if r.saves_line is None:
                 continue

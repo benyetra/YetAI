@@ -151,32 +151,32 @@ def test_rerun_without_line_keeps_line_and_does_not_duplicate(run):
     assert r.betting_recommendation == "OVER 24.5"
 
 
-def test_starter_change_updates_row_and_drops_old_line(run):
+def test_starter_change_flags_old_row_and_adds_new_without_old_line(run):
     run(_slot())
     n, rows = run(_slot(goalie_id=8480947, name="K. Lankinen"), payload={})
-    assert len(rows) == 1
-    assert rows[0].goalie_id == 8480947 and rows[0].saves_line is None
-    assert rows[0].line_available is False
+    assert [(r.goalie_id, r.was_scratch) for r in rows] == [(8482447, True), (8480947, False)]
+    assert rows[0].saves_line == 24.5  # what users saw stays
+    assert rows[1].saves_line is None and rows[1].line_available is False
 
 
-def test_skip_deletes_stale_other_goalie_but_keeps_same_goalie(run):
+def test_skip_flags_stale_other_goalie_but_keeps_same_goalie(run):
     run(_slot())
     # Same goalie skipped (e.g. no model data): row untouched.
     _, rows = run(_slot(predict=False, reason="no_db_goalie"))
     assert len(rows) == 1
-    # Different known goalie skipped: the old starter's row is stale.
+    # Different known goalie skipped: the old starter's row is flagged, not deleted.
     _, rows = run(
         _slot(
             goalie_id=8480947, name="K. Lankinen", predict=False, reason="no_db_goalie"
         )
     )
-    assert rows == []
-    # Unknown starter (no id): nothing to delete, nothing written.
-    run(_slot())
+    assert [(r.goalie_id, r.was_scratch) for r in rows] == [(8482447, True)]
+    # Unknown starter (no id): nothing flagged, nothing written.
+    run(_slot())  # original goalie back: flagged row is revived
     _, rows = run(
         _slot(goalie_id=None, name=None, predict=False, reason="starter_unconfirmed")
     )
-    assert len(rows) == 1
+    assert [(r.goalie_id, r.was_scratch) for r in rows] == [(8482447, False)]
 
 
 def test_markets_passed_to_odds(run):
