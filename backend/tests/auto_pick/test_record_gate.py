@@ -57,7 +57,7 @@ def _seed_rebounds(db, n, hit_rate, *, first_id=0, edge=9.5):
     )  # fmt: skip
 
 
-def _seed(db, proj, act, stat, n, hit_rate, offset, first_id, edge=9.5):
+def _seed(db, proj, act, stat, n, hit_rate, offset, first_id, edge=9.5, price=None):
     """``edge`` = projected - line on the over call; ``hit_rate`` is the share of overs."""
     day = NOW.date() - timedelta(days=offset)
     hits = round(n * hit_rate)
@@ -73,6 +73,7 @@ def _seed(db, proj, act, stat, n, hit_rate, offset, first_id, edge=9.5):
                 **{f"projected_{stat}": projected},
                 fanduel_line=20.5,
                 fanduel_over_under="over",
+                fanduel_price=price,
                 **extra,
             )
         )
@@ -453,3 +454,44 @@ def test_nba_totals_record_counts_only_current_version(sqlite_db):
     sqlite_db.commit()
     rec = load_records(sqlite_db, NOW)[("NBA", "total", None)]
     assert (rec.proj_hits, rec.proj_n) == (10, 10)
+
+
+def test_stored_price_drives_projection_units():
+    # 55 of 100 calls hit. At -130 that is -2.692u; at -110 it is +5u.
+    at_130 = combine(POINTS, proj_n=100, proj_hits=55, proj_units=55 * 100 / 130 - 45)
+    # scale 60/100, n_eff 60, shrink 20: hand-computed shrunk ROI
+    assert at_130.shrunk_roi == pytest.approx((55 * 100 / 130 - 45) * 0.6 / 80)
+    assert at_130.shrunk_roi < rg.min_roi() and at_130.withheld
+    assert at_130.proj_units == pytest.approx(55 * 100 / 130 - 45)
+    at_110 = combine(POINTS, proj_n=100, proj_hits=55)
+    assert at_110.shrunk_roi == pytest.approx(5 * 0.6 / 80) and not at_110.withheld
+    assert at_110.proj_units is None
+
+
+def test_nba_prop_loader_values_rows_at_stored_price(sqlite_db):
+    # 55/100 overs at -130 are a losing key; rows with no price keep the -110 value.
+    _seed(sqlite_db, PointsProjections, PointsActuals, "points", 100, 0.55, 1, 0,
+          price=-130.0)  # fmt: skip
+    _seed(sqlite_db, ReboundsProjections, ReboundsActuals, "rebounds", 100, 0.55, 1, 0)
+    recs = load_records(sqlite_db, NOW)
+    assert recs[POINTS].withheld and recs[POINTS].proj_units == pytest.approx(
+        55 * 100 / 130 - 45
+    )
+    assert not recs[REBOUNDS].withheld
+    assert recs[REBOUNDS].proj_units == pytest.approx(5.0)
+    rows = {r["key"]: r for r in rg.gate_report(sqlite_db, NOW)}
+    assert rows["NBA/player_prop/points"]["proj_units"] == pytest.approx(
+        -2.69, abs=0.01
+    )
+
+
+def test_steals_and_blocks_must_prove_in_nhl_still_does():
+    assert (
+        rg.DEFAULT_PROVE_IN_KEYS == "NHL,NBA/player_prop/steals,NBA/player_prop/blocks"
+    )
+    for stat in ("steals", "blocks"):
+        key = ("NBA", "player_prop", stat)
+        assert rg.drop_reason(None, key) == "unproven_record"
+        assert rg.drop_reason(combine(key, proj_n=10, proj_hits=9)) == "unproven_record"
+    assert rg.drop_reason(None, ("NHL", "total", None)) == "unproven_record"
+    assert rg.drop_reason(None, ("NBA", "player_prop", "points")) is None

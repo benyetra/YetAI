@@ -196,6 +196,7 @@ def gated_upload(
     manifest_extra: dict[str, Any] | None = None,
     version_prefix: str = "xgb",
     bucket: str = BUCKET,
+    line_gate: dict | None = None,
 ) -> dict[str, Any]:
     """Upload ``body`` only if it is strictly better than the live model and was
     trained on a different data window (``manifest_extra["data_window"]``, when
@@ -206,7 +207,24 @@ def gated_upload(
     ``holdout_metric`` is used; with neither, the upload proceeds with
     ``champion_metric=None`` and a reason. ``extra_files`` maps basename ->
     bytes written next to the model (e.g. the metadata JSON).
+
+    ``line_gate`` (a ``beats_line_gate`` result) is a hard pre-check: when it does
+    not pass, nothing is read or written on S3. When it passes it goes in the
+    manifest. None (default) leaves behaviour unchanged.
     """
+    if line_gate is not None and not line_gate.get("passes"):
+        logger.warning(
+            "rejected %s: beats-the-line gate failed %s",
+            model_key,
+            line_gate.get("failed"),
+        )
+        return {
+            "status": "rejected_by_line_gate",
+            "reason": ",".join(line_gate.get("failed") or []),
+            "metric_name": metric_name,
+            "candidate_metric": candidate_metric,
+            "line_gate": line_gate,
+        }
     s3 = boto3.client("s3")
     prefix = _dir(model_key)
     extras = dict(extra_files or {})
@@ -283,6 +301,7 @@ def gated_upload(
     version = f"{version_prefix[: MAX_VERSION_LEN - 13]}-{now:%Y%m%d%H%M}"
     manifest = {
         **(manifest_extra or {}),
+        **({"line_gate": line_gate} if line_gate is not None else {}),
         "version": version,
         "trained_at": now.isoformat(),
         "metric_name": metric_name,

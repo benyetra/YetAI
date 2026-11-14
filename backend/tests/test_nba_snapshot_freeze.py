@@ -245,7 +245,9 @@ def test_pregame_no_market_keeps_previous_line(monkeypatch, db):
     _points_row(db)
     _run_points(monkeypatch, db)
     r = db.query(PointsProjections).one()
-    assert (r.fanduel_line, r.fanduel_price) == (24.5, -115)
+    # The line stays; the side flips to under (20.0 < 24.5), so the stored -115 (the
+    # over's price) no longer belongs to the row's side and is dropped.
+    assert (r.fanduel_line, r.fanduel_over_under, r.fanduel_price) == (24.5, "u", None)
     assert r.projected_points == 20.0
 
 

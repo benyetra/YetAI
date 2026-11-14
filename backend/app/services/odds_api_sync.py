@@ -34,6 +34,18 @@ def sync_odds_get(
         return None
     if resp.ok:
         record_sync(int(resp.headers.get("x-requests-last", 1) or 1), caller)
+        _snapshot(url, params, resp)
     if raise_for_status and not resp.ok:
         resp.raise_for_status()
     return resp
+
+
+def _snapshot(url: str, params: Optional[dict], resp: requests.Response) -> None:
+    """Keep every book's quote from an odds payload (app/services/odds_snapshots.py)."""
+    try:
+        data = resp.json()
+    except ValueError:
+        return
+    from app.services.odds_snapshots import record_response
+
+    record_response(url, params, data)

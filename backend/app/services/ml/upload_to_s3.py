@@ -127,6 +127,8 @@ def upload_gated_pickle(
     candidate_metric: float,
     score_champion: Callable[[bytes], float],
     metric_name: str = "holdout_mae",
+    line_gate: dict | None = None,
+    manifest_extra: dict[str, Any] | None = None,
 ) -> dict:
     """``upload_gated`` for a model with its own key (``<name>.pkl`` +
     ``<name>_metadata.json``), e.g. the totals residual models."""
@@ -142,9 +144,13 @@ def upload_gated_pickle(
                 metadata, indent=2, default=str
             ).encode()
         },
-        manifest_extra={"data_window": metadata.get("data_window")},
+        manifest_extra={
+            "data_window": metadata.get("data_window"),
+            **(manifest_extra or {}),
+        },
+        line_gate=line_gate,
     )
-    if out["status"] != "rejected_by_champion":
+    if not out["status"].startswith("rejected_by"):
         out["metadata_key"] = meta_key
     return out
 
@@ -158,6 +164,8 @@ def upload_gated(
     candidate_metric: float,
     score_champion: Callable[[bytes], float],
     metric_name: str = "holdout_mae",
+    line_gate: dict | None = None,
+    manifest_extra: dict[str, Any] | None = None,
 ) -> dict:
     """Like ``upload`` but only replaces the live model if the candidate is
     not worse on the same holdout; archives the live model first.
@@ -173,8 +181,13 @@ def upload_gated(
                 metadata, indent=2, default=str
             ).encode()
         },
-        manifest_extra={"stat": stat_col, "data_window": metadata.get("data_window")},
+        manifest_extra={
+            "stat": stat_col,
+            "data_window": metadata.get("data_window"),
+            **(manifest_extra or {}),
+        },
+        line_gate=line_gate,
     )
-    if out["status"] != "rejected_by_champion":
+    if not out["status"].startswith("rejected_by"):
         out["metadata_key"] = f"{config.s3_prefix}/xgb_{stat_col}_metadata.json"
     return out

@@ -4,7 +4,8 @@ Record gate: withhold (league, market, stat) keys whose recent record is measura
 A key's record blends two sources, both over the last WINDOW_DAYS:
 - bet record: graded AUTO YetAIBet rows, units at the stored odds;
 - projection record: the model's published over/under calls graded vs the line they
-  were published with (high volume prior), valued at -110 because rows store no price.
+  were published with (high volume prior), valued at the price stored with each call
+  where the row has one (NBA props: fanduel_price) and at -110 otherwise.
   Only calls the scorer could publish count: where the stored call is made at any edge
   (NBA props) rows below the fill-floor edge (``fill_floor_edge``) are left out.
 The blend is shrunk toward breakeven (zero ROI; 52.38% at -110), so a thin sample never
@@ -16,7 +17,8 @@ would flip daily), so the plain dead band is the simplest rule that does not fli
 Records are recomputed every run from data that keeps being graded while a key is
 withheld, so re-admission is automatic.
 
-Prove-in keys (AUTO_PICK_PROVE_IN_KEYS, default every NHL key) must earn their way in
+Prove-in keys (AUTO_PICK_PROVE_IN_KEYS, default every NHL key plus NBA steals and
+blocks, which only recently got lines and so have no graded record) must earn their way in
 whatever AUTO_PICK_REQUIRE_PROVEN_RECORD says: until the record has min_picks effective
 graded calls at or above breakeven the key is withheld as ``unproven_record`` and runs
 in shadow (its ETL keeps writing projections and lines, so the record builds). The
@@ -37,6 +39,7 @@ from app.models.database_models import BetSource, BetType, YetAIBet
 from app.services.accuracy_shared import (
     edge_play_graded_counts,
     ou_call_graded_counts,
+    ou_call_graded_record,
 )
 from app.services.auto_pick.candidate import BetCandidate, MarketType, utc_to_eastern
 from app.services.auto_pick.context_builder import (
@@ -57,7 +60,7 @@ DEFAULT_MIN_ROI = -0.02
 DEFAULT_PRIOR_MAX_PICKS = 60
 DEFAULT_SHRINK_PICKS = 20
 # Key labels (or label prefixes) that must prove in; "" turns prove-in off.
-DEFAULT_PROVE_IN_KEYS = "NHL"
+DEFAULT_PROVE_IN_KEYS = "NHL,NBA/player_prop/steals,NBA/player_prop/blocks"
 # historical_sub_score: 50 at breakeven ROI, +/-25 points per 10% ROI.
 ROI_SCORE_SLOPE = 250.0
 
@@ -122,6 +125,7 @@ class KeyRecord:
     bet_units: float
     proj_n: int
     proj_hits: int
+    proj_units: Optional[float]  # None: assumed -110
     n_eff: float
     shrunk_roi: float
     withheld: bool
@@ -172,19 +176,26 @@ def combine(
     bet_units: float = 0.0,
     proj_n: int = 0,
     proj_hits: int = 0,
+    proj_units: Optional[float] = None,
 ) -> KeyRecord:
-    """Blend bet + projection records and shrink toward breakeven, zero ROI (pure)."""
+    """Blend bet + projection records and shrink toward breakeven, zero ROI (pure).
+
+    ``proj_units``: the projection record's units at stored prices; None = at -110.
+    """
     scale = min(1.0, prior_max_picks() / proj_n) if proj_n else 1.0
-    # Units at -110, in integers until the one division so breakeven is exactly 0.
-    proj_units = (proj_hits * 100 - (proj_n - proj_hits) * 110) / 110
+    units = proj_units
+    if units is None:
+        # Units at -110, in integers until the one division so breakeven is exactly 0.
+        units = (proj_hits * 100 - (proj_n - proj_hits) * 110) / 110
     n_eff = proj_n * scale + bet_n
-    shrunk_roi = (proj_units * scale + bet_units) / (n_eff + shrink_picks())
+    shrunk_roi = (units * scale + bet_units) / (n_eff + shrink_picks())
     return KeyRecord(
         key=key,
         bet_n=bet_n,
         bet_units=bet_units,
         proj_n=proj_n,
         proj_hits=proj_hits,
+        proj_units=proj_units,
         n_eff=n_eff,
         shrunk_roi=shrunk_roi,
         withheld=gate_enabled() and n_eff >= min_picks() and shrunk_roi < min_roi(),
@@ -230,8 +241,9 @@ def load_bet_records(db: Session, now: datetime) -> dict[RecordKey, tuple[int, f
 # - NFL spread, NFL total, NFL passing/receiving, NHL saves/total: rows are the
 #   stored recommendation/pick (NO_PLAY and pushes excluded); their edge thresholds
 #   live in each sport's ETL and were not compared with the fill-floor edge here.
-# Projection loaders: name -> fn(db, start, end) -> {key: (hits, graded)}; dates inclusive.
-ProjectionLoader = Callable[[Session, date, date], dict[RecordKey, tuple[int, int]]]
+# Projection loaders: name -> fn(db, start, end) -> {key: (hits, graded[, units])}; dates
+# inclusive. Units (at stored prices) are optional: without them the key is valued at -110.
+ProjectionLoader = Callable[[Session, date, date], dict[RecordKey, tuple]]
 
 # part -> (stat, actual field, projected field)
 _NBA_PROP_STATS = {
@@ -311,13 +323,14 @@ def _nba_props(db, start, end):
         stat, actual_field, proj_field = _NBA_PROP_STATS[part]
         min_edge = fill_floor_edge(stat)
         rows = [r for r in rows if _prop_qualifies(r, proj_field, min_edge)]
-        hits, n = ou_call_graded_counts(
+        hits, n, units, _priced = ou_call_graded_record(
             rows,
             line_field="fanduel_line",
             pick_field="fanduel_over_under",
             actual_field=actual_field,
+            price_field="fanduel_price",
         )
-        out[("NBA", "player_prop", stat)] = (hits, n)
+        out[("NBA", "player_prop", stat)] = (hits, n, units)
     return out
 
 
@@ -492,14 +505,14 @@ def emitted_keys() -> dict[str, set[RecordKey]]:
 
 def load_projection_records(
     db: Session, now: datetime, loaders: Optional[tuple[str, ...]] = None
-) -> dict[RecordKey, tuple[int, int]]:
-    """{key: (hits, graded)} over [today - window, today): today's results never leak in.
+) -> dict[RecordKey, tuple]:
+    """{key: (hits, graded[, units])} over [today - window, today): today's results never leak in.
 
     ``loaders`` limits the run to those PROJECTION_LOADERS names (default all).
     """
     today = utc_to_eastern(now).date()  # slate dates are US Eastern
     start, end = today - timedelta(days=window_days()), today - timedelta(days=1)
-    out: dict[RecordKey, tuple[int, int]] = {}
+    out: dict[RecordKey, tuple] = {}
     for name, loader in PROJECTION_LOADERS.items():
         if loaders is not None and name not in loaders:
             continue
@@ -517,16 +530,18 @@ def load_records(
 ) -> dict[RecordKey, KeyRecord]:
     bets = load_bet_records(db, now)
     projs = load_projection_records(db, now, loaders)
-    return {
-        key: combine(
+    out = {}
+    for key in set(bets) | set(projs):
+        hits, n, *units = projs.get(key, (0, 0))
+        out[key] = combine(
             key,
             bet_n=bets.get(key, (0, 0.0))[0],
             bet_units=bets.get(key, (0, 0.0))[1],
-            proj_hits=projs.get(key, (0, 0))[0],
-            proj_n=projs.get(key, (0, 0))[1],
+            proj_hits=hits,
+            proj_n=n,
+            proj_units=units[0] if units else None,
         )
-        for key in set(bets) | set(projs)
-    }
+    return out
 
 
 def withheld_keys(
@@ -557,6 +572,9 @@ def gate_report(db: Session, now: datetime) -> list[dict]:
                 "bet_units": round(r.bet_units, 2),
                 "proj_n": r.proj_n,
                 "proj_hits": r.proj_hits,
+                "proj_units": (
+                    None if r.proj_units is None else round(r.proj_units, 2)
+                ),
                 "prior_hit_rate": r.proj_hits / r.proj_n if r.proj_n else None,
                 "n_eff": round(r.n_eff, 1),
                 "shrunk_roi": round(r.shrunk_roi, 4),

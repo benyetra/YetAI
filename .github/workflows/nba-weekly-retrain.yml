@@ -22,7 +22,7 @@ jobs:
       fail-fast: false
       max-parallel: 1 # one heavy read of the production DB at a time
       matrix:
-        model: [spread, points, rebounds, assists]
+        model: [spread, points, rebounds, assists, residual_rebounds, residual_assists]
     defaults:
       run:
         working-directory: backend
@@ -61,12 +61,15 @@ jobs:
           if [ "$MODEL" = "spread" ]; then
             python3 -m app.services.etl.nba.ml_training.train_spread_model \
               --start "$START" --end "$END" --upload | tee train.log
+          elif [ "${MODEL#residual_}" != "$MODEL" ]; then
+            python3 -m app.services.etl.nba.residual train --stat "${MODEL#residual_}" \
+              --start "$START" --end "$END" --upload | tee train.log
           else
             python3 -m app.services.etl.nba.ml_training \
               --stat "$MODEL" --start "$START" --end "$END" --upload | tee train.log
           fi
           # Gate outcomes are not failures: the live model is simply kept.
-          if grep -Eq "below_baseline|gate_failed|insufficient_data|rejected_by_champion" train.log; then
+          if grep -Eq "below_baseline|gate_failed|insufficient_data|rejected_by_champion|rejected_by_line_gate" train.log; then
             echo "::warning::$MODEL did not pass its gate; kept the live model"
             exit 0
           fi

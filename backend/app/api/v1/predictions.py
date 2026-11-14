@@ -180,8 +180,22 @@ _NHL_MARKET_KEYS = {
 }
 
 
+# NBA prop groups whose lines are new (2026-11-14): no graded record yet, so their side
+# (fanduel_over_under, which the board falls back to as the pick) is stripped too.
+_NBA_NEW_MARKET_KEYS = {
+    "steals": ("NBA", "player_prop", "steals"),
+    "blocks": ("NBA", "player_prop", "blocks"),
+}
+_NBA_NO_PICK = {**_NO_PICK, "fanduel_over_under": None, "pick_confidence": None}
+
+
 def _withhold_unproven_picks(
-    payload: dict[str, Any], db: Session, market_keys: dict[str, tuple]
+    payload: dict[str, Any],
+    db: Session,
+    market_keys: dict[str, tuple],
+    *,
+    loaders: tuple[str, ...] = ("nhl",),
+    no_pick: dict[str, Any] = _NO_PICK,
 ) -> dict[str, Any]:
     """Strip pick labels and value tiers from groups whose market has no qualifying
     record: the auto-pick record gate's rule (record_gate.withheld_keys), so the board
@@ -193,7 +207,7 @@ def _withhold_unproven_picks(
     try:
         with db.begin_nested():
             withheld = record_gate.withheld_keys(
-                db, datetime.utcnow(), keys, loaders=("nhl",)
+                db, datetime.utcnow(), keys, loaders=loaders
             )
     except Exception:
         logger.exception("record gate failed; withholding every pick label")
@@ -203,7 +217,7 @@ def _withhold_unproven_picks(
         reason = withheld.get(key)
         if reason:
             out[group] = [
-                {**r, **_NO_PICK, "pick_withheld": reason}
+                {**r, **no_pick, "pick_withheld": reason}
                 for r in payload.get(group) or []
             ]
     return out
@@ -875,26 +889,30 @@ def nba_predictions(
         "blocks": (BlocksProjections, "blocks"),
         "pra": (PRAProjections, "pra"),
     }
-    return _merge_past_results(
-        {
-            "totals": totals,
-            "spreads": spreads,
-            **{
-                key: enrich_prop_rows(
-                    _query_nba_props_by_season_minutes(
-                        db, model, target_date, prop_limit, tz=tz
-                    ),
-                    sport="nba",
-                    stat=stat,
-                    db=db,
-                )
-                for key, (model, stat) in props.items()
-            },
+    payload = {
+        "totals": totals,
+        "spreads": spreads,
+        **{
+            key: enrich_prop_rows(
+                _query_nba_props_by_season_minutes(
+                    db, model, target_date, prop_limit, tz=tz
+                ),
+                sport="nba",
+                stat=stat,
+                db=db,
+            )
+            for key, (model, stat) in props.items()
         },
-        "nba",
-        db,
-        target_date,
-    )
+    }
+    if not _is_past_date(target_date):
+        payload = _withhold_unproven_picks(
+            payload,
+            db,
+            _NBA_NEW_MARKET_KEYS,
+            loaders=("nba_props",),
+            no_pick=_NBA_NO_PICK,
+        )
+    return _merge_past_results(payload, "nba", db, target_date)
 
 
 @router.get("/nfl")

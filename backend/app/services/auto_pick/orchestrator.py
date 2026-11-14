@@ -155,6 +155,28 @@ def grading_block(c: BetCandidate) -> dict:
     return block
 
 
+def _price_at_book(c: BetCandidate) -> str:
+    """ "-105 at DraftKings" for a candidate priced at a named book, else ""."""
+    book = c.projection_metadata.get("book")
+    if not book:
+        return ""
+    odds = f"+{c.market_odds}" if c.market_odds > 0 else str(c.market_odds)
+    return f"Price {odds} at {BOOK_NAMES.get(book, book)}."
+
+
+BOOK_NAMES = {
+    "fanduel": "FanDuel",
+    "draftkings": "DraftKings",
+    "betmgm": "BetMGM",
+    "williamhill_us": "Caesars",
+    "fanatics": "Fanatics",
+    "espnbet": "ESPN BET",
+    "betrivers": "BetRivers",
+    "hardrockbet": "Hard Rock Bet",
+    "ballybet": "Bally Bet",
+}
+
+
 def row_market_key(bet: YetAIBet) -> tuple:
     """Same identity as ``market_key`` for an existing row."""
     pf = bet.prediction_factors if isinstance(bet.prediction_factors, dict) else {}
@@ -618,6 +640,7 @@ class AutoPickOrchestrator:
                 "market_type": c.market_type.value,
                 "pick": c.selection,
                 "odds": odds_str,
+                "book": c.projection_metadata.get("book"),
                 "confidence": int(round(leg.score.total)),
                 "commence_time": (
                     c.commence_time.isoformat() if c.commence_time else None
@@ -769,7 +792,7 @@ class AutoPickOrchestrator:
         bet_type = _MARKET_TYPE_TO_BET_TYPE.get(c.market_type, BetType.PROP)
 
         title = display_matchup_title(c)
-        reasoning_text = s.reasoning or ""
+        reasoning_text = " ".join(t for t in (s.reasoning, _price_at_book(c)) if t)
 
         return YetAIBet(
             id=str(uuid.uuid4()),

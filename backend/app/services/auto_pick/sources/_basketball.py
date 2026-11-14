@@ -220,6 +220,11 @@ def prop_rows(db, specs, lines_model, league, date_range, side_of) -> list[dict]
             side = side_of(r)
             hit = by_team.get(getattr(r, "opponent_team_name", None))
             price = getattr(r, "fanduel_price", None)
+            book = "fanduel" if price is not None else None
+            # NBA rows carry the best quote across books; it is the line we publish.
+            best = [getattr(r, f"best_{k}", None) for k in ("book", "line", "price")]
+            if None not in best:
+                book, line, price = best
             if (
                 proj is None
                 or line is None
@@ -242,6 +247,7 @@ def prop_rows(db, specs, lines_model, league, date_range, side_of) -> list[dict]
                     "line": float(line),
                     "odds": int(price),
                     "odds_assumed": False,
+                    "book": book,
                     "projection": float(proj),
                     "side": side,
                     "team": team,
