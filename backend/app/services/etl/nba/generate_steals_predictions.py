@@ -52,6 +52,8 @@ def run() -> dict:
     skipped_insufficient = 0
     errors = 0
 
+    model_version = resolve_nba_prop_model_version(STAT)
+
     db = SessionLocal()
     try:
         active = active_players_not_started(db, today)
@@ -95,7 +97,6 @@ def run() -> dict:
                 prediction = predict(STAT, features)
                 projected = max(0.0, round(prediction, 2))
 
-                mv = resolve_nba_prop_model_version(STAT)
                 existing = (
                     db.query(StealsProjections)
                     .filter(
@@ -106,7 +107,7 @@ def run() -> dict:
                 )
                 if existing:
                     existing.projected_steals = projected
-                    existing.model_version = mv
+                    existing.model_version = model_version
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
                     existing.fanduel_line = None
@@ -121,7 +122,7 @@ def run() -> dict:
                             player_name=player.player_name,
                             opponent_team_name=player.opponent_team_name,
                             projected_steals=projected,
-                            model_version=mv,
+                            model_version=model_version,
                             fanduel_line=None,
                             fanduel_over_under=None,
                             fanduel_price=None,

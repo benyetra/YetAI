@@ -54,6 +54,8 @@ def run() -> dict:
     skipped_insufficient = 0
     errors = 0
 
+    model_version = resolve_nba_prop_model_version(STAT)
+
     db = SessionLocal()
     try:
         active = active_players_not_started(db, today)
@@ -114,7 +116,6 @@ def run() -> dict:
                     )
 
                 fd_price_val = int(fd_price) if fd_line > 0 and fd_price else None
-                mv = resolve_nba_prop_model_version(STAT)
                 existing = (
                     db.query(ThreePointProjections)
                     .filter(
@@ -125,7 +126,7 @@ def run() -> dict:
                 )
                 if existing:
                     existing.projected_three_pt_made = projected
-                    existing.model_version = mv
+                    existing.model_version = model_version
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
                     if fd_line > 0:
@@ -147,7 +148,7 @@ def run() -> dict:
                             player_name=player.player_name,
                             opponent_team_name=player.opponent_team_name,
                             projected_three_pt_made=projected,
-                            model_version=mv,
+                            model_version=model_version,
                             fanduel_line=fd_line if fd_line > 0 else None,
                             fanduel_over_under=(fd_flag if fd_flag != "n" else None),
                             fanduel_price=fd_price_val,
