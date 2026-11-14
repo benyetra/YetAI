@@ -222,10 +222,10 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
             prediction = predict_goalie_saves(
                 goalie_id=goalie_id,
                 goalie_name=goalie_name,
-                opponent_team_name=slot.opponent_team_name,
+                team_id=slot.team_id,
+                opponent_team_id=slot.opponent_team_id,
                 game_date=slot.game_date,
                 is_home=slot.is_home,
-                goalie_team_name=slot.team_name,
             )
 
             if "error" not in prediction:
@@ -288,7 +288,6 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
                     predicted_shots_against=prediction["predicted_shots_against"],
                     predicted_save_pct=prediction.get("predicted_save_pct", 0.0),
                     goalie_season_save_pct=prediction.get("goalie_season_sv_pct"),
-                    goalie_recent_save_pct=prediction.get("goalie_recent_sv_pct"),
                     opponent_shots_avg=prediction.get("opponent_shots_avg"),
                     model_version=write["model_version"],
                     confidence=combined_confidence,
@@ -382,9 +381,23 @@ def generate_player_predictions(games, odds_events):
                 event["id"], odds_home, odds_away
             )
 
-        for team_id, abbrev, team_name, opponent_name, is_home in [
-            (home_team_id, home_abbrev, home_team_name, away_team_name, True),
-            (away_team_id, away_abbrev, away_team_name, home_team_name, False),
+        for team_id, abbrev, team_name, opponent_name, opponent_id, is_home in [
+            (
+                home_team_id,
+                home_abbrev,
+                home_team_name,
+                away_team_name,
+                away_team_id,
+                True,
+            ),
+            (
+                away_team_id,
+                away_abbrev,
+                away_team_name,
+                home_team_name,
+                home_team_id,
+                False,
+            ),
         ]:
             ids = roster_ids(abbrev)
             if not ids:
@@ -417,8 +430,9 @@ def generate_player_predictions(games, odds_events):
                 try:
                     pred = predict_player_shots(
                         player_id=player.player_id,
-                        opponent_team_name=opponent_name,
+                        opponent_team_id=opponent_id,
                         is_home=is_home,
+                        game_date=game_date,
                     )
                     if "error" not in pred:
                         line_data = find_player_line(
@@ -438,18 +452,7 @@ def generate_player_predictions(games, odds_events):
                             shots_line = old_rows[0].shots_line
                         extra_features = {
                             "baseline_shots": pred.get("baseline_shots"),
-                            "ice_time_adjustment": pred.get("ice_time_adjustment"),
-                            "opponent_shots_adjustment": pred.get(
-                                "opponent_shots_adjustment"
-                            ),
-                            "blocks_adjustment": pred.get("blocks_adjustment"),
-                            "position_adjustment": pred.get("position_adjustment"),
-                            "home_ice_adjustment": pred.get("home_ice_adjustment"),
                             "player_toi_per_game": pred.get("player_toi_per_game"),
-                            "opponent_shots_against_pg": pred.get(
-                                "opponent_shots_against_pg"
-                            ),
-                            "opponent_blocks_pg": pred.get("opponent_blocks_pg"),
                             "player_position": pred.get("player_position"),
                             "is_home": pred.get("is_home"),
                         }
@@ -528,7 +531,9 @@ def generate_team_totals_predictions(games, odds_events):
 
         try:
             pred = predict_team_total_goals(
-                home_team_name=home_team, away_team_name=away_team, game_date=game_date
+                home_team_id=home_team_id,
+                away_team_id=away_team_id,
+                game_date=game_date,
             )
 
             if "error" not in pred:
@@ -576,11 +581,7 @@ def generate_team_totals_predictions(games, odds_events):
                         "away_offense_rating": pred.get("away_offense_rating"),
                         "home_defense_rating": pred.get("home_defense_rating"),
                         "away_defense_rating": pred.get("away_defense_rating"),
-                        "combined_pace": pred.get("combined_pace"),
-                        "home_pp_pct": pred.get("home_pp_pct"),
-                        "away_pp_pct": pred.get("away_pp_pct"),
-                        "home_pk_pct": pred.get("home_pk_pct"),
-                        "away_pk_pct": pred.get("away_pk_pct"),
+                        "league_goals_per_game": pred.get("league_goals_per_game"),
                     },
                 )
 

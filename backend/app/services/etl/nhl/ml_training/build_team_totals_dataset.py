@@ -10,6 +10,7 @@ import pandas as pd
 from app.core.database import SessionLocal
 from app.models.predictions_models import NHLTeamTotalsActuals, NHLTeamTotalsPredictions
 from app.services.etl.nhl.team_totals_ml import (
+    HEURISTIC_VERSION,
     build_features_from_prediction,
     feature_names,
     predict_total_heuristic,
@@ -65,6 +66,8 @@ def build(season_start: date, season_end: date) -> tuple[pd.DataFrame, pd.Series
                     NHLTeamTotalsPredictions.home_team_id == actual.home_team_id,
                     NHLTeamTotalsPredictions.away_team_id == actual.away_team_id,
                     NHLTeamTotalsPredictions.game_date == actual.game_date,
+                    # rows written before the NHL input repair are not training data
+                    NHLTeamTotalsPredictions.model_version == HEURISTIC_VERSION,
                 )
                 .first()
             )

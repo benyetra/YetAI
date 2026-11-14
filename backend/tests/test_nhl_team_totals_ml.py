@@ -53,7 +53,7 @@ def test_enrich_shadow_without_model():
     pred = _sample_prediction()
     with patch.object(ttm, "predict_total_ml_loaded", return_value=None):
         out = enrich_team_totals_prediction_for_write(pred)
-    assert out["model_version"] == "heuristic-v1"
+    assert out["model_version"] == "heuristic-v2"
     assert "ml_shadow_total" not in (out.get("features_used") or {})
 
 

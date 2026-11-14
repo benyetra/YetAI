@@ -193,15 +193,3 @@ def test_find_goalie_line_initial_fallback():
     assert dp.find_goalie_line(lines, "Leevi Meriläinen", "x") == {"line": 24.5}
     assert dp.find_goalie_line(lines, None, "K. Merilainen") == {}
     assert dp.find_goalie_line({}, "A B", "A. B") == {}
-
-
-def test_opponent_strength_fallback_has_four_values(monkeypatch):
-    """No team-stats row: league averages, same 4-tuple the model unpacks."""
-    from unittest.mock import MagicMock
-
-    from app.services.etl.nhl import goalie_saves_model as gsm
-
-    fake = MagicMock()
-    fake.query.return_value.filter_by.return_value.first.return_value = None
-    monkeypatch.setattr(gsm, "db_session", fake)
-    assert gsm.get_opponent_offensive_strength("Vancouver") == (3.0, 0.10, 1.0, 3.0)

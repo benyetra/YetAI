@@ -10,6 +10,7 @@ import pandas as pd
 from app.core.database import SessionLocal
 from app.models.predictions_models import NHLGoalieActuals, NHLGoaliePredictions
 from app.services.etl.nhl.goalie_saves_ml import (
+    HEURISTIC_VERSION,
     build_features_from_prediction,
     feature_names,
 )
@@ -53,6 +54,8 @@ def build(season_start: date, season_end: date) -> tuple[pd.DataFrame, pd.Series
                 .filter(
                     NHLGoaliePredictions.goalie_id == actual.goalie_id,
                     NHLGoaliePredictions.game_date == actual.game_date,
+                    # rows written before the NHL input repair are not training data
+                    NHLGoaliePredictions.model_version == HEURISTIC_VERSION,
                 )
                 .first()
             )

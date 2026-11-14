@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 S3_BUCKET = "yetibets"
 S3_PREFIX = "nhl/ml_models"
 MODEL_KEY = "goalie_saves"
-HEURISTIC_VERSION = "heuristic-v1"
+HEURISTIC_VERSION = "heuristic-v2"
 
 _FEATURE_NAMES: tuple[str, ...] = (
     "recent_sv_pct",
@@ -123,7 +123,7 @@ def predict_saves_heuristic(features: Mapping[str, float]) -> float:
             _float_or(features.get("season_sv_pct"), 0.905),
         ),
     )
-    return round(shots * sv, 1)
+    return round(shots * sv, 2)
 
 
 def _feature_vector(
