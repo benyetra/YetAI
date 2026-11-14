@@ -50,7 +50,8 @@ def test_nba_spread_row_version_ml_and_heuristic(monkeypatch):
     def run(ml: bool):
         db = MagicMock()
         game = MagicMock(
-            game_date=date(2026, 5, 21),
+            game_date=date(2099, 5, 21),
+            game_time=None,
             home_team_id=1,
             away_team_id=2,
             home_team_name="H",

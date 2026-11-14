@@ -183,7 +183,7 @@ def _points_row(db, line=24.5, side="o", price=-115):
 def _run_points(monkeypatch, db, injured=False, fresh_line=None):
     monkeypatch.setattr(gpp, "SessionLocal", lambda: db)
     monkeypatch.setattr(gpp, "now_eastern", lambda: datetime(2026, 11, 13, 19, 30))
-    monkeypatch.setattr(gpp, "get_metadata", lambda s: {})
+    monkeypatch.setattr(gpp, "resolve_nba_prop_model_version", lambda s: None)
     monkeypatch.setattr(gpp, "_is_injured", lambda d, p: (injured, "Out"))
     monkeypatch.setattr(gpp, "build_points_features", lambda **k: {})
     monkeypatch.setattr(gpp, "predict_points", lambda f: 20.0)
