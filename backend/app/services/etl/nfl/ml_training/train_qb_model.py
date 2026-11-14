@@ -107,7 +107,10 @@ def _gated(
         metric_name=metric_name,
         score_champion=score_champion,
         extra_files={meta_name: json.dumps(metadata, indent=2, default=str).encode()},
-        manifest_extra={"model_key": model_key},
+        manifest_extra={
+            "model_key": model_key,
+            "data_window": metadata.get("data_window"),
+        },
         version_prefix=version_prefix,
     )
 

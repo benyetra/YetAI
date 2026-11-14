@@ -355,6 +355,17 @@ def _time_split(
     return np.arange(n)[:cut], np.arange(n)[cut:], "time_20pct"
 
 
+def _data_window(meta: pd.DataFrame) -> str:
+    """First..last graded (season, week) in ``meta``: the gate's "has the training
+    data moved on since the live model" signal (a date would change every run)."""
+    ordered = meta.sort_values(["season", "week"])
+    first, last = ordered.iloc[0], ordered.iloc[-1]
+    return (
+        f"{int(first['season'])}w{int(first['week'])}"
+        f"..{int(last['season'])}w{int(last['week'])}"
+    )
+
+
 def _build_with_meta(
     season_start: date, season_end: date
 ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
@@ -836,13 +847,35 @@ def train_and_eval(
             "note": "need ≥60 graded rows with real pass-yards prop lines",
         }
 
+    data_window = _data_window(meta)
+    ship_model = model
+    if promote:
+        # The gate above scored a fit that never saw the holdout season. What ships
+        # is refit on every graded row so far, so each weekly run learns from
+        # this season's finished weeks (the gate metrics stay holdout-honest).
+        ship_model, refit_meta = train_promote_qb_yards_model(
+            (features.reset_index(drop=True), target.reset_index(drop=True)),
+            residual_target=True,
+            feature_order=promote_features,
+            baseline_mode=PROMOTE_BASELINE_MODE,
+        )
+        metadata = {**metadata, **refit_meta, "refit_all_rows": True}
+        report["rows_shipped_fit"] = int(len(features))
+    if ou_meta is not None:
+        ou_meta = {**ou_meta, "data_window": _data_window(
+            pd.DataFrame(
+                [{"season": r["season"], "week": r["week"]} for r in ou_meta_rows]
+            )
+        )}
+
     _MODELS_DIR.mkdir(parents=True, exist_ok=True)
     yards_path = _MODELS_DIR / f"{MODEL_KEY}.pkl"
     yards_meta_path = _MODELS_DIR / f"{MODEL_KEY}_metadata.json"
     with yards_path.open("wb") as f:
-        pickle.dump(model, f)
+        pickle.dump(ship_model, f)
     metadata = {
         **metadata,
+        "data_window": data_window,
         "promote_recommended": promote,
         "holdout_tier_mae": report["tier_mae"],
         "holdout_ml_mae": report["ml_mae"],

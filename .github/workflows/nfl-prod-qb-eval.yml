@@ -1,9 +1,12 @@
 name: NFL Prod QB Eval (Railway)
 
 on:
-  # Weekly in-season retrain (Tuesdays 12:00 UTC, Sep-Feb). Upload is gated: it
-  # needs promote_recommended and, per model, not being worse than the live one
-  # on the same holdout (status rejected_by_champion). Scheduled runs never force.
+  # Weekly in-season retrain (Tuesdays 12:00 UTC, Sep-Feb). The gate scores a fit on
+  # a time-ordered holdout; only if it passes is a model refit on every graded row
+  # up to the last completed week. Upload needs promote_recommended and, per model,
+  # a data window that moved since the live one and a holdout metric strictly better
+  # than the live model's (otherwise status rejected_by_champion, no new version).
+  # Scheduled runs never force.
   schedule:
     - cron: "0 12 * 1,2,9,10,11,12 2"
   workflow_dispatch:
