@@ -80,7 +80,7 @@ def test_nba_spread_row_version_ml_and_heuristic(monkeypatch):
     assert run(False)["factors"]["ml_version"] is None
 
 
-def test_nba_totals_enrich_stamps_heuristic():
+def test_nba_totals_enrich_stamps_anchor_version():
     from app.services.etl.nba import totals_ml
 
     proj = {"projected_total": 220.0, "factors": {}}
@@ -89,7 +89,7 @@ def test_nba_totals_enrich_stamps_heuristic():
         patch.object(totals_ml, "predict_residual", return_value=None),
     ):
         totals_ml.enrich_projection(proj)
-    assert proj["model_version"] == "heuristic-v1"
+    assert proj["model_version"] == "totals-anchor-v1"
 
 
 def test_resolve_nba_prop_version_uses_loader(monkeypatch):

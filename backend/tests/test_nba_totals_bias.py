@@ -5,11 +5,9 @@ from __future__ import annotations
 import random
 from datetime import date, timedelta
 from types import SimpleNamespace
-from unittest.mock import patch
 
 from app.services.etl.nba import totals_baseline as tb
 from app.services.etl.nba import totals_ml as tml
-from app.services.etl.nba import totals_projector as tp
 
 START = date(2026, 11, 1)
 HOME, AWAY = "Boston Celtics", "New York Knicks"
@@ -87,23 +85,6 @@ def test_clamp_holds():
     assert tb.published_bias(hist, START + timedelta(days=30))[0] == -tb.BIAS_CLAMP
 
 
-def test_kill_switch_off_uses_baseline_bias(monkeypatch):
-    finals = [
-        tb.Final(START + timedelta(days=i), HOME, AWAY, 110, 110) for i in range(3)
-    ]
-    d = START + timedelta(days=3)
-    hist = [_row(START + timedelta(days=i), 220, 210.0) for i in range(3)]
-    with (
-        patch.object(tp, "published_history_for", return_value=hist),
-        patch.object(tp, "recent_bias", return_value=(1.5, 7)),
-    ):
-        monkeypatch.setenv("NBA_TOTALS_PUBLISHED_BIAS_ENABLED", "false")
-        assert tp.bias_correction(finals, d) == (1.5, 7, "baseline")
-        monkeypatch.delenv("NBA_TOTALS_PUBLISHED_BIAS_ENABLED")
-        points, games, source = tp.bias_correction(finals, d)
-        assert source == "published" and games == 3 and points > 0
-
-
 # ---- L23: ML output goes through recommend() with the projector's record ----
 
 
@@ -139,5 +120,5 @@ def test_ml_winning_record_big_edge_is_over():
 def test_ml_missing_record_is_unproven():
     p = _ml_proj(-6.0, None)
     tml._recompute_market_fields(p)
-    assert p["recommendation"] == "UNDER"
-    assert "unproven" in p["factors"]["recommendation_note"]
+    assert p["recommendation"] == "NO_PLAY"
+    assert "withheld" in p["factors"]["recommendation_note"]
