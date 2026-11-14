@@ -7,6 +7,8 @@ from app.services.odds_math import (
     american_to_prob,
     best_quote,
     breakeven_rate,
+    median_price,
+    prob_to_american,
     devig,
     fair_median,
     line_clv,
@@ -132,3 +134,12 @@ def test_clv_sign_conventions():
     # Took +120 on a line that closed -110/-110: 0.5 - 0.4545 = +0.045.
     assert prob_clv("o", 24.5, +120, close_same, sd=6.5) == approx(0.5 - 100 / 220)
     assert prob_clv("o", 24.5, -110, [Quote("fanduel", 24.5, -110, None)]) is None
+
+
+def test_median_price_across_even():
+    assert prob_to_american(110 / 210) == -110
+    assert prob_to_american(0.4) == 150
+    # -110 and +100 straddle even money: the median is about -105, not -5.
+    assert median_price([-110, 100]) == -105
+    assert median_price([-120, -130, -140]) == -130
+    assert median_price([]) is None

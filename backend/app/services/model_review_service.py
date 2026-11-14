@@ -29,7 +29,7 @@ from app.services.accuracy_shared import (
     ou_call_graded_record,
     ou_row_result,
 )
-from app.services.odds_math import breakeven_rate, units_for_result
+from app.services.odds_math import breakeven_rate, median_price, units_for_result
 from app.services.auto_pick import record_gate
 from app.services.auto_pick.candidate import EASTERN
 from app.services.auto_pick.context_builder import _normalize_sport
@@ -445,12 +445,11 @@ def stats(kind: str, rows: list[dict]) -> dict:
             and ou_row_result(line=r["line"], pick=r["pick"], actual=r["actual"])
             in ("hit", "miss")
         ]
+        mp = median_price(prices)
         out["units"] = _r(units)
         out["priced"] = priced
-        out["median_price"] = _r(median(prices), 0) if prices else None
-        out["breakeven_priced"] = (
-            _r(breakeven_rate(median(prices)), 4) if prices else None
-        )
+        out["median_price"] = mp
+        out["breakeven_priced"] = _r(breakeven_rate(mp), 4) if mp else None
     return out
 
 
@@ -835,7 +834,10 @@ def _clv_for_key(key, rows, idx) -> dict:
         graded += 1
         book, line, price = r.get("best") or ("fanduel", r["line"], r.get("price"))
         priced += bool(price)
-        units += units_for_result(res, price)
+        # Units of the quote we would have taken, graded at that quote's own line.
+        units += units_for_result(
+            ou_row_result(line=line, pick=r["pick"], actual=r["actual"]), price
+        )
         try:
             day = date.fromisoformat(r["ident"][1])
         except ValueError:

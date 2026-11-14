@@ -46,6 +46,18 @@ def american_to_prob(price: float) -> float:
     return 1 / american_to_decimal(price)
 
 
+def prob_to_american(p: float) -> int:
+    """American price whose implied probability is ``p`` (0 < p < 1)."""
+    return round(-100 * p / (1 - p)) if p >= 0.5 else round(100 * (1 - p) / p)
+
+
+def median_price(prices) -> Optional[int]:
+    """Median of American prices taken on implied probability (a plain median of -110
+    and +100 would be -5)."""
+    probs = sorted(american_to_prob(x) for x in prices if x)
+    return prob_to_american(median(probs)) if probs else None
+
+
 def units_won(price: float, won: bool) -> float:
     """Profit per 1u stake at ``price``: +0.909 at -110 when won, -1 when lost."""
     return american_to_decimal(price) - 1 if won else -1.0

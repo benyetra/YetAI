@@ -1486,7 +1486,8 @@ class YetAIBetsServiceDB:
             if not (market and side and g.get("player") and g.get("line") is not None):
                 return
             day = date.fromisoformat(str(g["game_date"])[:10])
-            rows = closing_quotes(db, day, market, g["player"])
+            with db.begin_nested():  # a failed read must not abort the settlement
+                rows = closing_quotes(db, day, market, g["player"])
             book = (factors.get("projection_metadata") or {}).get("book") or "fanduel"
             c = clv_vs_close(side, float(g["line"]), bet.odds, book, rows, market)
             if c is None:
