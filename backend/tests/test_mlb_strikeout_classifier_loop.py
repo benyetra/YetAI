@@ -144,3 +144,14 @@ def test_gated_upload_first_upload_and_better_candidate(s3, monkeypatch):
     assert cm.train_and_persist()["status"] == "first_upload"
     assert cm.S3_KEY in s3.objects and "mlb/strikeout_model_manifest.json" in s3.objects
     assert cm.train_and_persist()["status"] == "rejected_by_champion"  # a tie is not better
+
+
+def test_probe_reports_what_serving_uses_not_the_local_file(s3, tmp_path, monkeypatch):
+    local = tmp_path / "strikeout_model.pkl"
+    local.write_bytes(_clf_bytes(9.0))
+    monkeypatch.setattr(cm, "MODEL_LOCAL_PATH", str(local))
+    out = cm.probe_classifier_load()  # nothing in S3: serving has no model
+    assert out["ok"] is False and out["source"] is None
+    s3.put(cm.S3_KEY, _clf_bytes(1.0), "e1")
+    out = cm.probe_classifier_load()
+    assert out["ok"] is True and out["source"] == "s3"

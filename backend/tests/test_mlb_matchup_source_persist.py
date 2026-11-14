@@ -76,21 +76,28 @@ def test_store_projections_copies_matchup_source_from_pitcher():
     assert existing.matchup_source == "observed"
 
 
-def test_probe_classifier_load_reports_local_ok(tmp_path, monkeypatch):
+def test_probe_classifier_load_reports_s3_ok(monkeypatch):
     joblib = pytest.importorskip("joblib")
     pytest.importorskip("sklearn")
+    import io
+
+    import boto3
     from sklearn.linear_model import LogisticRegression
 
     from app.services.etl.mlb import classification_model as cm
 
-    clf = LogisticRegression()
-    path = tmp_path / "strikeout_model.pkl"
-    joblib.dump(clf, path)
-    monkeypatch.setattr(cm, "MODEL_LOCAL_PATH", str(path))
+    buf = io.BytesIO()
+    joblib.dump(LogisticRegression(), buf)
+    body = MagicMock(read=MagicMock(return_value=buf.getvalue()))
+    monkeypatch.setattr(
+        boto3,
+        "client",
+        lambda *_a, **_k: MagicMock(get_object=MagicMock(return_value={"Body": body})),
+    )
 
     result = cm.probe_classifier_load()
     assert result["ok"] is True
-    assert result["source"] == "local"
+    assert result["source"] == "s3"
     assert result["estimator_type"] == "LogisticRegression"
     assert result["error"] is None
 
