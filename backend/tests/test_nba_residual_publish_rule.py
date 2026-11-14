@@ -61,11 +61,18 @@ def test_missing_price():
         (0.5, -50, -110),
         (0.5, 99, -110),
         (float("nan"), -110, -110),
-        (0.5, float("nan"), -110),
     ],
 )
 def test_invalid(p, o, u):
     assert decide(p, o, u, p_se=0, calibration_error=0).reason == "invalid_input"
+
+
+def test_nan_price_is_no_quote():
+    # pandas hands a missing price over as NaN: treated like None, not as bad input
+    d = decide(0.35, float("nan"), 100, p_se=0, calibration_error=0)
+    assert d.side == "under" and d.reason == "bet"
+    nq = decide(0.5, float("nan"), float("nan"), p_se=0, calibration_error=0)
+    assert nq.reason == "no_price"
 
 
 def test_even_money_boundary():

@@ -58,11 +58,15 @@ def decide(
     nums = (p_over, p_se, calibration_error)
     if any(x is None or math.isnan(x) for x in nums) or not 0.0 <= p_over <= 1.0:
         return _no_bet("invalid_input")
-    prices = {"over": over_price, "under": under_price}
+    # A missing price arrives as None or (from pandas) NaN: both mean "no quote".
+    prices = {
+        k: None if v is None or (isinstance(v, float) and math.isnan(v)) else v
+        for k, v in (("over", over_price), ("under", under_price))
+    }
     for v in prices.values():
         if v is not None and not _valid_price(v):
             return _no_bet("invalid_input")
-    if over_price is None and under_price is None:
+    if all(v is None for v in prices.values()):
         return _no_bet("no_price")
 
     margin = z * p_se + calibration_error
