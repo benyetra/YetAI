@@ -102,12 +102,10 @@ def test_wilson_and_roi_hand_computed():
     sp = c["stored_price"]  # over rows with price: win at -120, loss at +150
     assert sp["n"] == 2 and sp["hits"] == 1
     assert abs(sp["roi_units"] - (100 / 120 - 1)) < 1e-9
-    assert abs(sp["breakeven"] - american_be(sp["median_price"])) < 1e-12
+    # median in probability space: (120/220 + 100/250) / 2, not the implied
+    # probability of the median American price (+15, which is not a price)
+    assert abs(sp["breakeven"] - (120 / 220 + 100 / 250) / 2) < 1e-12
     assert ev._sample_size(0.6, 0.5238) > 0 and ev._sample_size(0.5, 0.5238) is None
-
-
-def american_be(p):
-    return abs(p) / (abs(p) + 100) if p < 0 else 100 / (p + 100)
 
 
 def test_ridge_cv_alpha_larger_on_noise_than_signal():
@@ -146,3 +144,24 @@ def test_invalid_price_is_missing():
 
     p = _valid_price(pd.Series([-9, 0, np.nan, -110, 105, 99]))
     assert p.isna().tolist() == [True, True, True, False, False, True]
+
+
+def test_stored_price_breakeven_in_probability_space():
+    # +100 and -118: the median of the American odds is -9 (nonsense); the median
+    # implied probability is (0.5 + 118/218) / 2.
+    import pandas as pd
+
+    from app.services.etl.nba.residual.evaluate import _calls
+
+    rows = pd.DataFrame(
+        {
+            "pred_resid": [1.0, 1.0],
+            "resid": [1.5, -0.5],
+            "over_price": [100.0, -118.0],
+            "under_price": [float("nan")] * 2,
+            "price_side": ["over", "over"],
+        }
+    )
+    sp = _calls(rows)["stored_price"]
+    assert abs(sp["breakeven"] - (0.5 + 118 / 218) / 2) < 1e-9
+    assert sp["median_price"] in (100.0, -118.0)

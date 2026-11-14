@@ -129,13 +129,16 @@ def _calls(rows: pd.DataFrame) -> dict:
         pr = price[pm]
         wins = hit[pm]
         pay = np.array([american_to_decimal(int(p)) - 1 for p in pr])
-        med = float(np.median(pr))
+        # Median in probability space: the median of American odds that straddle
+        # +-100 is meaningless (+100 and -118 give -9).
+        ip = np.array([american_to_implied_prob(float(x)) for x in pr])
+        med = float(pr[np.argsort(ip)[len(ip) // 2]])
         sp.update(
             hits=int(wins.sum()),
             hit_rate=float(wins.mean()),
             roi_units=float((pay[wins]).sum() - (~wins).sum()),
             median_price=med,
-            breakeven=american_to_implied_prob(med),
+            breakeven=float(np.median(ip)),
         )
     out["stored_price"] = sp
     return out
