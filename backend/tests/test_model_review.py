@@ -243,3 +243,88 @@ def test_lookup_matches_json_round_tripped_datetime_ref():
     )
     assert ref["game_date"] == "2026-11-09T00:00:00"
     assert ms._lookup(index, ref) == ("ou", {"label": "QB 42"})
+
+
+def test_nba_totals_and_spread_report_each_model_version_as_its_own_row(
+    sqlite_db,
+):  # noqa: F811
+    from app.models.predictions_models import (
+        NBASpreadActuals,
+        NBASpreadProjections,
+        NBATotalsActuals,
+        NBATotalsProjections,
+    )
+
+    for i, version in enumerate(["totals-anchor-v1", None]):
+        names = dict(home_team_name=f"H{i}", away_team_name=f"A{i}")
+        sqlite_db.add(
+            NBATotalsProjections(
+                game_date=YESTERDAY,
+                projected_total=230.0,
+                market_total=225.0,
+                model_version=version,
+                **names,
+            )
+        )
+        sqlite_db.add(
+            NBATotalsActuals(
+                game_date=YESTERDAY,
+                actual_total=228,
+                projected_total=230.0,
+                market_total=225.0,
+                **names,
+            )
+        )
+        sqlite_db.add(
+            NBASpreadProjections(
+                game_date=YESTERDAY,
+                projected_margin=5.0,
+                home_win_prob=0.6,
+                market_spread_home=-3.0,
+                recommendation="HOME",
+                model_version="spread-anchor-v1" if version else "elo-pace-v1",
+                **names,
+            )
+        )
+        sqlite_db.add(
+            NBASpreadActuals(
+                game_date=YESTERDAY,
+                home_score=110,
+                away_score=100,
+                actual_margin=10,
+                home_won=True,
+                **names,
+            )
+        )
+    sqlite_db.commit()
+
+    tot = ms._nba_totals(sqlite_db, YESTERDAY, YESTERDAY)
+    spr = ms._nba_spread(sqlite_db, YESTERDAY, YESTERDAY)
+    assert set(tot) == {
+        ("NBA", "total", "version totals-anchor-v1"),
+        ("NBA", "total", "version none"),
+    }
+    assert set(spr) == {
+        ("NBA", "spread", "version spread-anchor-v1"),
+        ("NBA", "spread", "version elo-pace-v1"),
+    }
+    assert all(len(rows) == 1 for _, rows in tot.values())
+
+    from app.services.auto_pick import record_gate
+
+    assert record_gate.key_label(("NBA", "total", "version none")) == (
+        "NBA/total/version none"
+    )
+    # sections still run over these keys
+    cur = ms.load_rows(sqlite_db, YESTERDAY, YESTERDAY)
+    assert ms._misses_section(sqlite_db, TODAY, cur)["rows"]
+    ms._disagreements_section(sqlite_db, TODAY, cur)
+
+
+def test_gate_section_reports_version_records_and_anchor_fit(sqlite_db):  # noqa: F811
+    gate = ms._gate_section(sqlite_db, TODAY)
+    for k in ("nba_totals", "nba_spread"):
+        assert gate[k]["picks"] == 0 and gate[k]["calls_published"] is False
+    assert "nba_totals_bias" not in gate
+    assert set(gate["nba_totals_anchor"]) == {"k", "a", "n"}
+    assert set(gate["nba_spread_anchor"]) == {"k", "a", "n"}

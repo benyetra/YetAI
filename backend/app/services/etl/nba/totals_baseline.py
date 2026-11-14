@@ -41,8 +41,6 @@ LAST_SEASON_WEIGHTED = Blend(delay_days=14, prior_games=20, current_only_after=N
 # the season, shrunk toward zero by BIAS_SHRINK.
 BIAS_WINDOW = 30
 BIAS_SHRINK = 10
-# The published-error correction never moves a total by more than this.
-BIAS_CLAMP = 8.0
 
 # A call needs at least this much edge against the line.
 MIN_EDGE = 4.0
@@ -150,10 +148,7 @@ def recent_bias(
 ) -> Tuple[float, int]:
     """(points to add, games used): shrunk mean of the baseline's recent errors.
 
-    No longer added to the published total (see ``published_bias``): it fits the
-    plain baseline, but the total also carries injury, rest, venue and form
-    adjustments, so it corrected the wrong number. Kept for the backtest script
-    and as the fallback when NBA_TOTALS_PUBLISHED_BIAS_ENABLED is off.
+    Part of the model total the market anchor is fit on (totals_projector).
 
     Replays the baseline point-in-time for the last ``window`` games of the
     current season before ``game_date`` and averages actual - projected."""
@@ -173,43 +168,6 @@ def recent_bias(
     if not errors:
         return 0.0, 0
     return sum(errors) / (len(errors) + shrink), len(errors)
-
-
-def published_bias(
-    history: Sequence,
-    game_date: date,
-    window: int = BIAS_WINDOW,
-    shrink: int = BIAS_SHRINK,
-    clamp: float = BIAS_CLAMP,
-) -> Tuple[float, int]:
-    """(points to add, games used): correction fit on the error as published.
-
-    history: rows with game_date, actual_total, projected_total (as published)
-    and applied_bias (the correction already inside that total; None/0 if
-    unknown). Uses the last ``window`` games of this season, from calibration
-    on, strictly before ``game_date``.
-
-    Each published total already contains the correction applied that day, so a
-    shrunk mean of (actual - published) alone would close only part of a
-    persistent gap. Integrate instead: the correction in force plus the shrunk
-    remaining error, which drives a steady bias to ~0. Clamped to ±``clamp``."""
-    start = max(regular_season_start(season_start_year(game_date)), CALIBRATION_START)
-    recent = sorted(
-        (
-            r
-            for r in history
-            if start <= r.game_date < game_date
-            and r.actual_total is not None
-            and r.projected_total is not None
-        ),
-        key=lambda r: r.game_date,
-    )[-window:]
-    if not recent:
-        return 0.0, 0
-    n = len(recent)
-    applied = sum(r.applied_bias or 0.0 for r in recent) / n
-    residual = sum(r.actual_total - r.projected_total for r in recent)
-    return max(-clamp, min(applied + residual / (n + shrink), clamp)), n
 
 
 def pick_record(rows: Iterable, min_edge: float = MIN_EDGE) -> Tuple[int, int]:
