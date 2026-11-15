@@ -24,7 +24,7 @@ The worker command comes from `CELERY_ROLE` (`backend/app/worker_role.py`), run 
 
 | `CELERY_ROLE` | Command | Use |
 |---------------|---------|-----|
-| unset / `all` | `celery -A app.celery_app worker --beat --loglevel=info --concurrency=1 --max-memory-per-child=800000 --max-tasks-per-child=8` | today's command exactly: beat + both queues |
+| unset / `all` | `celery -A app.celery_app worker --beat --loglevel=info --concurrency=1 --max-memory-per-child=800000 --max-tasks-per-child=8` | the production start command exactly (the old repo scripts said `--concurrency=2`; production never used them): beat + both queues |
 | `etl` | the same + `-Q celery -n etl@%h` | `celery-worker` after the rollout |
 | `bets` | `celery -A app.celery_app worker --loglevel=info -Q yetai_bets --concurrency=1 --max-memory-per-child=400000 --max-tasks-per-child=50 -n bets@%h` | the new `bets-worker`; refuses `--beat` |
 
@@ -47,10 +47,12 @@ Before you start: the PR is merged and the GitHub "Railway Production Deploy" ru
 Check:
 ```bash
 railway logs -s celery-worker | grep -A3 '\[queues\]'      # .> celery  and  .> yetai_bets
-railway logs -s celery-worker | grep 'yetai_bets.settle.*succeeded' | tail -3   # every 15 min
+railway logs -s celery-worker | grep "yetai_bets.settle.*succeeded.*'success': True" | tail -3   # every 15 min
 railway logs -s celery-worker | grep 'is the sender\|is standby'               # "is the sender" once per start
 ```
-Rollback: revert the PR. Messages left on `yetai_bets` by then only expire; beat re-sends.
+Rollback: revert the PR. The old code consumes only `celery`, so anything still on
+`yetai_bets` stays in Redis unread (stale; beat sends fresh copies to `celery`). Clear it
+with `redis-cli -u "$REDIS_URL" del yetai_bets` if you like.
 
 ### Step 2: put `celery-worker` on the role script (same command)
 
@@ -75,8 +77,8 @@ Rollback: set the start command back to
    Dockerfile path), add these variables as references to `celery-worker`, e.g.
    `DATABASE_URL=${{celery-worker.DATABASE_URL}}`:
    `DATABASE_URL REDIS_URL ODDS_API_KEY ODDS_API_DAILY_BUDGET NBA_API_KEY AUTO_YETAI_PICKS_ENABLED ENVIRONMENT AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION AWS_S3_BUCKET_NAME SECRET_KEY BREVO_API_KEY FROM_EMAIL SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD`
-   (`REDIS_URL` and `DATABASE_URL` are required; the others are read by settlement,
-   auto-pick, close capture or the alert; copying all of them is the safe choice.)
+   (`REDIS_URL` and `DATABASE_URL` are required. The rest is the worker's environment
+   minus API-only keys; simplest and safest is to reference every variable `celery-worker` has.)
 2. Add variable `CELERY_ROLE=bets`.
 3. Start command: `bash /app/scripts/railway-celery.sh`. No healthcheck, no public domain.
 4. Copy the new service id (Cmd+K > copy service ID) into the GitHub repository variable
@@ -88,8 +90,11 @@ Check:
 railway logs -s bets-worker | grep 'worker_role:'          # ... -Q yetai_bets ... -n bets@%h, no --beat
 railway logs -s bets-worker | grep -A3 '\[queues\]'        # only .> yetai_bets
 railway logs -s bets-worker | grep -c 'beat:'              # 0: no beat in this service
-railway logs -s bets-worker | grep 'yetai_bets.settle.*succeeded' | tail -3
+railway logs -s bets-worker | grep "yetai_bets.settle.*succeeded.*'success': True" | tail -3
 ```
+(The settle task catches its own errors, so Celery logs `succeeded` even when it fails;
+that is why the checks look for `'success': True`.)
+
 Both workers now consume `yetai_bets`; either may run a given settle. That is fine:
 settlement row-locks each bet, auto-pick takes a Postgres advisory lock and counts the
 day's published picks.
@@ -105,7 +110,7 @@ Check:
 railway logs -s celery-worker | grep 'worker_role:'        # ... -Q celery -n etl@%h, with --beat
 railway logs -s celery-worker | grep -A3 '\[queues\]'      # only .> celery
 railway logs -s celery-worker | grep -c 'yetai_bets.settle.*received'   # 0 from now on
-railway logs -s bets-worker   | grep 'yetai_bets.settle.*succeeded' | tail -3
+railway logs -s bets-worker   | grep "yetai_bets.settle.*succeeded.*'success': True" | tail -3
 ```
 and the next day: `auto_pick_runs.run_at` within a minute of 11:00 / 17:30 ET.
 
