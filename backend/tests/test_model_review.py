@@ -139,7 +139,7 @@ def _credits_stub(monkeypatch, quota):
     monkeypatch.setenv("ODDS_API_CYCLE_START", "2026-10-20")
     monkeypatch.setattr(odds_api_sync, "read_live_quota", lambda: quota)
     monkeypatch.setattr(cr, "snapshot_quota", lambda q, day: None)
-    monkeypatch.setattr(cr, "_first", lambda d: None)
+    monkeypatch.setattr(cr, "_first", lambda d, prefix=None: None)
     monkeypatch.setattr(cr.budget, "get_daily_usage_sync", lambda day=None: 700)
     monkeypatch.setattr(
         cr.budget,

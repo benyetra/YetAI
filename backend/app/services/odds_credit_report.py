@@ -19,6 +19,9 @@ log = logging.getLogger(__name__)
 
 _QUOTA_KEY = "odds:quota:remaining"
 _QUOTA_FIRST_KEY = "odds:quota:remaining_first"
+# Counter total at the moment of the day's first reading, so billed and recorded
+# cover the same window whatever time of day the reading is taken.
+_COUNTER_AT_FIRST_KEY = "odds:quota:counter_at_first"
 _TTL_SECONDS = 40 * 86400
 RESERVE_FRACTION = 0.05
 RATE_DAYS = 7
@@ -55,18 +58,23 @@ def snapshot_quota(q: dict, day: str) -> None:
     try:
         val = int(q["remaining"])
         client.set(f"{_QUOTA_KEY}:{day}", val, ex=_TTL_SECONDS)
-        client.set(f"{_QUOTA_FIRST_KEY}:{day}", val, ex=_TTL_SECONDS, nx=True)
+        if client.set(f"{_QUOTA_FIRST_KEY}:{day}", val, ex=_TTL_SECONDS, nx=True):
+            client.set(
+                f"{_COUNTER_AT_FIRST_KEY}:{day}",
+                budget.get_daily_usage_sync(day),
+                ex=_TTL_SECONDS,
+            )
     except Exception as exc:
         log.warning("odds quota snapshot failed: %s", exc)
         budget._reset_client()
 
 
-def _first(day: date) -> Optional[int]:
+def _first(day: date, prefix: str = _QUOTA_FIRST_KEY) -> Optional[int]:
     client = budget._sync_redis()
     if not client:
         return None
     try:
-        v = client.get(f"{_QUOTA_FIRST_KEY}:{day.isoformat()}")
+        v = client.get(f"{prefix}:{day.isoformat()}")
         return int(v) if v is not None else None
     except Exception:
         return None
@@ -95,6 +103,11 @@ def credits_summary(today: date, quota: Optional[dict]) -> dict:
     recorded = budget.get_daily_usage_sync(y.isoformat())
     first_y, first_t = _first(y), _first(today)
     billed = first_y - first_t if first_y is not None and first_t is not None else None
+    # Recorded over the same window as `billed` (first reading yesterday -> today).
+    cf_y, cf_t = _first(y, _COUNTER_AT_FIRST_KEY), _first(today, _COUNTER_AT_FIRST_KEY)
+    window_recorded = (
+        recorded - cf_y + cf_t if cf_y is not None and cf_t is not None else recorded
+    )
     rate, source = _rate(today)
     runout = None
     if remaining is not None and rate:
@@ -110,7 +123,7 @@ def credits_summary(today: date, quota: Optional[dict]) -> dict:
             sorted(by_group.items(), key=lambda kv: kv[1], reverse=True)
         ),
         "yesterday_billed": billed,
-        "yesterday_unrecorded": None if billed is None else billed - recorded,
+        "yesterday_unrecorded": None if billed is None else billed - window_recorded,
         "rate_7d": rate,
         "rate_source": source,
         "projected_runout": runout.isoformat() if runout else None,

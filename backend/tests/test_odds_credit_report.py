@@ -98,3 +98,23 @@ def test_no_quota_no_projection(r):
 def test_next_reset(start, today, expected):
     got = rep.next_reset(date.fromisoformat(today), date.fromisoformat(start))
     assert got.isoformat() == expected
+
+
+def test_unrecorded_uses_the_same_window_as_the_bill(r):
+    # Readings at ~14:40Z: the bill covers yesterday 14:40Z -> today 14:40Z.
+    _first(r, "2026-11-14", 96000)
+    _first(r, "2026-11-15", 94000)
+    r.d["odds:quota:counter_at_first:2026-11-14"] = "100"  # recorded before 14:40Z
+    r.d["odds:quota:counter_at_first:2026-11-15"] = "50"
+    r.d["odds:budget:credits:2026-11-14"] = "300"
+    s = rep.credits_summary(TODAY, {"remaining": 94000})
+    assert s["yesterday_billed"] == 2000
+    assert s["yesterday_unrecorded"] == 2000 - (300 - 100 + 50)
+
+
+def test_first_snapshot_stores_counter_at_that_moment(r):
+    r.d["odds:budget:credits:2026-11-15"] = "42"
+    rep.snapshot_quota({"remaining": 900}, "2026-11-15")
+    r.d["odds:budget:credits:2026-11-15"] = "60"
+    rep.snapshot_quota({"remaining": 880}, "2026-11-15")
+    assert r.d["odds:quota:counter_at_first:2026-11-15"] == "42"
