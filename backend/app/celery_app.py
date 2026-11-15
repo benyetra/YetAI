@@ -30,6 +30,7 @@ celery_app = Celery(
         "app.tasks.yetai_settlement_alert",
         "app.tasks.expire_pending_picks",
         "app.tasks.model_review",
+        "app.tasks.odds_credit_alert",
         "app.tasks.league_vault_sync",
     ],
 )
@@ -316,6 +317,12 @@ def auto_picks_enabled() -> bool:
 celery_app.conf.beat_schedule["model_review_daily"] = {
     "task": "model_review.daily",
     "schedule": crontab(hour=9, minute=45),
+}
+
+# Daily 09:40 ET, just before the model review: run-out alert from the Odds API bill.
+celery_app.conf.beat_schedule["odds_credits_runout_alert"] = {
+    "task": "odds_credits.runout_alert",
+    "schedule": crontab(hour=9, minute=40),
 }
 
 if auto_picks_enabled():
