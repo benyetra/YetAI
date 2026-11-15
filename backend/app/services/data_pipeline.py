@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 import logging
 from app.core.config import settings
+from app.services.odds_api_sync import ODDS_API_BASE, async_odds_get
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class SportsDataPipeline:
     """Main data pipeline with FIXED real data parsing"""
 
     def __init__(self):
-        self.odds_base_url = "https://api.the-odds-api.com/v4"
+        self.odds_base_url = ODDS_API_BASE
         self.nfl_base_url = "https://site.api.espn.com/apis/site/v2/sports/football/nfl"
 
     async def get_nfl_games_today(self) -> List[Dict]:
@@ -114,88 +115,92 @@ class SportsDataPipeline:
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 200:
-                        odds_data = await response.json()
+                result = await async_odds_get(
+                    session,
+                    url,
+                    params=params,
+                    caller="api.ai_chat.nfl_odds",
+                    estimated_cost=3,
+                )
+                if result is None:
+                    return []
+                status, _headers, odds_data = result
+                if status == 200:
 
-                        processed_odds = []
-                        for game in odds_data:
-                            try:
-                                game_odds = {
-                                    "game_id": game["id"],
-                                    "home_team": game["home_team"],
-                                    "away_team": game["away_team"],
-                                    "commence_time": game["commence_time"],
-                                    "bookmakers": [],
+                    processed_odds = []
+                    for game in odds_data:
+                        try:
+                            game_odds = {
+                                "game_id": game["id"],
+                                "home_team": game["home_team"],
+                                "away_team": game["away_team"],
+                                "commence_time": game["commence_time"],
+                                "bookmakers": [],
+                            }
+
+                            # Process each bookmaker with proper error handling
+                            for bookmaker in game.get("bookmakers", []):
+                                book_data = {
+                                    "name": bookmaker["title"],
+                                    "markets": {},
                                 }
 
-                                # Process each bookmaker with proper error handling
-                                for bookmaker in game.get("bookmakers", []):
-                                    book_data = {
-                                        "name": bookmaker["title"],
-                                        "markets": {},
-                                    }
+                                # Process each market
+                                for market in bookmaker.get("markets", []):
+                                    market_key = market["key"]
+                                    market_data = {}
 
-                                    # Process each market
-                                    for market in bookmaker.get("markets", []):
-                                        market_key = market["key"]
-                                        market_data = {}
+                                    for outcome in market.get("outcomes", []):
+                                        team_name = outcome["name"]
 
-                                        for outcome in market.get("outcomes", []):
-                                            team_name = outcome["name"]
+                                        if market_key == "h2h":  # Moneyline
+                                            market_data[team_name] = outcome["price"]
+                                        elif market_key in ["spreads", "totals"]:
+                                            # Round spreads and totals to nearest 0.5 (standard betting increments)
+                                            raw_point = outcome.get("point", 0)
+                                            rounded_point = (
+                                                round(raw_point * 2) / 2
+                                                if raw_point
+                                                else 0
+                                            )
 
-                                            if market_key == "h2h":  # Moneyline
-                                                market_data[team_name] = outcome[
-                                                    "price"
-                                                ]
-                                            elif market_key in ["spreads", "totals"]:
-                                                # Round spreads and totals to nearest 0.5 (standard betting increments)
-                                                raw_point = outcome.get("point", 0)
-                                                rounded_point = (
-                                                    round(raw_point * 2) / 2
-                                                    if raw_point
-                                                    else 0
-                                                )
+                                            market_data[team_name] = {
+                                                "price": outcome["price"],
+                                                "point": rounded_point,
+                                            }
 
-                                                market_data[team_name] = {
-                                                    "price": outcome["price"],
-                                                    "point": rounded_point,
-                                                }
+                                    if market_data:
+                                        book_data["markets"][market_key] = market_data
 
-                                        if market_data:
-                                            book_data["markets"][
-                                                market_key
-                                            ] = market_data
+                                if book_data["markets"]:
+                                    game_odds["bookmakers"].append(book_data)
 
-                                    if book_data["markets"]:
-                                        game_odds["bookmakers"].append(book_data)
+                            if game_odds["bookmakers"]:
+                                processed_odds.append(game_odds)
 
-                                if game_odds["bookmakers"]:
-                                    processed_odds.append(game_odds)
+                        except KeyError as e:
+                            logger.warning(
+                                f"Skipping odds for game due to missing data: {e}"
+                            )
+                            continue
 
-                            except KeyError as e:
-                                logger.warning(
-                                    f"Skipping odds for game due to missing data: {e}"
-                                )
-                                continue
+                    logger.info(
+                        f"Successfully fetched odds for {len(processed_odds)} games with real bookmaker data"
+                    )
+                    await cache_service.set(
+                        cache_key, processed_odds, expire_seconds=300
+                    )
+                    return processed_odds
 
-                        logger.info(
-                            f"Successfully fetched odds for {len(processed_odds)} games with real bookmaker data"
-                        )
-                        await cache_service.set(
-                            cache_key, processed_odds, expire_seconds=300
-                        )
-                        return processed_odds
-
-                    elif response.status == 401:
-                        logger.error("Odds API: Invalid API key")
-                        return []
-                    elif response.status == 429:
-                        logger.error("Odds API: Rate limit exceeded")
-                        return []
-                    else:
-                        logger.error(f"Odds API error: {response.status}")
-                        return []
+                elif status == 401:
+                    logger.error("Odds API: Invalid API key")
+                    return []
+                elif status == 429:
+                    logger.error("Odds API: Rate limit exceeded")
+                    return []
+                else:
+                    logger.error(f"Odds API error: {status}")
+                    return []
 
         except Exception as e:
             logger.error(f"Error fetching odds: {e}")

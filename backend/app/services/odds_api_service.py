@@ -21,6 +21,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
 
+from app.services.odds_api_sync import ODDS_API_BASE, async_odds_get
+
 logger = logging.getLogger(__name__)
 
 _odds_api_caller: contextvars.ContextVar[str] = contextvars.ContextVar(
@@ -139,7 +141,7 @@ class Score:
 class OddsAPIService:
     """Service for interacting with The Odds API v4"""
 
-    BASE_URL = "https://api.the-odds-api.com/v4"
+    BASE_URL = ODDS_API_BASE
 
     # Rate limiting constants
     MONTHLY_LIMIT = 20000  # Maximum requests per month
@@ -309,9 +311,9 @@ class OddsAPIService:
 
     async def _make_request(
         self, endpoint: str, params: Dict[str, Any] = None
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
-        Make a request to The Odds API
+        Make a request to The Odds API (None when the daily budget refuses)
 
         Args:
             endpoint: API endpoint (without base URL)
@@ -327,10 +329,6 @@ class OddsAPIService:
             raise Exception("Rate limit exceeded")
 
         caller = _odds_api_caller.get() or "unknown"
-        from app.services.odds_api_budget import guard_async
-
-        if not await guard_async(caller):
-            raise Exception("Odds API daily credit budget exceeded")
 
         if not self.session:
             raise Exception("Session not initialized. Use async context manager.")
@@ -340,37 +338,29 @@ class OddsAPIService:
         if params:
             request_params.update(params)
 
-        try:
-            self.last_request_time = time.time()
-            async with self.session.get(url, params=request_params) as response:
-                headers = dict(response.headers)
-                self._update_rate_limit(headers)
-                try:
-                    from app.services.odds_api_budget import record_async
+        self.last_request_time = time.time()
+        result = await async_odds_get(
+            self.session,
+            url,
+            params=request_params,
+            caller=caller,
+            estimated_cost=1 if endpoint != "/sports" else 0,
+        )
+        if result is None:
+            # Budget refused (or network error already logged): fail soft.
+            return None
+        status, headers, data = result
+        self._update_rate_limit(headers)
 
-                    last_cost = int(headers.get("x-requests-last", 1) or 1)
-                    await record_async(last_cost, caller)
-                except Exception as budget_err:
-                    logger.warning("Odds API budget record failed: %s", budget_err)
-
-                if response.status == 401:
-                    raise Exception("Invalid API key")
-                elif response.status == 422:
-                    error_text = await response.text()
-                    raise Exception(f"Invalid request parameters: {error_text}")
-                elif response.status == 429:
-                    raise Exception("Rate limit exceeded")
-                elif response.status != 200:
-                    error_text = await response.text()
-                    raise Exception(
-                        f"API request failed with status {response.status}: {error_text}"
-                    )
-
-                return await response.json()
-
-        except aiohttp.ClientError as e:
-            logger.error(f"Network error making request to {url}: {e}")
-            raise Exception(f"Network error: {e}")
+        if status == 401:
+            raise Exception("Invalid API key")
+        elif status == 422:
+            raise Exception(f"Invalid request parameters: {data}")
+        elif status == 429:
+            raise Exception("Rate limit exceeded")
+        elif status != 200:
+            raise Exception(f"API request failed with status {status}: {data}")
+        return data
 
     async def get_sports(self) -> List[Dict[str, Any]]:
         """
@@ -381,6 +371,8 @@ class OddsAPIService:
         """
         try:
             data = await self._make_request("/sports")
+            if data is None:
+                return []
             logger.info(f"Retrieved {len(data)} sports")
             return data
         except Exception as e:
@@ -432,6 +424,8 @@ class OddsAPIService:
 
         try:
             data = await self._make_request(f"/sports/{sport}/odds", params)
+            if data is None:
+                return []
 
             games = []
             for game_data in data:

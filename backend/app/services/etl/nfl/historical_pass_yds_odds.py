@@ -27,15 +27,14 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-import requests
-
 from app.services.etl.nfl.team_names import normalize_team_name, team_identity_tokens
+from app.services.odds_api_sync import ODDS_API_BASE, sync_odds_get
 
 logger = logging.getLogger(__name__)
 
 SPORT = "americanfootball_nfl"
-EVENTS_URL = f"https://api.the-odds-api.com/v4/historical/sports/{SPORT}/events"
-EVENT_ODDS_URL = f"https://api.the-odds-api.com/v4/historical/sports/{SPORT}/events/{{event_id}}/odds"
+EVENTS_URL = f"{ODDS_API_BASE}/historical/sports/{SPORT}/events"
+EVENT_ODDS_URL = f"{ODDS_API_BASE}/historical/sports/{SPORT}/events/{{event_id}}/odds"
 
 CREDITS_EVENTS = 1
 CREDITS_PROPS = 10  # regions=us × markets=player_pass_yds
@@ -168,10 +167,16 @@ def _http_get(
     call_params = {k: v for k, v in params.items() if k not in ("apiKey", "event_id")}
     call_params["apiKey"] = api_key
     time.sleep(0.15)  # be gentle; historical calls are expensive to retry
-    try:
-        resp = requests.get(url, params=call_params, timeout=45)
-    except Exception as exc:
-        logger.warning("HTTP %s failed: %s", endpoint, exc)
+    resp = sync_odds_get(
+        url,
+        params=call_params,
+        caller="etl.nfl.historical",
+        estimated_cost=CREDITS_PROPS if url.endswith("/odds") else CREDITS_EVENTS,
+        timeout=45,
+        raise_for_status=False,
+        snapshot=False,
+    )
+    if resp is None:  # budget refused or network error
         return None, 0
 
     cost = int(resp.headers.get("x-requests-last") or 0)

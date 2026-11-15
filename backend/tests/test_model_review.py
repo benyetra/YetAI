@@ -133,6 +133,43 @@ def test_review_text_has_every_section_and_fixture_numbers(review_db):
     assert "not stored" not in text
 
 
+def _credits_stub(monkeypatch, quota):
+    from app.services import odds_api_sync, odds_credit_report as cr
+
+    monkeypatch.setenv("ODDS_API_CYCLE_START", "2026-10-20")
+    monkeypatch.setattr(odds_api_sync, "read_live_quota", lambda: quota)
+    monkeypatch.setattr(cr, "snapshot_quota", lambda q, day: None)
+    monkeypatch.setattr(cr, "_first", lambda d, prefix=None: None)
+    monkeypatch.setattr(cr.budget, "get_daily_usage_sync", lambda day=None: 700)
+    monkeypatch.setattr(
+        cr.budget,
+        "get_usage_by_group_sync",
+        lambda d: {"etl.nba": 500, "api.odds": 200},
+    )
+
+
+def test_credits_section_renders(review_db, monkeypatch):
+    _credits_stub(monkeypatch, {"remaining": 2000, "used": 98000, "at": "x"})
+    text = ms.render_text(ms.build_review(review_db, TODAY))
+    assert "== Odds API credits ==" in text
+    assert "remaining 2,000; next reset 2026-11-20 (7d)" in text
+    assert "yesterday recorded 700 (etl.nba 500, api.odds 200)" in text
+    assert "7d rate 700/day (counter)" in text
+    assert "projected run-out 2026-11-15, BEFORE reset" in text
+
+
+def test_credits_failure_does_not_break_review(review_db, monkeypatch):
+    from app.services import odds_api_sync
+
+    def boom():
+        raise RuntimeError("quota down")
+
+    monkeypatch.setattr(odds_api_sync, "read_live_quota", boom)
+    text = ms.render_text(ms.build_review(review_db, TODAY))
+    assert "unavailable: RuntimeError: quota down" in text
+    assert "last 7d" in text
+
+
 def test_section_failure_is_isolated(review_db, monkeypatch):
     def boom(*a):
         raise RuntimeError("no table")

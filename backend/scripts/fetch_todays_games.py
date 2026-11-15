@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from app.core.database import SessionLocal
 from app.models.database_models import Game, GameStatus
 from app.core.config import settings
+from app.services.odds_api_sync import ODDS_API_BASE, sync_odds_get
 from app.services.espn_api_service import espn_api_service
 import requests
 
@@ -60,7 +61,7 @@ def fetch_and_store_games():
             print(f"🔄 Fetching {sport.upper()} games...")
 
             # Call Odds API - only fetch FanDuel to conserve API tokens
-            url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
+            url = f"{ODDS_API_BASE}/sports/{sport}/odds"
             params = {
                 "apiKey": settings.ODDS_API_KEY,
                 "regions": "us",
@@ -70,8 +71,17 @@ def fetch_and_store_games():
             }
 
             try:
-                response = requests.get(url, params=params, timeout=10)
-                response.raise_for_status()
+                response = sync_odds_get(
+                    url,
+                    params=params,
+                    caller="script.fetch_todays_games",
+                    estimated_cost=3,
+                    timeout=10,
+                    snapshot=False,
+                )
+                if response is None:
+                    print("  skipped (daily Odds API budget or network)")
+                    continue
                 games_data = response.json()
 
                 print(f"  Found {len(games_data)} games")

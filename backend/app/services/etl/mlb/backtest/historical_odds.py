@@ -7,7 +7,6 @@ import os
 from datetime import date
 from typing import Any
 
-import requests
 
 from app.services.etl.mlb._enrichment_helpers import (
     extract_h2h_prices,
@@ -15,6 +14,7 @@ from app.services.etl.mlb._enrichment_helpers import (
     teams_match,
 )
 from app.services.etl.mlb.backtest.cache import cached_api_call, get_cached
+from app.services.odds_api_sync import ODDS_API_BASE, sync_odds_get
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +23,7 @@ CREDITS_PER_DATE = 20
 
 PREFERRED_BOOKMAKERS = ("fanduel", "draftkings", "betmgm")
 
-HISTORICAL_ODDS_URL = (
-    "https://api.the-odds-api.com/v4/historical/sports/baseball_mlb/odds/"
-)
+HISTORICAL_ODDS_URL = f"{ODDS_API_BASE}/historical/sports/baseball_mlb/odds/"
 
 
 def resolve_odds_api_key() -> str | None:
@@ -83,7 +81,7 @@ def fetch_historical_odds_snapshot(
 
     def _fetch():
         try:
-            resp = requests.get(
+            resp = sync_odds_get(
                 HISTORICAL_ODDS_URL,
                 params={
                     "apiKey": key,
@@ -91,8 +89,13 @@ def fetch_historical_odds_snapshot(
                     "markets": "h2h,totals",
                     "date": f"{game_date.isoformat()}T17:00:00Z",
                 },
-                timeout=30,
+                caller="etl.mlb.historical",
+                estimated_cost=CREDITS_PER_DATE,
+                raise_for_status=False,
+                snapshot=False,
             )
+            if resp is None:  # budget refused or network error
+                return None
             remaining = resp.headers.get("x-requests-remaining")
             used = resp.headers.get("x-requests-used")
             cost = resp.headers.get("x-requests-last")

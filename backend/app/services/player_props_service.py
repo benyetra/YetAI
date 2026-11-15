@@ -173,55 +173,48 @@ class PlayerPropsService:
             List of available market keys for this event
         """
         try:
-            from app.services.odds_api_budget import guard_async, record_async
+            from app.services.odds_api_sync import ODDS_API_BASE, async_odds_get
 
-            caller = f"api.player_props.markets.{sport}"
-            if not await guard_async(caller):
-                logger.warning("Odds API budget blocked %s", caller)
-                return []
-
-            url = f"https://api.the-odds-api.com/v4/sports/{sport}/events/{event_id}/markets"
+            url = f"{ODDS_API_BASE}/sports/{sport}/events/{event_id}/markets"
             params = {
                 "apiKey": self.odds_api.api_key,
                 "regions": "us",
             }
 
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as response:
-                    try:
-                        last_cost = int(response.headers.get("x-requests-last", 1) or 1)
-                        await record_async(last_cost, caller)
-                    except Exception as budget_err:
-                        logger.warning("Odds API budget record failed: %s", budget_err)
-
-                    if response.status != 200:
-                        logger.error(
-                            f"Failed to fetch available markets: {response.status}"
-                        )
-                        return []
-
-                    data = await response.json()
-
-                    # Find FanDuel bookmaker
-                    for bookmaker in data.get("bookmakers", []):
-                        if bookmaker.get("key") == "fanduel":
-                            # Extract market keys that are player props
-                            markets = [
-                                m["key"]
-                                for m in bookmaker.get("markets", [])
-                                if m["key"].startswith("player_")
-                                or m["key"].startswith("batter_")
-                                or m["key"].startswith("pitcher_")
-                            ]
-                            logger.info(
-                                f"Found {len(markets)} available player prop markets for {event_id}: {markets}"
-                            )
-                            return markets
-
-                    logger.warning(
-                        f"FanDuel not found in available bookmakers for {event_id}"
-                    )
+                result = await async_odds_get(
+                    session,
+                    url,
+                    params=params,
+                    caller=f"api.player_props.markets.{sport}",
+                )
+                if result is None:
                     return []
+                status, _headers, data = result
+                if status != 200 or not isinstance(data, dict):
+                    logger.error(f"Failed to fetch available markets: {status}")
+                    return []
+
+                # Find FanDuel bookmaker
+                for bookmaker in data.get("bookmakers", []):
+                    if bookmaker.get("key") == "fanduel":
+                        # Extract market keys that are player props
+                        markets = [
+                            m["key"]
+                            for m in bookmaker.get("markets", [])
+                            if m["key"].startswith("player_")
+                            or m["key"].startswith("batter_")
+                            or m["key"].startswith("pitcher_")
+                        ]
+                        logger.info(
+                            f"Found {len(markets)} available player prop markets for {event_id}: {markets}"
+                        )
+                        return markets
+
+                logger.warning(
+                    f"FanDuel not found in available bookmakers for {event_id}"
+                )
+                return []
 
         except Exception as e:
             logger.error(f"Error fetching available markets: {e}")
