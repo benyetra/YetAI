@@ -155,6 +155,15 @@ def parse_payload(sport: str, data: Any) -> list[dict]:
     return out
 
 
+def parse_historical(sport: str, body: Any) -> tuple[Optional[datetime], list[dict]]:
+    """(snapshot time as naive UTC, rows) for a /v4/historical/.../events/{id}/odds body."""
+    if not isinstance(body, dict):
+        return None, []
+    ts = _naive_utc(body.get("timestamp"))
+    data = body.get("data")
+    return ts, parse_event(sport, data) if isinstance(data, dict) else []
+
+
 def _identity(r) -> tuple:
     get = r.get if isinstance(r, dict) else lambda k: getattr(r, k)
     return (get("event_id"), get("market"), get("player_key") or "", get("book"))
