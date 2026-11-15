@@ -112,8 +112,8 @@ measured on today's slate, 2,294 rows for 5 events in one pass; at 3 passes + cl
 moved per pass, roughly 600 x 7.6 x 2 = ~9,000 rows/day for NBA (~3.3M rows/year, ~1 GB with
 indexes). The Phase 1 poller at 30-minute cadence adds about 4 times that. Rule: no partitioning
 below 20M rows; above it, monthly range partitions on game_date (**to build** if reached);
-prune nothing (the history is the asset). The backfill adds about 2M rows (measured after load;
-see the backtest report).
+prune nothing (the history is the asset). The 2025-26 backfill added 794,386 rows (226 MB with
+indexes) for two markets and three snapshots.
 
 ### Historical backfill format, one schema
 `scripts/odds_history_backfill.py fetch` saves every response as a raw JSON file
@@ -124,7 +124,10 @@ see the backtest report).
 `data` goes through the same `parse_event` as live payloads) and `record_rows(db, rows,
 now=<snapshot timestamp>)`, in chronological order per event, idempotently. So the backtest and
 the live engine read one table with one meaning. The files are the purchased asset: they can be
-replayed into production later without buying again.
+replayed into production later without buying again (production already has the
+`20261114_odds_line_snapshots` migration):
+`DATABASE_URL=<prod> PYTHONPATH=. python scripts/odds_history_backfill.py load --dir <files> --i-mean-production`
+(dry run; add `--apply` to write; re-running is a no-op).
 
 ## C. Fair-price engine (`backend/app/services/fair_price/`, built)
 
@@ -312,7 +315,7 @@ region (verified against the docs and the probe headers). E = 7.6 NBA games a da
 | 1 full | poller, 7 prop markets, every 30 min | +1,064 | +32k (total ~38-42k) | 100K |
 | 1 fast | poller, reb+ast, every 10 min | +912 | +27k | 100K |
 | 2 study | 35 credits per NBA status change, 20-60 changes/day [unverified] | +700 to 2,100 | +21k to 63k | 100K (only without "1 full"); 5M ($119) |
-| Backfill (one-off) | 2025-26 Nov 1-Apr 12, reb+ast, 3 snapshots, 10 books | - | 68,494 upper bound (actual: calls.csv) | 100K, one month |
+| Backfill (one-off) | 2025-26 Nov 1-Apr 12, reb+ast, 3 snapshots, 10 books | - | 68,494 upper bound; actual 68,444 (every call 10 x markets returned) | 100K, one month |
 Plan prices (verified, the-odds-api.com 2026-11-14): 20K $30, 100K $59, 5M $119, 15M $249.
 Optional feeds from the strategy: a consensus sharp-line feed (e.g. Unabated) about $799/month
 [unverified, third-party figure]; faster odds feeds: quotes only [unknown]; NBA lineups/injury
@@ -334,7 +337,7 @@ region (11-20 books) doubles the odds credits. Reserve for daily pipelines: 25,0
 |---|---|---|---|---|---|---|
 | 0 | Measurement | snapshots, best price, grading at price, CLV (PR #184) | - | every graded call has a close and CLV within 2 weeks of deploy | - | **built** (PR #184; prod has the migration, table empty at 2026-11-14 18:30 ET) |
 | 0.5 | Library + backtest + backfill | `fair_price/`, `odds_history_backfill.py`, `fair_price_backtest.py` | 0 | tests; estimate = tiny run cost per call; backtest reproducible from raw files | - | **built** (this branch) |
-| 0.6 | Season backtest | run on 2025-26 | 0.5 + credits | verdict per the criteria below | NO GO stops Phase 1 | done in this session (see report) |
+| 0.6 | Season backtest | run on 2025-26 | 0.5 + credits | verdict per the criteria below | NO GO stops Phase 1 | done: INCONCLUSIVE (a), docs/edge-engine-backtest-2025-26.md |
 | 1a | Live shadow flags | PROP_BOOKS swap, poller (reb+ast, 30 min), `fair_price_flags`, weights table, grade task, review section, `odds` queue | 0.6 = GO or INCONCLUSIVE(a) | 300 shadow flags: mean CLV > 0 with lower bound > 0; ROI >= 0 | 300 flags without positive CLV: fix weights/feed speed first | ~4-6 builder days |
 | 1b | Publish | auto-pick source, prove-in key, expiry gate, stake via publish_rule, board fields, user copy | 1a passes | record gate admits the key on its own record | gate withholds -> stays shadow | ~3 days |
 | 2a | News event study | PDF poller + parser, `news_events`, `news_reprice`, burst polling | 1a poller | 200 status changes measured; median lag per book | median lag < 5 min at every book: stop (needs a faster feed) | ~4 days |
