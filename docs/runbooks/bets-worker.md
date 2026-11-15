@@ -122,7 +122,9 @@ removing `bets-worker`, never after: in between, nothing would consume `yetai_be
 `app.tasks.health.bets_queue_watch` runs every 10 minutes on the default queue and raises an
 admin notification (bell, and SMS to opted-in admins if Twilio is configured) when 12 or
 more messages wait on `yetai_bets` (`YETAI_BETS_QUEUE_ALERT_DEPTH`), at most once per 6 h.
-Healthy depth is 0-2; nothing consuming the queue adds about 22 messages an hour. Manual check:
+Healthy depth is 0-2; nothing consuming the queue adds about 22 messages an hour.
+Until `bets-worker` exists (steps 1-2) the watch can fire after a long ETL run (the
+03:30 NBA pipeline takes 54-104 min): that is the delay this change removes. Manual check:
 `redis-cli -u "$REDIS_URL" llen yetai_bets`.
 
 ## Delivery guarantees
