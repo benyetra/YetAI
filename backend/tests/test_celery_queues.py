@@ -82,6 +82,7 @@ def test_time_critical_beat_entries_expire():
         "settle-yetai-bets",
         "yetai-settlement-alert",
         "nba-close-capture",
+        "fair-price-shadow-flag",
     ):
         expires = sched[key]["options"]["expires"]
         # Well under the 24h visibility_timeout redelivery of a killed run.

@@ -75,12 +75,13 @@ def mean_for(line: float, p: float, phi: float) -> float | None:
 
 
 def convert(p: float, line_from: float, line_to: float, market: str) -> float | None:
-    """P(over) at line_to implied by P(over) = p at line_from. Same line -> p exactly;
+    """P(over) at line_to implied by P(over) = p at line_from. Same line -> p exactly (any
+    market, so markets without a fitted dispersion still pool same-line quotes);
     unknown market, shift > MAX_SHIFT, or unsolvable mean -> None."""
-    if market not in PHI or market not in MAX_SHIFT:
-        return None
     if line_to == line_from:
         return p
+    if market not in PHI or market not in MAX_SHIFT:
+        return None
     if abs(line_to - line_from) > MAX_SHIFT[market]:
         return None
     phi = PHI[market]
