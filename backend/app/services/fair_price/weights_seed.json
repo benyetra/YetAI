@@ -1,0 +1,64 @@
+{
+ "fitted_through": "2026-04-12",
+ "markets": {
+  "player_assists": {
+   "fitted": [
+    "betmgm",
+    "betrivers",
+    "draftkings",
+    "espnbet",
+    "fanduel",
+    "hardrockbet",
+    "novig",
+    "pinnacle",
+    "prophetx",
+    "williamhill_us"
+   ],
+   "log_loss": 0.6851136424162494,
+   "n_rows": 10411,
+   "weights": {
+    "betmgm": 1.0050183261724008,
+    "betrivers": 1.0939048685045718,
+    "draftkings": 0.9757797713260521,
+    "espnbet": 0.8986836752356102,
+    "fanduel": 1.0253817088121258,
+    "hardrockbet": 0.6267435916368812,
+    "novig": 1.3218681571128168,
+    "pinnacle": 0.8627036791964061,
+    "prophetx": 2.019395683803505,
+    "williamhill_us": 0.7008758851885338
+   }
+  },
+  "player_rebounds": {
+   "fitted": [
+    "betmgm",
+    "betrivers",
+    "draftkings",
+    "espnbet",
+    "fanduel",
+    "hardrockbet",
+    "novig",
+    "pinnacle",
+    "prophetx",
+    "williamhill_us"
+   ],
+   "log_loss": 0.6867202085965383,
+   "n_rows": 12717,
+   "weights": {
+    "betmgm": 0.7370566652093892,
+    "betrivers": 0.666988746223425,
+    "draftkings": 1.2089679885221303,
+    "espnbet": 1.6639385608758197,
+    "fanduel": 1.093116749272461,
+    "hardrockbet": 0.6780288409460026,
+    "novig": 1.3741040525036345,
+    "pinnacle": 1.1180370020902946,
+    "prophetx": 0.8933777701711618,
+    "williamhill_us": 0.994037737314007
+   }
+  }
+ },
+ "source": "2025-26 history closes",
+ "sport": "basketball_nba",
+ "version": "nba-2025-26-seed"
+}
