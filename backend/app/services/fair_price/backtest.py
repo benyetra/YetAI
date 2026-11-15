@@ -314,6 +314,23 @@ def _pools(book_probs, weights, market):
     return get
 
 
+def close_scorer(close_probs, weights, market):
+    """p_close(line, side) -> (closing probability of that side at ``line`` or None, books
+    pooled); shared by the backtest and the shadow grader."""
+    close_pool = _pools(close_probs, weights, market)
+
+    def p_close(line, side):
+        if not close_probs:
+            return None, 0
+        got, s, ws = close_pool(line)
+        if not got:
+            return None, 0
+        p = 1 / (1 + math.exp(-s / ws))
+        return (p if side == "o" else 1 - p), len(got)
+
+    return p_close
+
+
 def fast_prop_flags(quotes, at, market, weights, rule, commence_time=None):
     """evaluate_prop with leave-one-out blends formed from pooled sums (equal up to float
     rounding); each book's conversion to a target line is computed once."""
@@ -487,16 +504,7 @@ def replay_group(event_market, players, weights, params, key_to_id, box):
         commence = first.commence_time
         stat, void = _stat(market, pk, first.game_date, key_to_id, box)
         close_probs = fp.book_fair(_present(qs, close), close, rule)
-        close_pool = _pools(close_probs, weights, market)
-
-        def p_close(line, side):
-            if not close_probs:
-                return None, 0
-            got, s, ws = close_pool(line)
-            if not got:
-                return None, 0
-            p = 1 / (1 + math.exp(-s / ws))
-            return (p if side == "o" else 1 - p), len(got)
+        p_close = close_scorer(close_probs, weights, market)
 
         def score(price, line, side):
             pc, nc = p_close(line, side)
