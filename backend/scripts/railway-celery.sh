@@ -74,6 +74,6 @@ except Exception as exc:
     sys.exit(1)
 PY
 
-# concurrency=2: one slot for long maintenance (profile rebuild, retrain) and one
-# for interactive/admin pipeline enqueues without hour-long queue stalls.
-exec celery -A app.celery_app worker --beat --loglevel=info --concurrency=2 "$@"
+# CELERY_ROLE picks the worker (unset: beat + every queue, today's command;
+# etl: beat + default queue; bets: yetai_bets queue, no beat). See app/worker_role.py.
+exec python3 -m app.worker_role "$@"

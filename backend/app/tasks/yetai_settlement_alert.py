@@ -78,13 +78,17 @@ def collect(bets, now: datetime, stuck_after: timedelta = STUCK_AFTER):
     return sorted(stuck), sorted(voids)
 
 
-def _last_signature(db) -> Optional[str]:
-    row = (
+def _last_alert(db, task_name: str = TASK_NAME) -> Optional[AdminNotification]:
+    return (
         db.query(AdminNotification)
-        .filter(AdminNotification.task_name == TASK_NAME)
+        .filter(AdminNotification.task_name == task_name)
         .order_by(AdminNotification.id.desc())
         .first()
     )
+
+
+def _last_signature(db) -> Optional[str]:
+    row = _last_alert(db)
     return (row.extra or {}).get("signature") if row else None
 
 
@@ -115,11 +119,17 @@ def _sms_targets(db) -> list[str]:
     return phones
 
 
-def _send(db, message: str, signature: str) -> None:
+def _send(
+    db,
+    message: str,
+    signature: str,
+    task_name: str = TASK_NAME,
+    label: str = "YetAI settlement alert",
+) -> None:
     row = AdminNotification(
         event_type=AdminNotificationEvent.FAILED,
-        task_name=TASK_NAME,
-        pipeline_label="YetAI settlement alert",
+        task_name=task_name,
+        pipeline_label=label,
         sport="yetai",
         status="alert",
         message=message,

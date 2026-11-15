@@ -8,4 +8,5 @@
 # launching celery so the import resolution works regardless.
 set -e
 cd /app
-exec celery -A app.celery_app worker --beat --loglevel=info --concurrency=2
+# Worker flags come from CELERY_ROLE (app/worker_role.py).
+exec python3 -m app.worker_role "$@"

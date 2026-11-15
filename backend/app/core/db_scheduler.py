@@ -15,6 +15,9 @@ Safety rails:
 from __future__ import annotations
 
 import logging
+import os
+import socket
+import uuid
 from copy import deepcopy
 from typing import Any
 
@@ -26,6 +29,11 @@ from app.data.celery_tasks import PIPELINE_ENQUEUE_CATALOG
 from app.services import pipeline_schedule_overrides as ovr
 
 logger = logging.getLogger(__name__)
+
+# One beat sends; any other beat (a second worker started with --beat, or the old
+# container during a Railway deploy overlap) sees the key held and sends nothing.
+BEAT_LEADER_KEY = "yetai:beat:leader"
+BEAT_LEADER_TTL_S = 90
 
 
 _ORCHESTRATOR_NAMES: frozenset[str] = frozenset(
@@ -97,6 +105,70 @@ class DatabaseScheduler(PersistentScheduler):
         except Exception:
             logger.exception("DatabaseScheduler.sync failed; keeping prior schedule")
         super().sync()
+
+    # --- single-sender guard -------------------------------------------------
+
+    _leader = None  # unknown until the first tick; logged on every change
+    _leader_client = None
+    _leader_token = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+
+    def _redis(self):
+        if self._leader_client is None:
+            import redis
+
+            from app.core.redis_broker import pick_redis_url
+
+            self._leader_client = redis.Redis.from_url(
+                pick_redis_url(), socket_timeout=5, socket_connect_timeout=5
+            )
+        return self._leader_client
+
+    def _claim_leadership(self) -> bool:
+        """SET NX with a TTL, refreshed every tick by the holder. Fails open: if
+        Redis is unreachable nothing can be sent anyway, and beat must not go quiet
+        because a lock read failed."""
+        try:
+            r = self._redis()
+            token = self._leader_token.encode()
+            if r.set(BEAT_LEADER_KEY, token, nx=True, ex=BEAT_LEADER_TTL_S):
+                return True
+            # ponytail: GET then EXPIRE is not atomic; a key that expires in between
+            # costs at most one tick of a second sender. Lua script if that matters.
+            if r.get(BEAT_LEADER_KEY) == token:
+                r.expire(BEAT_LEADER_KEY, BEAT_LEADER_TTL_S)
+                return True
+            return False
+        except Exception:
+            logger.exception("beat leader check failed; sending anyway")
+            return True
+
+    def tick(self, *args, **kwargs):
+        leader = self._claim_leadership()
+        if leader != self._leader:
+            logger.warning(
+                "beat %s: %s %s",
+                self._leader_token,
+                "is the sender (holds" if leader else "is standby (another beat holds",
+                BEAT_LEADER_KEY + ")",
+            )
+        self._leader = leader
+        # Wake at least every TTL/3 so the holder refreshes the key in time.
+        return min(super().tick(*args, **kwargs), BEAT_LEADER_TTL_S / 3)
+
+    def apply_entry(self, entry, producer=None):
+        if self._leader is False:
+            logger.info("beat standby: not sending %s (%s)", entry.name, entry.task)
+            return
+        return super().apply_entry(entry, producer=producer)
+
+    def close(self) -> None:
+        try:
+            r = self._redis()
+            if r.get(BEAT_LEADER_KEY) == self._leader_token.encode():
+                r.delete(BEAT_LEADER_KEY)  # hand over at once on a clean stop
+        except Exception:
+            logger.exception("beat leader release failed")
+        super().close()
 
     def _load_merged(self) -> dict[str, dict[str, Any]]:
         """Return hardcoded ∪ DB overrides. Falls back if DB unreachable."""
