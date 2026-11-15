@@ -11,7 +11,7 @@ from app.services.odds_api_budget import (
 
 def test_guard_sync_blocks_at_budget():
     with patch(
-        "app.services.odds_api_budget.get_daily_usage_sync",
+        "app.services.odds_api_budget._usage",
         return_value=DAILY_CREDIT_BUDGET,
     ):
         assert guard_sync("test.caller") is False
@@ -19,7 +19,7 @@ def test_guard_sync_blocks_at_budget():
 
 def test_guard_sync_allows_under_budget():
     with patch(
-        "app.services.odds_api_budget.get_daily_usage_sync",
+        "app.services.odds_api_budget._usage",
         return_value=DAILY_CREDIT_BUDGET - 1,
     ):
         assert guard_sync("test.caller") is True
