@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass
 from enum import Enum
 from app.services.odds_api_service import SportKey, MarketKey
+from app.services.odds_api_sync import ODDS_API_BASE, async_odds_get
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class OptimizedOddsAPIService:
 
     def __init__(self, api_key: str):
         self.api_key = api_key
-        self.base_url = "https://api.the-odds-api.com/v4"
+        self.base_url = ODDS_API_BASE
         self.usage_stats = UsageStats()
         self.session = None
 
@@ -76,43 +77,41 @@ class OptimizedOddsAPIService:
         """
         await self._ensure_session()
 
-        caller = "optimized_odds_api"
-        from app.services.odds_api_budget import guard_async
-
-        if not await guard_async(caller):
-            raise Exception("Odds API daily credit budget exceeded")
-
         # Add API key
         params["apiKey"] = self.api_key
 
         url = f"{self.base_url}{endpoint}"
+        estimated = (
+            0 if endpoint.endswith("/events") else 3 if "/odds" in endpoint else 1
+        )
 
         logger.info(f"Making optimized API request to {endpoint}")
 
-        async with self.session.get(url, params=params) as response:
-            headers = dict(response.headers)
+        result = await async_odds_get(
+            self.session,
+            url,
+            params=params,
+            caller="optimized_odds_api",
+            estimated_cost=estimated,
+        )
+        if result is None:
+            # Budget refused (or network error already logged): fail soft.
+            return [], {}
+        status, headers, data = result
 
-            # Update usage stats from response headers
-            self._update_usage_stats(headers)
-            try:
-                from app.services.odds_api_budget import record_async
+        # Update usage stats from response headers
+        self._update_usage_stats(headers)
 
-                last_cost = int(headers.get("x-requests-last", 1) or 1)
-                await record_async(last_cost, caller)
-            except Exception as budget_err:
-                logger.warning("Odds API budget record failed: %s", budget_err)
+        if status == 429:
+            logger.error("Rate limit exceeded - requests too frequent")
+            raise Exception("Rate limit exceeded")
+        elif status == 401:
+            logger.error("Out of usage credits")
+            raise Exception("OUT_OF_USAGE_CREDITS")
+        elif status >= 400:
+            raise Exception(f"API request failed with status {status}: {data}")
 
-            if response.status == 429:
-                logger.error("Rate limit exceeded - requests too frequent")
-                raise Exception("Rate limit exceeded")
-            elif response.status == 401:
-                logger.error("Out of usage credits")
-                raise Exception("OUT_OF_USAGE_CREDITS")
-
-            response.raise_for_status()
-            data = await response.json()
-
-            return data, headers
+        return data, headers
 
     def _update_usage_stats(self, headers: Dict[str, str]):
         """Update usage statistics from response headers"""
