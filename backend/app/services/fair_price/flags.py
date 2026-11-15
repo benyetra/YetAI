@@ -36,6 +36,7 @@ class FlagRule:
     expiry_min: float = 30.0
     excluded_books: frozenset = frozenset()
     reference_only: frozenset = odds_math.REFERENCE_ONLY_BOOKS
+    consensus_only: frozenset = frozenset()  # in the consensus, never a flag candidate
     method: str = devig.DEFAULT_METHOD
 
 
@@ -43,7 +44,8 @@ def default_rule() -> FlagRule:
     """FlagRule with excluded_books from the FAIR_PRICE_EXCLUDED_BOOKS comma list."""
     raw = os.environ.get("FAIR_PRICE_EXCLUDED_BOOKS", "")
     return FlagRule(
-        excluded_books=frozenset(b.strip() for b in raw.split(",") if b.strip())
+        excluded_books=frozenset(b.strip() for b in raw.split(",") if b.strip()),
+        consensus_only=odds_math.consensus_only_books(),
     )
 
 
@@ -134,7 +136,11 @@ def evaluate_prop(
         expires = min(expires, commence_time)
     flags: list[Flag] = []
     for q in quotes:
-        if q.book in rule.reference_only or not _fresh(q, at, rule):
+        if (
+            q.book in rule.reference_only
+            or q.book in rule.consensus_only
+            or not _fresh(q, at, rule)
+        ):
             continue
         fair, n = fair_at_line(probs, q.line, market, weights, exclude=q.book)
         if fair is None or n < rule.min_books:

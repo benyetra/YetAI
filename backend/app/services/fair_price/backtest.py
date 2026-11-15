@@ -325,7 +325,11 @@ def fast_prop_flags(quotes, at, market, weights, rule, commence_time=None):
         expires = min(expires, commence_time)
     out: list[fp.Flag] = []
     for q in quotes:
-        if q.book in rule.reference_only or not fp._fresh(q, at, rule):
+        if (
+            q.book in rule.reference_only
+            or q.book in rule.consensus_only
+            or not fp._fresh(q, at, rule)
+        ):
             continue
         got, s, ws = pool(q.line)
         n = len(got)
@@ -551,7 +555,9 @@ def replay_group(event_market, players, weights, params, key_to_id, box):
                             q.over_price if s_ == "o" else q.under_price,
                         )
                         for q in present
-                        if q.book not in rule.reference_only and fp._fresh(q, t, rule)
+                        if q.book not in rule.reference_only
+                        and q.book not in rule.consensus_only
+                        and fp._fresh(q, t, rule)
                         for s_ in ("o", "u")
                         if (q.over_price if s_ == "o" else q.under_price)
                     )

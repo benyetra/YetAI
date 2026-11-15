@@ -6,6 +6,7 @@ per 1u staked (a loss is -1). "over"/"under" sides are written 'o'/'u'.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from statistics import NormalDist, median
 from typing import Iterable, Optional
@@ -34,6 +35,17 @@ DEFAULT_SD = 5.0
 
 # Quoted for the consensus, never offered as the best book (not bettable in the US).
 REFERENCE_ONLY_BOOKS = frozenset({"pinnacle"})
+
+# Exchange prices are resting orders of unknown size; the backtest CLV of their flags was
+# +0.59 points vs +2.82 at retail. They inform the consensus but are never flagged or offered
+# as the best price.
+CONSENSUS_ONLY_DEFAULT = "novig,prophetx"
+
+
+def consensus_only_books() -> frozenset:
+    """Books from FAIR_PRICE_CONSENSUS_ONLY_BOOKS (unset -> default, "" -> none)."""
+    raw = os.environ.get("FAIR_PRICE_CONSENSUS_ONLY_BOOKS", CONSENSUS_ONLY_DEFAULT)
+    return frozenset(b.strip().lower() for b in raw.split(",") if b.strip())
 
 
 def american_to_decimal(price: float) -> float:
@@ -149,10 +161,11 @@ def best_quote(
     """
     quotes = list(quotes)
     center = consensus_center(quotes, sd)
+    skip = REFERENCE_ONLY_BOOKS | consensus_only_books()
     best: Optional[tuple] = None
     for q in quotes:
         price = q.price(side)
-        if q.book in REFERENCE_ONLY_BOOKS or q.line is None or not price:
+        if q.book in skip or q.line is None or not price:
             continue
         if not _on_side(side, projection, q.line):
             continue
