@@ -143,7 +143,9 @@ def guard_sync(caller: str, estimated_cost: int = 1) -> bool:
             "capped or counted until it recovers",
         )
         used = 0
-    if used + max(int(estimated_cost or 0), 1) > DAILY_CREDIT_BUDGET:
+    estimated = max(int(estimated_cost or 0), 0)
+    # Free calls (estimated 0, e.g. the /sports quota read) are never refused.
+    if estimated and used + estimated > DAILY_CREDIT_BUDGET:
         _log_once(
             "refusal",
             logging.WARNING,

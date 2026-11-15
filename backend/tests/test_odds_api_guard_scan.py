@@ -10,6 +10,17 @@ from pathlib import Path
 BACKEND = Path(__file__).resolve().parents[1]
 ALLOWED = {"app/services/odds_api_sync.py"}
 RECORDERS = {"app/services/odds_api_budget.py", "app/services/odds_api_sync.py"}
+# Files that use ODDS_API_BASE and also make HTTP calls of their own: each was
+# read by hand (odds calls go through odds_api_sync; the other calls are ESPN,
+# MLB Stats, or an aiohttp session handed to async_odds_get). A new file here
+# must be reviewed the same way before it is added.
+REVIEWED_MIXED = {
+    "app/services/data_pipeline.py",
+    "app/services/etl/mlb/strikeouts.py",
+    "app/services/odds_api_service.py",
+    "app/services/optimized_odds_api_service.py",
+    "app/services/player_props_service.py",
+}
 HTTP_CALLS = (
     "requests.get(",
     "requests.request(",
@@ -34,11 +45,12 @@ def scan(root: Path) -> tuple[list[str], list[str]]:
                 for ln in path.read_text(encoding="utf-8", errors="ignore").splitlines()
                 if not ln.lstrip().startswith("#")
             )
-            if (
-                "the-odds-api.com" in src
-                and any(c in src for c in HTTP_CALLS)
-                and rel not in ALLOWED
-            ):
+            calls_http = any(c in src for c in HTTP_CALLS)
+            if rel in ALLOWED or not calls_http:
+                pass
+            elif "the-odds-api.com" in src:
+                direct.append(rel)
+            elif "ODDS_API_BASE" in src and rel not in REVIEWED_MIXED:
                 direct.append(rel)
             if rel not in RECORDERS and RECORD_IMPORT.search(src):
                 recorders.append(rel)

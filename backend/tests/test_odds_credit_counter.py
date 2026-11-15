@@ -198,10 +198,11 @@ def test_odds_service_returns_empty_when_budget_refuses(redis, monkeypatch):
     async def run():
         svc = OddsAPIService("k")
         svc.session = FakeSession()
-        return await svc.get_odds("basketball_nba"), await svc.get_sports(), svc
+        return await svc.get_odds("basketball_nba"), svc
 
-    odds, sports, svc = asyncio.run(run())
-    assert odds == [] and sports == [] and svc.session.calls == 0
+    # /sports is free (estimated 0) and is never refused; priced calls are.
+    odds, svc = asyncio.run(run())
+    assert odds == [] and svc.session.calls == 0
 
 
 def test_read_live_quota(redis):
@@ -211,3 +212,15 @@ def test_read_live_quota(redis):
         q = s.read_live_quota()
     assert (q["remaining"], q["used"]) == (400, 100) and q["at"]
     assert b.get_daily_usage_sync() == 0
+
+
+def test_free_quota_read_is_never_refused(redis, monkeypatch):
+    # The review and the run-out alert must still read the bill on a capped day.
+    monkeypatch.setattr(b, "DAILY_CREDIT_BUDGET", 10)
+    redis.kv[b._budget_key()] = 50
+    assert b.guard_sync("quota.read", 0) is True
+    assert b.guard_sync("etl.nba.x", 1) is False
+    resp = Resp(last=0)
+    resp.headers.update({"x-requests-remaining": "400", "x-requests-used": "100"})
+    with patch.object(s.requests, "get", return_value=resp):
+        assert s.read_live_quota()["remaining"] == 400
