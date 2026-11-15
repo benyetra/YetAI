@@ -1159,7 +1159,7 @@ def _credits_lines(c: dict) -> list[str]:
     )
     if c["yesterday_billed"] is not None:
         L.append(
-            f"  yesterday billed {n(c['yesterday_billed'])}, "
+            f"  billed since yesterday's reading {n(c['yesterday_billed'])}, "
             f"unrecorded {n(c['yesterday_unrecorded'])}"
         )
     L.append(f"  7d rate {n(c['rate_7d'])}/day ({c['rate_source']})")
