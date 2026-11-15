@@ -43,10 +43,11 @@ if str(BACKEND_ROOT) not in sys.path:
 import requests  # noqa: E402
 
 from scripts._bootstrap_env import bootstrap_env  # noqa: E402
+from app.services.odds_api_sync import ODDS_API_BASE, sync_odds_get  # noqa: E402
 
 logger = logging.getLogger("odds_history_backfill")
 
-API = "https://api.the-odds-api.com/v4"
+API = ODDS_API_BASE
 SPORT = "basketball_nba"
 DEFAULT_BOOKS = (
     "fanduel,draftkings,betmgm,williamhill_us,espnbet,betrivers,hardrockbet,"
@@ -223,12 +224,18 @@ class Fetcher:
         resp = None
         for attempt in range(len(BACKOFF) + 1):
             self._pace()
-            try:
-                resp = requests.get(
-                    API + path, params={**params, "apiKey": self.key}, timeout=60
-                )
-            except requests.RequestException as e:
-                logger.warning("%s %s failed: %s", kind, path, type(e).__name__)
+            # Deliberate metered run: record every credit, never refuse.
+            resp = sync_odds_get(
+                API + path,
+                params={**params, "apiKey": self.key},
+                caller="script.odds_history_backfill",
+                estimated_cost=expected,
+                timeout=60,
+                raise_for_status=False,
+                enforce_budget=False,
+                snapshot=False,
+            )
+            if resp is None:  # network error (already logged)
                 return None
             self.paid += 1
             if resp.status_code != 429:
@@ -496,7 +503,17 @@ def _key() -> str:
 
 
 def _quota(key: str | None = None) -> dict:
-    r = requests.get(f"{API}/sports", params={"apiKey": key or _key()}, timeout=30)
+    r = sync_odds_get(
+        f"{API}/sports",
+        params={"apiKey": key or _key()},
+        caller="script.odds_history_backfill.quota",
+        estimated_cost=0,
+        raise_for_status=False,
+        enforce_budget=False,
+        snapshot=False,
+    )
+    if r is None:
+        raise requests.RequestException("quota read failed")
     return {h: r.headers.get(h) for h in HEADERS}
 
 

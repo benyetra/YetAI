@@ -60,6 +60,7 @@ from app.services.etl.mlb._enrichment_helpers import (
     pitcher_names_match,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.odds_api_sync import ODDS_API_BASE
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,7 @@ def classifier_prob_over(
 
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 MIN_GAMES_THRESHOLD = 6  # Minimum number of games to calculate golden opportunities
-BASE_URL = "https://api.the-odds-api.com/v4/sports/baseball_mlb"
+BASE_URL = f"{ODDS_API_BASE}/sports/baseball_mlb"
 HEADERS = {
     "Content-Type": "application/json",
 }
@@ -315,8 +316,10 @@ def fetch_odds_events_today_et() -> list[dict]:
         logger.warning("ODDS_API_KEY not set; strikeout lines will be missing")
         return []
     today_et = now_eastern().date()
+    from app.services.odds_api_sync import sync_odds_get
+
     try:
-        resp = requests.get(
+        resp = sync_odds_get(
             f"{BASE_URL}/odds/",
             params={
                 "apiKey": ODDS_API_KEY,
@@ -325,9 +328,11 @@ def fetch_odds_events_today_et() -> list[dict]:
                 "oddsFormat": "american",
             },
             headers=HEADERS,
-            timeout=30,
+            caller="etl.mlb.strikeouts.events",
+            estimated_cost=1,
         )
-        resp.raise_for_status()
+        if resp is None:  # budget refused or network error
+            return []
         events = resp.json()
     except Exception as exc:
         logger.warning("Failed to fetch MLB odds events: %s", exc)

@@ -125,7 +125,7 @@ class FakeAPI:
         self.statuses = list(statuses or [])
         self.empty = empty
 
-    def __call__(self, url, params=None, timeout=None):
+    def __call__(self, url, params=None, timeout=None, headers=None):
         if url.endswith("/sports"):  # free quota read before fetching; not counted
             return self._resp(200, [], "0")
         self.calls.append((url, dict(params)))
@@ -166,6 +166,11 @@ def fake(monkeypatch):
     def install(**kw):
         api = FakeAPI(**kw)
         monkeypatch.setattr(bf.requests, "get", api)
+        # keep the credit counter off any real Redis
+        monkeypatch.setattr(
+            "app.services.odds_api_sync.guard_sync", lambda *a, **k: True
+        )
+        monkeypatch.setattr("app.services.odds_api_sync.record_sync", lambda *a, **k: 0)
         monkeypatch.setattr(
             bf.time, "sleep", lambda s: api.__dict__.setdefault("slept", []).append(s)
         )
