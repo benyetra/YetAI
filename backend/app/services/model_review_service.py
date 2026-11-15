@@ -1080,6 +1080,16 @@ def _safe(db: Session, fn: Callable[..., Any], *args) -> Any:
         return {"unavailable": f"{type(e).__name__}: {e}"}
 
 
+def _credits_section(db: Session, today: date) -> dict:
+    from app.services import odds_credit_report as cr
+    from app.services.odds_api_sync import read_live_quota
+
+    quota = read_live_quota()
+    if quota:
+        cr.snapshot_quota(quota, today.isoformat())
+    return cr.credits_summary(today, quota)
+
+
 def build_review(db: Session, today: date) -> dict:
     cur_start = today - timedelta(days=MODEL_WINDOW_DAYS)
     cur = _safe(db, load_rows, db, cur_start, today - timedelta(days=1))
@@ -1104,6 +1114,7 @@ def build_review(db: Session, today: date) -> dict:
         "model_versions": _safe(db, _versions_section, db, today),
         "clv": _safe(db, _clv_section, db, today, cur),
         "shadow": _safe(db, _shadow_section, db, today),
+        "credits": _safe(db, _credits_section, db, today),
     }
 
 
@@ -1131,6 +1142,36 @@ def _unavailable(sec: Any) -> Optional[str]:
     if isinstance(sec, dict) and "unavailable" in sec:
         return f"  unavailable: {sec['unavailable']}"
     return None
+
+
+def _credits_lines(c: dict) -> list[str]:
+    n = lambda v: "n/a" if v is None else f"{v:,.0f}"  # noqa: E731
+    L = [
+        f"  remaining {n(c['remaining'])}; next reset {c['next_reset']} "
+        f"({c['days_to_reset']}d)"
+    ]
+    groups = ", ".join(
+        f"{g} {n(v)}" for g, v in list(c["yesterday_by_group"].items())[:4]
+    )
+    L.append(
+        f"  yesterday recorded {n(c['yesterday_recorded'])}"
+        + (f" ({groups})" if groups else "")
+    )
+    if c["yesterday_billed"] is not None:
+        L.append(
+            f"  yesterday billed {n(c['yesterday_billed'])}, "
+            f"unrecorded {n(c['yesterday_unrecorded'])}"
+        )
+    L.append(f"  7d rate {n(c['rate_7d'])}/day ({c['rate_source']})")
+    if c["projected_runout"]:
+        when = "BEFORE" if c["runs_out_before_reset"] else "after"
+        L.append(f"  projected run-out {c['projected_runout']}, {when} reset")
+    else:
+        L.append("  projected run-out: n/a")
+    L.append(
+        f"  daily budget {n(c['budget'])} vs recommended {n(c['recommended_daily'])}"
+    )
+    return L
 
 
 def render_text(review: dict) -> str:
@@ -1345,6 +1386,11 @@ def render_text(review: dict) -> str:
             else f"  CLV: mean close move in call's favour {clv['mean_move']:+.3f} "
             f"(n={clv['n']})"
         )
+    L.append("")
+
+    L.append("== Odds API credits ==")
+    cr = review.get("credits", {"unavailable": "not built"})
+    L.extend([_unavailable(cr)] if _unavailable(cr) else _credits_lines(cr))
     return "\n".join(L) + "\n"
 
 
