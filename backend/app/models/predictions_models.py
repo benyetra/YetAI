@@ -3970,3 +3970,98 @@ class NBAPropShadow(Base):
     __table_args__ = (
         UniqueConstraint("date", "player_id", "stat", name="uq_nba_prop_shadow"),
     )
+
+
+class FairPriceShadowFlag(Base):
+    """A fair-price flag the shadow flagger saw (one row per rule, event, market, player,
+    side, book); grading columns are filled later.
+
+    Shadow only: nothing published or auto-picked reads this table. Readers are the
+    fair_price grader/report and the model review. Times are naive UTC.
+    """
+
+    __tablename__ = "fair_price_shadow_flags"
+
+    id = Column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    rule_version = Column(String(64), nullable=False)
+    engine_version = Column(String(64), nullable=False)
+    tier = Column(String(16), nullable=False)  # 'primary' | 'secondary'
+    sport = Column(String(64), nullable=False)
+    event_id = Column(String(64), nullable=False)
+    game_date = Column(Date, nullable=True)
+    commence_time = Column(DateTime, nullable=True)
+    market = Column(String(64), nullable=False)
+    player_key = Column(String(128), nullable=False)
+    player_name = Column(String(128), nullable=True)
+    side = Column(String(1), nullable=False)  # 'o' | 'u'
+    book = Column(String(64), nullable=False)
+    line = Column(Float, nullable=False)
+    price = Column(Integer, nullable=False)
+    book_updated_at = Column(DateTime, nullable=True)
+    observed_at = Column(DateTime, nullable=False)
+    flagged_at = Column(DateTime, nullable=False)
+    quote_age_min = Column(Float, nullable=True)
+    hours_before = Column(Float, nullable=True)
+    fair_prob = Column(Float, nullable=False)
+    ev = Column(Float, nullable=False)
+    playable_to = Column(Integer, nullable=False)
+    n_books = Column(Integer, nullable=False)
+    devig_method = Column(String(16), nullable=False)
+    weights_version = Column(String(64), nullable=False)
+    consensus = Column(JSON, nullable=True)
+    last_qualified_at = Column(DateTime, nullable=False)
+    last_line = Column(Float, nullable=True)
+    last_price = Column(Integer, nullable=True)
+    n_qualified = Column(Integer, nullable=False, default=1)
+    # grading, filled later
+    graded_at = Column(DateTime, nullable=True)
+    is_close = Column(Boolean, nullable=True)
+    close_at = Column(DateTime, nullable=True)
+    close_prob = Column(Float, nullable=True)
+    n_close = Column(Integer, nullable=True)
+    clv = Column(Float, nullable=True)
+    close_note = Column(String(32), nullable=True)
+    actual = Column(Float, nullable=True)
+    result = Column(String(16), nullable=True)
+    units = Column(Float, nullable=True)
+    next_at = Column(DateTime, nullable=True)
+    next_price = Column(Integer, nullable=True)
+    next_playable = Column(Boolean, nullable=True)
+    baseline = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=True, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "rule_version",
+            "event_id",
+            "market",
+            "player_key",
+            "side",
+            "book",
+            name="uq_fair_price_shadow_flag",
+        ),
+        Index("ix_fp_shadow_game_date", "game_date"),
+    )
+
+
+class FairPriceWeights(Base):
+    """Fitted consensus book weights, versioned per (sport, market); shadow only (read by the
+    fair_price flagger/grader/report and the model review, never by anything published).
+    """
+
+    __tablename__ = "fair_price_weights"
+
+    id = Column(Integer, primary_key=True)
+    version = Column(String(64), nullable=False)
+    sport = Column(String(64), nullable=False)
+    market = Column(String(64), nullable=False)
+    weights = Column(JSON, nullable=False)
+    fitted = Column(JSON, nullable=True)
+    n_rows = Column(Integer, nullable=True)
+    fitted_through = Column(Date, nullable=True)
+    source = Column(String(64), nullable=True)
+    created_at = Column(DateTime, nullable=True, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("version", "sport", "market", name="uq_fair_price_weights"),
+    )

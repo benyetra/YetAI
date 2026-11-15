@@ -31,6 +31,7 @@ celery_app = Celery(
         "app.tasks.expire_pending_picks",
         "app.tasks.model_review",
         "app.tasks.league_vault_sync",
+        "app.tasks.fair_price",
     ],
 )
 
@@ -70,6 +71,9 @@ BETS_QUEUE_TASKS = (
     "auto_pick.expire_pending",
     # Seconds per run, and useless after tip-off: the window is the 25 minutes before.
     "app.tasks.etl_pipeline.nba.close_capture",
+    # Seconds per run (reads the snapshot table only) and useless if it waits behind an
+    # hour-long ETL task: a quote older than 30 minutes is not flagged.
+    "fair_price.shadow_flag",
 )
 celery_app.conf.task_default_queue = DEFAULT_QUEUE
 # Explicit routing keys: Queue(name) alone binds every queue to the "celery" key
@@ -122,6 +126,24 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.nba.close_capture",
         "schedule": crontab(minute="*/10", hour="11-23"),  # ET (celery tz)
         "options": {"expires": 540},
+    },
+    # Fair-price shadow study: flag (all day: the 30-min max quote age means an off-hours
+    # fetch such as the 03:30 NBA pipeline must be seen within 30 min), grade, monthly refit.
+    # Kill switch FAIR_PRICE_SHADOW_ENABLED is read by the flag task.
+    "fair-price-shadow-flag": {
+        "task": "fair_price.shadow_flag",
+        "schedule": crontab(minute="*/10"),
+        "options": {"expires": 540},
+    },
+    "fair-price-shadow-grade": {
+        "task": "fair_price.shadow_grade",
+        "schedule": crontab(hour=8, minute=30),  # ET (celery tz)
+        "options": {"expires": 10800},
+    },
+    "fair-price-fit-weights": {
+        "task": "fair_price.fit_weights",
+        "schedule": crontab(hour=6, minute=0, day_of_month=2),  # ET (celery tz)
+        "options": {"expires": 86400},
     },
     # Watches the yetai_bets queue from the default queue: alerts when nothing
     # is consuming it (backlog), which a task on that queue could never report.

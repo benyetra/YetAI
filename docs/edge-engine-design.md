@@ -22,6 +22,21 @@ file path, or is marked **to build**.
 - Then, in order: live flags in shadow, a news-speed engine (books are slow to re-price props after
   injury news), and only last, our own projection as a small extra weight on top of the market.
 
+## Phase 1a status (2026-11-15, branch feat/fair-price-shadow)
+Built, in shadow only (nothing reads the flags except the grader, the daily review and its admin
+endpoint): `fair_price_shadow_flags` and `fair_price_weights` (migration
+`20261115_fair_price_shadow`); the flagger `fair_price/shadow.py` (task `fair_price.shadow_flag`,
+every 10 min on the bets queue, reads `odds_line_snapshots` only: no poller and no extra
+credits); the grader `fair_price/grade.py` (`fair_price.shadow_grade`, 08:30 ET, 7-day lookback);
+weights `fair_price/weights.py` (seed fitted on the 2025-26 closes, monthly refit
+`fair_price.fit_weights` on history + live closes); the review section `fair_price/report.py`
+and `scripts/fair_price_shadow_report.py`; live `PROP_BOOKS` now the backtest's ten books, with
+novig/prophetx consensus-only (`FAIR_PRICE_CONSENSUS_ONLY_BOOKS`). Kill switch
+`FAIR_PRICE_SHADOW_ENABLED` (default on). The decision rule is
+docs/fair-price-shadow-decision.md. Not built: the 30-minute poller (`fair_price.poll`), the
+`odds` queue, publishing (Phase 1b). Where this differs from the text below, this paragraph is
+current.
+
 ## A. System picture
 
 ```mermaid

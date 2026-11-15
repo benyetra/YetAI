@@ -28,13 +28,16 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.the-odds-api.com/v4/sports"
 
-# Books read for player props. The Odds API bills markets x regions, and up to 10
-# ``bookmakers`` count as one region, so this list costs what FanDuel alone did
-# (confirmed 2026-11-14: 7 markets x these 10 books -> x-requests-last 7).
-# pinnacle is a reference (sharp consensus) only; see odds_math.REFERENCE_ONLY_BOOKS.
+# Books read for player props (the backfill / backtest list). The Odds API bills markets x
+# regions, and "every group of 10 bookmakers is the equivalent of 1 region" (the-odds-api.com
+# v4 docs), so these 10 books cost what FanDuel alone did (confirmed 2026-11-14: 7 markets x
+# 10 books -> x-requests-last 7) and swapping fanatics/ballybet (quoted ~1 and ~6 players a
+# game) for novig/prophetx costs no credits.
+# pinnacle is a reference (sharp consensus) only; novig and prophetx are consensus-only
+# exchanges; see odds_math.REFERENCE_ONLY_BOOKS / CONSENSUS_ONLY_DEFAULT.
 PROP_BOOKS = (
-    "fanduel,draftkings,betmgm,williamhill_us,fanatics,"
-    "espnbet,betrivers,hardrockbet,pinnacle,ballybet"
+    "fanduel,draftkings,betmgm,williamhill_us,espnbet,"
+    "betrivers,hardrockbet,pinnacle,novig,prophetx"
 )
 
 # A single ETL pipeline run completes well within this window, so all player
