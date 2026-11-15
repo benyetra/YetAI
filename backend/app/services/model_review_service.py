@@ -1080,6 +1080,12 @@ def _safe(db: Session, fn: Callable[..., Any], *args) -> Any:
         return {"unavailable": f"{type(e).__name__}: {e}"}
 
 
+def _fair_price_section(db: Session, today: date) -> dict:
+    from app.services.fair_price import report  # lazy: never break the review
+
+    return report.section(db, today)
+
+
 def build_review(db: Session, today: date) -> dict:
     cur_start = today - timedelta(days=MODEL_WINDOW_DAYS)
     cur = _safe(db, load_rows, db, cur_start, today - timedelta(days=1))
@@ -1104,6 +1110,7 @@ def build_review(db: Session, today: date) -> dict:
         "model_versions": _safe(db, _versions_section, db, today),
         "clv": _safe(db, _clv_section, db, today, cur),
         "shadow": _safe(db, _shadow_section, db, today),
+        "fair_price": _safe(db, _fair_price_section, db, today),
     }
 
 
@@ -1345,6 +1352,15 @@ def render_text(review: dict) -> str:
             else f"  CLV: mean close move in call's favour {clv['mean_move']:+.3f} "
             f"(n={clv['n']})"
         )
+    L.append("")
+    L.append("== Fair-price shadow (not published) ==")
+    fp = review.get("fair_price", {"note": "no fair-price section"})
+    if _unavailable(fp):
+        L.append(_unavailable(fp))
+    else:
+        from app.services.fair_price import report
+
+        L.extend(report.render(fp))
     return "\n".join(L) + "\n"
 
 
