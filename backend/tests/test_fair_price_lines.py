@@ -24,3 +24,4 @@ def test_convert(monkeypatch):
     assert lines.convert(0.4, 6.5, 6.5, "t") == 0.4
     assert lines.convert(0.4, 6.5, 9.5, "t") is None
     assert lines.convert(0.4, 6.5, 7.5, "nope") is None
+    assert lines.convert(0.4, 6.5, 6.5, "nope") == 0.4  # same line: any market
