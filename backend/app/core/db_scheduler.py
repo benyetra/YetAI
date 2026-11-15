@@ -108,7 +108,7 @@ class DatabaseScheduler(PersistentScheduler):
 
     # --- single-sender guard -------------------------------------------------
 
-    _leader = True
+    _leader = None  # unknown until the first tick; logged on every change
     _leader_client = None
     _leader_token = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
 
@@ -156,7 +156,7 @@ class DatabaseScheduler(PersistentScheduler):
         return min(super().tick(*args, **kwargs), BEAT_LEADER_TTL_S / 3)
 
     def apply_entry(self, entry, producer=None):
-        if not self._leader:
+        if self._leader is False:
             logger.info("beat standby: not sending %s (%s)", entry.name, entry.task)
             return
         return super().apply_entry(entry, producer=producer)

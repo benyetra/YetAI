@@ -72,7 +72,12 @@ BETS_QUEUE_TASKS = (
     "app.tasks.etl_pipeline.nba.close_capture",
 )
 celery_app.conf.task_default_queue = DEFAULT_QUEUE
-celery_app.conf.task_queues = (Queue(DEFAULT_QUEUE), Queue(BETS_QUEUE))
+# Explicit routing keys: Queue(name) alone binds every queue to the "celery" key
+# on the default exchange, so a message published by key would reach both queues.
+celery_app.conf.task_queues = (
+    Queue(DEFAULT_QUEUE, routing_key=DEFAULT_QUEUE),
+    Queue(BETS_QUEUE, routing_key=BETS_QUEUE),
+)
 celery_app.conf.task_routes = {name: {"queue": BETS_QUEUE} for name in BETS_QUEUE_TASKS}
 
 # Use the custom DB-backed scheduler so admin edits to the 7 catalog

@@ -66,6 +66,13 @@ def test_worker_without_Q_consumes_both_queues():
     assert {q.name for q in celery_app.conf.task_queues} == {DEFAULT_QUEUE, BETS_QUEUE}
 
 
+def test_queues_have_distinct_routing_keys():
+    """Queue(name) alone binds both queues to the "celery" key, so a message
+    published by routing key would be delivered to both: a duplicate run."""
+    keys = {q.name: q.routing_key for q in celery_app.conf.task_queues}
+    assert keys == {DEFAULT_QUEUE: DEFAULT_QUEUE, BETS_QUEUE: BETS_QUEUE}
+
+
 def test_time_critical_beat_entries_expire():
     sched = celery_app.conf.beat_schedule
     for key in (

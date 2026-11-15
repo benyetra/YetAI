@@ -78,6 +78,17 @@ jobs:
         run: |
           railway up --detach --service 9b9982f4-82b7-4e0f-88a0-3212221fecf4
 
+      # Skipped until the bets-worker service exists: then set the repository variable
+      # RAILWAY_BETS_WORKER_SERVICE_ID (Settings > Secrets and variables > Actions >
+      # Variables). See docs/runbooks/bets-worker.md.
+      - name: Deploy bets-worker (yetai_bets queue)
+        if: ${{ vars.RAILWAY_BETS_WORKER_SERVICE_ID != '' }}
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          BETS_SERVICE_ID: ${{ vars.RAILWAY_BETS_WORKER_SERVICE_ID }}
+        run: |
+          railway up --detach --service "$BETS_SERVICE_ID"
+
       # --detach returns after upload; wait for the new image to boot before probing.
       - name: Wait for production health
         run: |
