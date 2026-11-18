@@ -475,3 +475,31 @@ def test_run_end_to_end_gate_rejects_worse_candidate_without_put(
     assert out["status"] == "rejected_by_champion"
     assert s3.names("put") == [("put", "nba/ml_models/xgb_points_gate.json")]
     assert s3.names("copy") == []
+
+
+def test_dataset_cache_round_trip_keeps_the_row_keys(monkeypatch):
+    # The promote gate finds each holdout row's line through attrs["keys"]; a cache hit
+    # that dropped them would turn every cached run into no_line_evidence.
+    import boto3
+    import pandas as pd
+
+    from app.services.ml import dataset_cache
+
+    store = {}
+
+    class _S3:
+        def put_object(self, Bucket, Key, Body):
+            store[Key] = Body
+
+        def get_object(self, Bucket, Key):
+            import io
+
+            return {"Body": io.BytesIO(store[Key])}
+
+    monkeypatch.setattr(boto3, "client", lambda *a, **k: _S3())
+    df = pd.DataFrame({"a": [1.0, 2.0]})
+    df.attrs["keys"] = [(1, "2026-11-01"), (2, "2026-11-02")]
+    dataset_cache.save("k.pkl", df, pd.Series([3.0, 4.0]))
+    frame, target = dataset_cache.load("k.pkl")
+    assert frame.attrs["keys"] == df.attrs["keys"]
+    assert target.tolist() == [3.0, 4.0]

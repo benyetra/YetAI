@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import time
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timedelta
 from statistics import median
 from typing import Any, Tuple
 
@@ -265,6 +265,19 @@ def get_fanduel_line(
 NBA_SPORT = "basketball_nba"
 
 
+# A book's market quote more than this behind the freshest book's in the same response
+# is left out of the quotes (and so of the consensus and the best price).
+QUOTE_MAX_LAG = timedelta(minutes=30)
+
+
+def _parsed_update(mkt: dict) -> datetime | None:
+    raw = mkt.get("last_update")
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00")) if raw else None
+    except ValueError:
+        return None
+
+
 def prop_quotes(
     sport: str,
     event_id: str,
@@ -277,11 +290,26 @@ def prop_quotes(
     gives two one-sided Quotes, so a price never travels with another line."""
     data = _get_event_market_odds(sport, event_id, market, bookmakers=bookmakers)
     wanted = _name_key(player_name)
+    books = (data or {}).get("bookmakers", [])
+    updated = [
+        _parsed_update(m) for b in books for m in b.get("markets", [])
+        if m.get("key") == market
+    ]  # fmt: skip
+    newest = max((u for u in updated if u is not None), default=None)
     quotes: list[odds_math.Quote] = []
-    for bookmaker in (data or {}).get("bookmakers", []):
+    for bookmaker in books:
         book = (bookmaker.get("key") or "").lower()
         for mkt in bookmaker.get("markets", []):
             if mkt.get("key") != market:
+                continue
+            seen = _parsed_update(mkt)
+            if (
+                newest is not None
+                and seen is not None
+                and newest - seen > QUOTE_MAX_LAG
+            ):
+                # A book that has not updated with the others is the likeliest stale
+                # outlier, and best_quote (max EV vs consensus) would pick it first.
                 continue
             sides: dict[str, tuple[float, int | None]] = {}
             for o in mkt.get("outcomes", []):

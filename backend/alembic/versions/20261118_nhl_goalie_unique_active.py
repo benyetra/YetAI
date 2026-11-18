@@ -25,6 +25,9 @@ TABLE = "pred_nhl_goalie_predictions"
 
 
 def upgrade() -> None:
+    if op.get_bind().dialect.name == "postgresql":
+        # Fail fast (the deploy aborts, safe to re-run) if an NHL run holds the table.
+        op.execute("SET LOCAL lock_timeout = '5s'")
     # Same rule on Postgres and SQLite: per (game_date, team_id), keep the newest live row.
     op.execute(
         f"""
