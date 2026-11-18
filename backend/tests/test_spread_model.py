@@ -26,10 +26,10 @@ def test_expected_margin_equal_elo_is_hca():
 
 
 def test_nba_win_prob_scale_is_fitted_and_other_leagues_unchanged():
-    from app.services.etl._spread_model import NFL_CONFIG, margin_to_win_prob
+    from app.services.etl._spread_model import margin_to_win_prob
 
     assert NBA_CONFIG.win_prob_logistic_scale == 6.6
-    for cfg, edge in ((WNBA_CONFIG, 2.0), (NFL_CONFIG, 3.0)):
+    for cfg, edge in ((WNBA_CONFIG, 2.0),):
         assert cfg.win_prob_logistic_scale == 7.0
         assert cfg.edge_threshold == edge
         assert cfg.home_court_advantage == 2.5
@@ -47,3 +47,14 @@ def test_nba_win_prob_scale_is_fitted_and_other_leagues_unchanged():
             ],
             abs=1e-12,
         )
+
+
+def test_nfl_config_is_set_for_nfl():
+    from app.services.etl._spread_model import NFL_CONFIG
+
+    # Anchor build: NFL no longer inherits the basketball scale / season start.
+    assert NFL_CONFIG.win_prob_logistic_scale == 7.4
+    assert NFL_CONFIG.season_start_month == 8
+    assert NFL_CONFIG.edge_threshold == 3.0
+    assert NFL_CONFIG.home_court_advantage == 2.5
+    assert (NFL_CONFIG.elo_k, NFL_CONFIG.spread_per_elo) == (20.0, 25.0)
