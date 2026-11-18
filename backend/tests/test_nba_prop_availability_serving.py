@@ -211,5 +211,6 @@ def test_migration_chain_and_import():
     mig = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mig)
     assert mig.revision == "20261118_nba_prop_low_sample"
-    assert mig.down_revision == "20261115_fair_price_shadow"
+    # Chained at integration: fair_price_shadow -> prop_best_fair_ev -> low_sample.
+    assert mig.down_revision == "20261118_prop_best_fair_ev"
     assert len(mig.TABLES) == 5

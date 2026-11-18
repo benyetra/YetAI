@@ -72,7 +72,7 @@ def test_every_sport_withholds_what_the_gate_withholds(sport, sqlite_db, monkeyp
     keys = {k for entries in spec.values() for k, _ in entries if k}
     _gate_says(monkeypatch, dict.fromkeys(keys, "losing_record"))
     out = api._withhold_board_picks(_payload(sport), sqlite_db, sport, None)
-    emitted = set().union(*rg.emitted_keys().values()) - api._NOT_YET_MEASURED
+    emitted = set().union(*rg.emitted_keys().values())
     for group, entries in spec.items():
         (row,) = out[group]
         if len(entries) > 1:  # MLB game row: three markets, each owns its fields
@@ -98,20 +98,32 @@ def test_open_market_keeps_its_pick_and_edge(sqlite_db, monkeypatch):
 def test_nba_points_edge_cleared_by_the_real_gate(sqlite_db, monkeypatch):
     # Prove-in on points, no record: the real gate withholds it.
     monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "NBA/player_prop/points")
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
     out = api._withhold_board_picks(_payload("nba"), sqlite_db, "nba", None)
     _assert_stripped(out["points"][0], "unproven_record")
     assert out["assists"][0]["edge"] == 2.0  # not prove-in, no data: stays open
+    # Default (require-proven on): every NBA prop key, PRA included, is unproven.
+    monkeypatch.delenv("AUTO_PICK_REQUIRE_PROVEN_RECORD")
+    out = api._withhold_board_picks(_payload("nba"), sqlite_db, "nba", None)
+    for group in ("points", "assists", "rebounds", "three_point", "steals", "pra"):
+        _assert_stripped(out[group][0], "unproven_record")
 
 
-def test_pra_never_shows_a_pick(sqlite_db, monkeypatch):
-    _gate_says(monkeypatch, {})  # gate would call it open
+def test_pra_goes_through_the_gate_like_every_nba_prop(sqlite_db, monkeypatch):
+    # PRA has a gate key and loader (pra_ou), so the gate decides it, as for WNBA.
+    seen = []
+    monkeypatch.setattr(
+        rg,
+        "withheld_keys",
+        lambda db, now, keys, loaders: seen.append((set(keys), loaders)) or {},
+    )
     for sport in ("nba", "wnba"):
         out = api._withhold_board_picks(_payload(sport), sqlite_db, sport, None)
-        if sport == "nba":
-            _assert_stripped(out["pra"][0], "no_record_check")
-        else:  # WNBA PRA has a key, so the (open) gate decides
-            assert out["pra"][0]["edge"] == 2.0
-    assert api._NOT_YET_MEASURED == {("NBA", "player_prop", "pra")}
+        assert out["pra"][0]["edge"] == 2.0
+    nba_keys, nba_loaders = seen[0]
+    assert "nba_props" in nba_loaders
+    for stat in ("points", "assists", "rebounds", "threes", "steals", "pra"):
+        assert ("NBA", "player_prop", stat) in nba_keys
 
 
 def test_mlb_game_row_strips_only_the_withheld_market(sqlite_db, monkeypatch):

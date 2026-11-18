@@ -232,7 +232,11 @@ def test_live_board_endpoint_withholds_and_past_slate_does_not(sqlite_db, monkey
     assert called == []
 
 
-def test_nba_board_strips_labels_for_new_steals_and_blocks_lines(sqlite_db):
+def test_nba_board_strips_labels_for_new_steals_and_blocks_lines(
+    sqlite_db, monkeypatch
+):
+    # Prove-in keys only (require-proven off), so points shows the prove-in list's reach.
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
     payload = {
         "steals": [{"id": 1, "recommendation": "OVER", "fanduel_over_under": "o"}],
         "blocks": [{"id": 2, "recommendation": "UNDER", "fanduel_over_under": "u"}],
@@ -246,3 +250,9 @@ def test_nba_board_strips_labels_for_new_steals_and_blocks_lines(sqlite_db):
         assert row["recommendation"] is None and row["fanduel_over_under"] is None
         assert row["pick_withheld"] == why
     assert out["points"][0]["recommendation"] == "OVER"  # not a new market: untouched
+    # The merged default (require-proven on) withholds points too until it proves in.
+    monkeypatch.delenv("AUTO_PICK_REQUIRE_PROVEN_RECORD")
+    out = api._withhold_unproven_picks(
+        payload, sqlite_db, api._BOARD_MARKETS["nba"], loaders=("nba_props",)
+    )
+    assert out["points"][0]["pick_withheld"] == "unproven_record"

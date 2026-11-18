@@ -202,11 +202,6 @@ _PICK_FIELDS = frozenset(
     }
 )
 
-# Keys the gate has no loader for in this branch, so their record is never measured.
-# PRA is emitted by the auto-pick source but has no key/loader yet; the picks-gate area
-# (.factory/picks-gate/) adds it. Remove the entry once that lands.
-_NOT_YET_MEASURED = frozenset({("NBA", "player_prop", "pra")})
-
 _PROP = "player_prop"
 _ALL = None  # strip every field in _PICK_FIELDS (a one-market row)
 
@@ -218,7 +213,7 @@ def _one(key):
 # Every list group each live endpoint returns -> ((record key, fields), ...). The key
 # is the group's market in record_gate (None = the gate has no key for it); fields are
 # the row fields that market owns (_ALL = the whole row is one market). A key outside
-# record_gate.emitted_keys(), None, or in _NOT_YET_MEASURED is withheld as
+# record_gate.emitted_keys() or None is withheld as
 # "no_record_check"; every other key goes through record_gate.withheld_keys.
 # tests/test_predictions_board_withholding.py fails when a payload group is missing.
 _BOARD_MARKETS: dict[str, dict[str, tuple]] = {
@@ -296,7 +291,7 @@ def _withhold_unproven_picks(
     """
     from app.services.auto_pick import record_gate
 
-    emitted = set().union(*record_gate.emitted_keys().values()) - _NOT_YET_MEASURED
+    emitted = set().union(*record_gate.emitted_keys().values())
     gated = {k for entries in spec.values() for k, _ in entries if k and k in emitted}
     try:
         with db.begin_nested():
