@@ -8,6 +8,8 @@ const baseURL = `http://localhost:${PORT}`;
  */
 export default defineConfig({
   testDir: './tests',
+  /* *.test.ts files under tests/ are jest unit tests. */
+  testMatch: '**/*.spec.ts',
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */

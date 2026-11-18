@@ -1137,6 +1137,7 @@ input { font: inherit; }
   background: color-mix(in oklab, var(--win-soft) 70%, var(--surface-2));
 }
 .data-table td.prop-edge-cell { color: var(--win); }
+.data-table td.prop-edge-cell.cell-empty { color: var(--text-3); }
 .data-table td.prop-conf-cell { color: var(--text-2); }
 .data-table tr.is-strong-play td.prop-pick-cell,
 .data-table tr.is-strong-play td.prop-conf-cell { color: var(--win); font-weight: 500; }
@@ -1259,6 +1260,12 @@ input { font: inherit; }
   gap: 6px;
   flex: 1;
   min-width: 0;
+}
+/* Phone: chips drop to their own full-width row instead of a sliver beside the actions. */
+@media (max-width: 640px) {
+  .predictions-toolbar-search { max-width: none; }
+  .predictions-toolbar-actions { flex-wrap: wrap; flex-shrink: 1; }
+  .predictions-toolbar-chips { flex: 1 1 100%; }
 }
 .predictions-discovery {
   padding: 14px 16px 16px;

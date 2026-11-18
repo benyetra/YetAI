@@ -695,7 +695,7 @@ export const oddsUtils = {
     const bookmaker = game.bookmakers[0];
     let homeOdds = -110;
     let awayOdds = -110;
-    let spread = 0;
+    const spread = 0;
     let total = 0;
 
     // Extract moneyline odds

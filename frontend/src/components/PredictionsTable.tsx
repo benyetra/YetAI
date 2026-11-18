@@ -242,7 +242,7 @@ export function PredictionsTable({
                         return (
                           <td
                             key={c.key}
-                            className={`${align} ${c.mono || c.align === 'right' ? 'mono' : ''} ${c.className ?? ''}`}
+                            className={`${align} ${c.mono || c.align === 'right' ? 'mono' : ''} ${c.className ?? ''}${content === '—' ? ' cell-empty' : ''}`}
                           >
                             {content as ReactNode}
                           </td>

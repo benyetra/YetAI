@@ -48,6 +48,8 @@ const customJestConfig = {
     '<rootDir>/.next/',
     '<rootDir>/node_modules/',
     '<rootDir>/cypress/',
+    // Playwright specs; they run under `playwright test`, not jest.
+    '<rootDir>/tests/.*\\.spec\\.ts$',
   ],
   transform: {
     // Use babel-jest to transpile tests with the next/babel preset
