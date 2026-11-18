@@ -23,6 +23,9 @@ def build(
     db = SessionLocal()
     rows_features: list[dict] = []
     rows_target: list[float] = []
+    keys: list[tuple] = (
+        []
+    )  # (player_id, game_date) per row: the promote gate joins lines
     try:
         ctx = load_training_context(db, season_start, season_end)
         all_rows = (
@@ -52,6 +55,7 @@ def build(
                 continue
             rows_features.append(feats)
             rows_target.append(float(target_value))
+            keys.append((row.player_id, row.game_date))
             if i % PROGRESS_EVERY == 0:
                 logger.info(
                     "build_training_dataset[wnba]: %d/%d candidates, %d feature rows",
@@ -64,6 +68,8 @@ def build(
             len(rows_features),
             len(all_rows),
         )
-        return pd.DataFrame(rows_features), pd.Series(rows_target, name=stat_col)
+        df = pd.DataFrame(rows_features)
+        df.attrs["keys"] = keys
+        return df, pd.Series(rows_target, name=stat_col)
     finally:
         db.close()

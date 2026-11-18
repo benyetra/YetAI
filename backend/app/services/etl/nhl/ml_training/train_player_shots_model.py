@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date
 from typing import Any
@@ -16,6 +17,7 @@ from app.services.etl.nhl.player_shots_ml import (
 )
 from app.services.etl.nhl.ml_training._gated import upload_gated_model
 from app.services.etl.nhl.ml_training.build_player_shots_dataset import build
+from app.services.ml.promote_gate import exit_code
 from app.services.ml.train_model import split
 
 logger = logging.getLogger(__name__)
@@ -29,8 +31,11 @@ def upload_player_shots_model(
     X_hold: pd.DataFrame,
     y_hold: Any,
 ) -> dict[str, Any]:
-    """Gated: status is first_upload / uploaded / rejected_by_champion."""
-    return upload_gated_model(S3_PREFIX, MODEL_KEY, model, metadata, X_hold, y_hold)
+    """Gated: first_upload / uploaded / rejected_by_champion / rejected_by_line_gate
+    / no_line_evidence."""
+    return upload_gated_model(
+        S3_PREFIX, MODEL_KEY, model, metadata, X_hold, y_hold, line_col="shots_line"
+    )
 
 
 def run(
@@ -58,8 +63,11 @@ def run(
         _, X_hold, _, y_hold = split(features_df[order], target, chronological=True)
         out = upload_player_shots_model(model, metadata, X_hold, y_hold)
         result["upload"] = out
-        if out["status"] == "rejected_by_champion":
-            result["status"] = "rejected_by_champion"
+        if (
+            out["status"].startswith("rejected_by")
+            or out["status"] == "no_line_evidence"
+        ):
+            result["status"] = out["status"]
     return result
 
 
@@ -76,6 +84,5 @@ if __name__ == "__main__":
         season_end=date.fromisoformat(args.end),
         upload=args.upload,
     )
-    print(out)
-    if out.get("status") != "ok":
-        raise SystemExit(1)
+    print(json.dumps(out, indent=2, default=str))
+    raise SystemExit(exit_code(out.get("status")))

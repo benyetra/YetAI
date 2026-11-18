@@ -69,6 +69,21 @@ def _props(n=200):
     return feats, pd.Series(0.7 * x + rng.normal(0, 3, n), name="points")
 
 
+def _with_lines(feats, target, monkeypatch):
+    """Stored keys + a line well off the truth, so the line gate passes."""
+    n = len(feats)
+    keys = [(i % 50, date(2025, 5, 1) + timedelta(days=i // 8)) for i in range(n)]
+    feats.attrs["keys"] = keys
+    lines = pd.DataFrame(
+        {
+            "player_id": [k[0] for k in keys],
+            "date": pd.to_datetime([k[1] for k in keys]),
+            "line": target.to_numpy() + 30,
+        }
+    )
+    monkeypatch.setattr(run_train_props, "_load_lines", lambda *a: lines)
+
+
 # ---- L10: props split + validation -------------------------------------------------
 
 
@@ -96,7 +111,8 @@ def test_props_split_is_chronological_and_validation_is_holdout_only(monkeypatch
 
 
 def test_props_rejected_by_champion_does_not_touch_s3(s3, monkeypatch):
-    feats, target = _props()
+    feats, target = _props(800)
+    _with_lines(feats, target, monkeypatch)
     monkeypatch.setattr(
         run_train_props.build_training_dataset, "build", lambda *a: (feats, target)
     )
@@ -111,11 +127,14 @@ def test_props_rejected_by_champion_does_not_touch_s3(s3, monkeypatch):
     out = run_train_props.run("points", upload=True, **WINDOW)
     assert out["status"] == "rejected_by_champion"
     assert "s3_keys" not in out
-    assert s3.names("put") == [] and s3.names("copy") == []
+    # only the gate outcome is written; the live model is neither replaced nor archived
+    assert [c[1] for c in s3.names("put")] == ["wnba/ml_models/xgb_points_gate.json"]
+    assert s3.names("copy") == []
 
 
 def test_props_better_candidate_uploads_with_manifest_and_archive(s3, monkeypatch):
-    feats, target = _props()
+    feats, target = _props(800)
+    _with_lines(feats, target, monkeypatch)
     monkeypatch.setattr(
         run_train_props.build_training_dataset, "build", lambda *a: (feats, target)
     )

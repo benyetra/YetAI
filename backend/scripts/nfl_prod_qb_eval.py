@@ -28,6 +28,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from app.services.ml.promote_gate import format_gate_line, promote_gate
+
 logger = logging.getLogger(__name__)
 
 _MODELS_DIR = Path(__file__).resolve().parents[1] / "models" / "nfl"
@@ -42,13 +44,14 @@ def promote_decision(
     *,
     ml_mae: float,
     tier_mae: float,
-    line_mae: float | None,
+    gate: dict[str, Any],
     lift_gate: float = _PROMOTE_LIFT,
 ) -> tuple[bool, str]:
-    """Promote only when ML beats dynamic tier by ``lift_gate`` *and* the line.
+    """Promote only when ML beats dynamic tier by ``lift_gate`` *and* the shared
+    promote gate passes on the rows that have a real line.
 
-    After P0, production yards are the real prop line when ML is off. Beating
-    the stale tier table is not enough to flip ``NFL_QB_ML_ENABLED``.
+    Beating the stale tier table is not enough to flip ``NFL_QB_ML_ENABLED``: the
+    gate (enough real-line rows and dates, no worse than the real line) must pass too.
     """
     if tier_mae <= 0:
         return False, "Keep market-line / shadow ML; invalid tier MAE"
@@ -59,11 +62,11 @@ def promote_decision(
             "Keep market-line / shadow ML; residual ML stays off until "
             "≥10% lift vs dynamic tier",
         )
-    if line_mae is not None and float(ml_mae) >= float(line_mae):
+    if not gate.get("passes"):
         return (
             False,
-            "Beats dynamic tier but not the published market line; "
-            "keep NFL_QB_ML_ENABLED off",
+            f"Beats dynamic tier but line gate is {gate.get('status')} "
+            f"({gate.get('reason')}); keep NFL_QB_ML_ENABLED off",
         )
     return True, "Enable NFL_QB_ML_ENABLED=1 after uploading artifacts"
 
@@ -636,15 +639,30 @@ def train_and_eval(
     static_tier_mae = _mae(y_test, static_tier_test)
     ml_mae_raw = _mae(y_test, ml_pred_raw)
     ml_mae = _mae(y_test, ml_pred)
-    line_mae = _mae(y_test, line_pred)
+    # Real-line rows only: elsewhere `line_pred` is padded with tier yards or a
+    # feature-built line, which is not a price anyone offered.
+    line_padded_mae = _mae(y_test, line_pred)
+    n_real = int(real_mask.sum())
+    line_mae = _mae(y_test[real_mask], line_pred[real_mask]) if n_real else None
+    ml_mae_real = _mae(y_test[real_mask], ml_pred[real_mask]) if n_real else None
+    real_line_arr = np.array(
+        [np.nan if v is None else v for v in real_lines], dtype=float
+    )
+    gate_dates = [
+        f"{int(s)}-{int(w):02d}" for s, w in zip(meta_test["season"], meta_test["week"])
+    ]
+    gate = promote_gate(ml_pred, y_test, real_line_arr, dates=gate_dates)
+    logger.info(format_gate_line("NFL QB yards", gate))
     lift_raw = (tier_mae - ml_mae_raw) / tier_mae if tier_mae > 0 else 0.0
     lift = (tier_mae - ml_mae) / tier_mae if tier_mae > 0 else 0.0
     lift_vs_static = (
         (static_tier_mae - ml_mae) / static_tier_mae if static_tier_mae > 0 else 0.0
     )
-    lift_vs_line = (line_mae - ml_mae) / line_mae if line_mae > 0 else 0.0
+    lift_vs_line = (
+        (line_mae - ml_mae_real) / line_mae if line_mae and ml_mae_real else 0.0
+    )
     promote, recommendation = promote_decision(
-        ml_mae=ml_mae, tier_mae=tier_mae, line_mae=line_mae
+        ml_mae=ml_mae, tier_mae=tier_mae, gate=gate
     )
     if holdout_sink is not None:
         holdout_sink["yards"] = (X_test, y_test)
@@ -745,9 +763,14 @@ def train_and_eval(
         "ml_mae": round(ml_mae, 3),
         "mae_lift": round(lift, 4),
         "mae_lift_vs_static_tier": round(lift_vs_static, 4),
-        "line_mae": round(line_mae, 3),
+        "line_mae": None if line_mae is None else round(line_mae, 3),
+        "line_mae_real_rows": None if line_mae is None else round(line_mae, 3),
+        "ml_mae_real_rows": None if ml_mae_real is None else round(ml_mae_real, 3),
+        "n_real_line_rows": n_real,
+        "line_mae_padded": round(line_padded_mae, 3),  # diagnostic only, not a price
         "mae_lift_vs_line": round(lift_vs_line, 4),
-        "promote_gate": _PROMOTE_LIFT,
+        "promote_lift_gate": _PROMOTE_LIFT,
+        "promote_gate": gate,
         "promote_recommended": promote,
         "model_version": metadata.get("model_version"),
         "train_metadata": metadata,
@@ -921,22 +944,26 @@ def maybe_upload(
 ) -> dict[str, Any]:
     """Upload QB artifacts to s3://yetibets/nfl/ml_models/ through the champion gate.
 
-    Needs ``promote_recommended`` (or ``force``, which only waives that check and
-    is logged). Either model is still skipped when it is worse than the live one
-    on the candidate's holdout; the O/U classifier also needs Brier < 0.25.
+    Needs ``promote_recommended``. ``force`` waives only the tier-lift check (logged),
+    never the line gate. Either model is still skipped when it is worse than the live
+    one on the candidate's holdout; the O/U classifier also needs Brier < 0.25.
     """
     from app.services.etl.nfl.ml_training.train_qb_model import upload_local_artifacts
 
+    gate = report.get("promote_gate") or {}
     if force:
         logger.warning(
-            "FORCE UPLOAD: promote_recommended=%s waived by --force-upload; "
-            "champion gate still applies",
+            "FORCE UPLOAD: tier-lift check waived by --force-upload (promote_recommended"
+            "=%s); line gate %s still applies",
             report.get("promote_recommended"),
+            gate.get("status"),
         )
         report["force_upload"] = True
-    if not report.get("promote_recommended") and not force:
+    if not gate.get("passes") or not (report.get("promote_recommended") or force):
         report["s3_upload_skipped"] = (
-            "promote_recommended=false; pass --force-upload to push shadow artifacts"
+            f"line gate {gate.get('status')}; --force-upload cannot waive it"
+            if not gate.get("passes")
+            else "promote_recommended=false; pass --force-upload to push shadow artifacts"
         )
         return report
 
@@ -1002,8 +1029,8 @@ def main() -> int:
     parser.add_argument(
         "--force-upload",
         action="store_true",
-        help="Waive the promote_recommended check (logged); the per-model "
-        "champion gate still applies",
+        help="Waive the tier-lift check (logged); the line gate and the per-model "
+        "champion gate still apply",
     )
     parser.add_argument(
         "--upload-kickers",
@@ -1042,6 +1069,8 @@ def main() -> int:
     out.write_text(json.dumps(report, indent=2, default=str))
     report["report_path"] = str(out)
     print(json.dumps(report, indent=2, default=str))
+    if report.get("s3_upload_error"):
+        return 1
     return 0 if report.get("status") == "ok" else 1
 
 

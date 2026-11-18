@@ -7,8 +7,11 @@ from datetime import date
 from typing import Any
 
 import numpy as np
+import pandas as pd
+from sqlalchemy import text
 from sklearn.metrics import mean_absolute_error  # type: ignore
 
+from app.core import database
 from app.services.etl.wnba.ml_training import (
     build_training_dataset,
     train_model,
@@ -17,12 +20,52 @@ from app.services.etl.wnba.ml_training import (
 )
 from app.services.etl.wnba.ml_training.config import WNBA_ML_CONFIG
 from app.services.etl.wnba.prop_calibration import fit_residual_calibration
+from app.services.ml.promote_gate import (
+    format_gate_line,
+    promote_gate,
+    record_outcome,
+)
 from app.services.ml.train_model import split
+from app.services.ml.upload_to_s3 import live_prop_predictions
 from app.services.ml_model_version import model_version_from_metadata
 
 logger = logging.getLogger(__name__)
 
 MIN_TRAINING_ROWS = 100
+
+
+def _load_lines(stat_col: str, start, end) -> pd.DataFrame:
+    """Stored market line per (player_id, date) from the stat's projection table."""
+    if stat_col not in WNBA_ML_CONFIG.supported_stats:  # table name is built from it
+        raise ValueError(f"unsupported stat {stat_col!r}")
+    sql = text(
+        f"SELECT player_id, date, market_line AS line "
+        f"FROM pred_wnba_{stat_col}_projections "
+        "WHERE market_line > 0 AND date >= :s AND date <= :e ORDER BY id"
+    )
+    with database.engine.connect() as conn:
+        df = pd.read_sql(sql, conn, params={"s": start, "e": end})
+    df["date"] = pd.to_datetime(df["date"])
+    return df.drop_duplicates(["player_id", "date"], keep="last")
+
+
+def stored_lines(stat_col: str, keys) -> tuple[np.ndarray, np.ndarray | None]:
+    """Stored line and date per holdout row. All-NaN lines when the builder gave no
+    (player_id, game_date) keys or the lookup fails (the gate then says
+    ``no_line_evidence``)."""
+    n = len(keys or [])
+    if not n:
+        return np.full(0, np.nan), None
+    k = pd.DataFrame(list(keys), columns=["player_id", "date"])
+    k["date"] = pd.to_datetime(k["date"])
+    try:
+        lines = _load_lines(stat_col, k["date"].min(), k["date"].max())
+        lines = lines.assign(player_id=lines["player_id"].astype(k["player_id"].dtype))
+        m = k.merge(lines, on=["player_id", "date"], how="left")
+        return m["line"].to_numpy(dtype=float), k["date"].to_numpy()
+    except Exception as exc:
+        logger.warning("WNBA %s stored lines unavailable: %s", stat_col, exc)
+        return np.full(n, np.nan), k["date"].to_numpy()
 
 
 def _enrich_metadata(stat_col: str, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -121,16 +164,49 @@ def run(
             "validation": validation,
         }
 
+    # Beat-the-line gate: the stored line is the baseline. The WNBA builder does
+    # not set attrs["keys"] yet, so today the lines are all NaN -> no_line_evidence.
+    keys = features_df.attrs.get("keys") or []
+    keys = (
+        list(keys)[len(features_df) - len(X_hold) :] if len(keys) == row_count else []
+    )
+    lines, gate_dates = stored_lines(stat_col, keys)
+    if len(lines) != len(holdout_actuals):
+        lines, gate_dates = np.full(len(holdout_actuals), np.nan), None
+    champion_pred = None
+    if upload:
+        try:
+            champion_pred = live_prop_predictions(WNBA_ML_CONFIG, stat_col, X_hold)
+        except Exception as exc:  # no usable champion: judged against the line only
+            logger.warning(
+                "WNBA %s champion predictions unavailable: %s", stat_col, exc
+            )
+    gate = promote_gate(
+        holdout_preds,
+        holdout_actuals,
+        lines,
+        dates=gate_dates,
+        champion_pred=champion_pred,
+    )
+    logger.info(format_gate_line(f"WNBA {stat_col}", gate))
+    if upload:
+        record_outcome(
+            f"{WNBA_ML_CONFIG.s3_prefix}/xgb_{stat_col}.pkl",
+            gate,
+            extra={"stat": stat_col, "data_window": metadata["data_window"]},
+        )
+
     result: dict[str, Any] = {
-        "status": "ok",
+        "status": "ok" if gate["passes"] else gate["status"],
         "stat": stat_col,
         "rows": row_count,
         "metadata": metadata,
         "validation": validation,
+        "promote_gate": gate,
         "upload": upload,
     }
 
-    if upload:
+    if upload and gate["passes"]:
         # Only replace the live model if it is not worse on this same holdout.
         out = upload_to_s3.upload_gated(
             stat_col,
@@ -138,6 +214,7 @@ def run(
             metadata,
             candidate_metric=validation["mae"],
             score_champion=upload_to_s3.live_scorer(stat_col, X_hold, y_hold),
+            line_gate=gate,
         )
         result["gate"] = out
         if out["status"] == "rejected_by_champion":

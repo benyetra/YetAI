@@ -24,22 +24,24 @@ def test_promote_gate_is_ten_percent():
     assert _PROMOTE_LIFT == 0.10
 
 
-def test_promote_decision_requires_tier_lift_and_beating_line():
-    ok, reason = promote_decision(ml_mae=54.0, tier_mae=65.0, line_mae=56.0)
+def _gate(status="pass", reason=None):
+    return {"passes": status == "pass", "status": status, "reason": reason}
+
+
+def test_promote_decision_requires_tier_lift_and_passing_line_gate():
+    ok, reason = promote_decision(ml_mae=54.0, tier_mae=65.0, gate=_gate())
     assert ok is True
     assert "NFL_QB_ML_ENABLED=1" in reason
 
-    no_tier, _ = promote_decision(ml_mae=62.0, tier_mae=65.0, line_mae=56.0)
+    no_tier, _ = promote_decision(ml_mae=62.0, tier_mae=65.0, gate=_gate())
     assert no_tier is False
 
-    beats_tier_loses_line, reason = promote_decision(
-        ml_mae=57.0, tier_mae=65.0, line_mae=54.8
-    )
-    assert beats_tier_loses_line is False
-    assert "market line" in reason
-
-    no_line, reason = promote_decision(ml_mae=54.0, tier_mae=65.0, line_mae=None)
-    assert no_line is True
+    for status in ("rejected_by_line_gate", "no_line_evidence"):
+        ok, reason = promote_decision(
+            ml_mae=54.0, tier_mae=65.0, gate=_gate(status, "x")
+        )
+        assert ok is False
+        assert status in reason  # the recommendation names the gate status
 
 
 def test_mae_helper():
@@ -165,7 +167,7 @@ def _season_frames(n_old=60, n_new=45):
     return features, target, meta
 
 
-def _run(monkeypatch, tmp_path, promote):
+def _run(monkeypatch, tmp_path, promote, frames=None, predict=None):
     import scripts.nfl_prod_qb_eval as ev
     import app.services.etl.nfl.qb_passing_yards_ml as qm
 
@@ -175,12 +177,13 @@ def _run(monkeypatch, tmp_path, promote):
         fits.append(len(dataset[0]))
         return _Fit(len(dataset[0])), {"model_family": "x", "n_train": len(dataset[0])}
 
-    monkeypatch.setattr(ev, "_build_with_meta", lambda a, b: _season_frames())
+    monkeypatch.setattr(ev, "_build_with_meta", lambda a, b: frames or _season_frames())
     monkeypatch.setattr(ev, "_MODELS_DIR", tmp_path)
     monkeypatch.setattr(ev, "run_holdout_ablations", lambda **k: {})
-    monkeypatch.setattr(ev, "promote_decision", lambda **k: (promote, "r"))
+    if promote is not None:
+        monkeypatch.setattr(ev, "promote_decision", lambda **k: (promote, "r"))
     monkeypatch.setattr(qm, "train_promote_qb_yards_model", fake_train)
-    monkeypatch.setattr(qm, "predict_yards_ml", lambda *a, **k: 250.0)
+    monkeypatch.setattr(qm, "predict_yards_ml", predict or (lambda *a, **k: 250.0))
     report = ev.train_and_eval(
         season_start=date(2024, 9, 1), season_end=date(2025, 12, 1)
     )
@@ -207,3 +210,112 @@ def test_data_window_names_last_graded_week(monkeypatch, tmp_path):
     _run(monkeypatch, tmp_path, promote=True)
     meta = json.loads((tmp_path / "qb_passing_yards_metadata.json").read_text())
     assert meta["data_window"] == "2024w1..2025w45"
+
+
+# ---- the line baseline is real lines only; --force-upload cannot waive the gate ----
+
+
+def _real_vs_padded_frames(n_old=60, n_new=320):
+    """Holdout: even rows have a real line (3 yds off the truth), odd rows have none."""
+    features, target, meta = _season_frames(n_old, n_new)
+    real = np.zeros(len(features), dtype=bool)
+    real[n_old::2] = True
+    features["line_is_real"] = real.astype(float)
+    meta["pass_yds_line_real"] = np.where(real, target + 3.0, np.nan)
+    return features, target, meta, real
+
+
+def _ml_good_on_padded_bad_on_real(model, row, **k):
+    # truth is tier + 3: exact where there is no line, 5 yards off where there is
+    return row["tier_yards"] + 3.0 + (5.0 if row["line_is_real"] else 0.0)
+
+
+def test_padded_rows_never_enter_the_line_baseline(monkeypatch, tmp_path):
+    features, target, meta, real = _real_vs_padded_frames()
+    report, _ = _run(
+        monkeypatch,
+        tmp_path,
+        promote=False,
+        frames=(features, target, meta),
+        predict=_ml_good_on_padded_bad_on_real,
+    )
+    assert report["n_real_line_rows"] == 160
+    assert report["line_mae"] == report["line_mae_real_rows"] == 3.0
+    assert report["ml_mae_real_rows"] == 5.0
+    assert report["line_mae_padded"] == 3.0  # tier fallback rows, diagnostic only
+    assert report["mae_lift_vs_line"] < 0  # ML loses to the line on real rows
+
+
+def test_beating_the_padded_baseline_but_losing_on_real_rows_is_not_promoted(
+    monkeypatch, tmp_path
+):
+    features, target, meta, _ = _real_vs_padded_frames()
+    report, fits = _run(
+        monkeypatch,
+        tmp_path,
+        promote=None,  # the real promote_decision
+        frames=(features, target, meta),
+        predict=_ml_good_on_padded_bad_on_real,
+    )
+    assert report["mae_lift"] > 0.10  # clears the tier-lift bar ...
+    assert report["promote_gate"]["status"] == "rejected_by_line_gate"
+    assert report["promote_recommended"] is False  # ... but loses to the real line
+    assert "rejected_by_line_gate" in report["recommendation"]
+    assert fits == [60]  # no shipped refit
+
+
+def test_no_real_lines_is_no_line_evidence_not_promoted(monkeypatch, tmp_path):
+    report, _ = _run(monkeypatch, tmp_path, promote=None, predict=lambda *a, **k: 253.0)
+    assert report["promote_gate"]["status"] == "no_line_evidence"
+    assert report["line_mae"] is None and report["n_real_line_rows"] == 0
+    assert report["promote_recommended"] is False
+
+
+def _spy_upload(monkeypatch):
+    import app.services.etl.nfl.ml_training.train_qb_model as tq
+
+    calls = []
+    monkeypatch.setattr(
+        tq, "upload_local_artifacts", lambda *a: calls.append(a) or {"m": {}}
+    )
+    return calls
+
+
+def test_force_upload_does_not_waive_a_failing_line_gate(monkeypatch):
+    import scripts.nfl_prod_qb_eval as ev
+
+    calls = _spy_upload(monkeypatch)
+    report = {
+        "promote_recommended": False,
+        "promote_gate": _gate("rejected_by_line_gate", "worse_than_line"),
+    }
+    out = ev.maybe_upload(report, force=True)
+    assert calls == []
+    assert "line gate rejected_by_line_gate" in out["s3_upload_skipped"]
+    assert out["force_upload"] is True
+
+
+def test_force_upload_still_waives_the_tier_lift_when_the_gate_passes(monkeypatch):
+    import scripts.nfl_prod_qb_eval as ev
+
+    calls = _spy_upload(monkeypatch)
+    ev.maybe_upload({"promote_recommended": False, "promote_gate": _gate()}, force=True)
+    assert len(calls) == 1
+
+
+def test_s3_upload_exception_exits_nonzero(monkeypatch, tmp_path, capsys):
+    import sys
+
+    import scripts.nfl_prod_qb_eval as ev
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x")
+    monkeypatch.setattr(sys, "argv", ["nfl_prod_qb_eval.py", "--upload"])
+    monkeypatch.setattr(ev, "_MODELS_DIR", tmp_path)
+    monkeypatch.setattr(ev, "train_and_eval", lambda **k: {"status": "ok"})
+
+    def boom(*a, **k):
+        raise RuntimeError("s3 down")
+
+    monkeypatch.setattr(ev, "maybe_upload", boom)
+    assert ev.main() == 1
+    assert "s3 down" in capsys.readouterr().out
