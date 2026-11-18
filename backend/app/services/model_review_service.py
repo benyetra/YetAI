@@ -1579,10 +1579,13 @@ def _attention_section(
             record_gate.key_label(key),
             now_s.get("breakeven_priced") or BREAKEVEN,
         )
-        a, b = was["hit_rate"], now_s["hit_rate"]
+        # Current-model record, graded projection vs line (stored sides are unreliable).
+        cur_c = _current_record(kind, rows) or {}
+        was_c = _current_record(kind, prev.get(key, (kind, []))[1]) or {}
+        a, b = was_c.get("hit_rate"), cur_c.get("hit_rate")
         if a is not None and b is not None and (a >= be) != (b >= be):
             out.append(
-                f"{label}: hit rate {_pct(a)} -> {_pct(b)}, crossed "
+                f"{label}: current-model hit rate {_pct(a)} -> {_pct(b)}, crossed "
                 f"{'above' if b >= be else 'below'} breakeven {_pct(be)}"
             )
         if None not in (was["mae"], was["line_mae"], now_s["mae"], now_s["line_mae"]):
@@ -1857,7 +1860,7 @@ def render_text(review: dict) -> str:
     else:
         L.append(
             f"  gate {'on' if g['enabled'] else 'OFF'}, {g['keys_tracked']} keys tracked, "
-            f"{len(g['withheld'])} withheld"
+            f"{g.get('withheld_count', len(g['withheld']))} withheld"
         )
         L.append("  key | state | n | hits | units | n_eff | shrunk ROI | version")
         f = lambda v, fmt: "n/a" if v is None else format(v, fmt)  # noqa: E731

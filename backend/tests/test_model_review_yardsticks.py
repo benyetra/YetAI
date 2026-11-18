@@ -220,7 +220,8 @@ def test_credits_without_redis_say_so_instead_of_zeros(sqlite_db, monkeypatch):
 
 def _ou(hits, n, day):
     return [
-        ms._row(10.0, 10.0, 11.0 if i < hits else 9.0, "over", ("t", day, str(i)), "p")
+        # projection 11 over line 10; the stored side says "under" and must be ignored
+        ms._row(11.0, 10.0, 11.0 if i < hits else 9.0, "under", ("t", day, str(i)), "p")
         for i in range(n)
     ]
 
@@ -243,7 +244,10 @@ def test_attention_lists_crossing_thin_board_and_empty_says_nothing(sqlite_db):
     gate = {"withheld_count": 1, "withheld": [{"key": "NBA/spread"}]}
     got = ms._attention_section(sqlite_db, TODAY, cur, prev, board, gate)["lines"]
     joined = "\n".join(got)
-    assert "NBA/player_prop/points: hit rate 51.0% -> 54.0%, crossed above" in joined
+    assert (
+        "NBA/player_prop/points: current-model hit rate 51.0% -> 54.0%, crossed above"
+        in joined
+    )
     assert "board 2026-11-13 NHL/total: thin" in joined
     assert "1 gate keys withheld: NBA/spread" in joined
     empty = ms._attention_section(
