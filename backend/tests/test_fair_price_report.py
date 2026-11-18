@@ -89,7 +89,8 @@ def test_hand_computed_maths(db):
     assert a["hit_rate"] == pytest.approx(2 / 3, abs=1e-6)
     units = 2 * (100 / 110) - 1
     assert a["roi"] == pytest.approx(units / 3, abs=1e-5)
-    assert p["verdict"] == "pending (4/300)" and p["progress"] == "4/300"
+    assert p["progress"] == "4/300 flags, 2/30 game dates"
+    assert p["verdict"] == "pending (4/300 flags, 2/30 game dates)"
     sec = report.section(db, TODAY)
     imp = (0.04 * 1.909091 + 0.02 * 2 - 0.01 * 1.909091 + 0.03 * 2) / 4
     assert sec["clv_roi_check"]["implied_roi"] == pytest.approx(imp, abs=1e-5)
@@ -101,14 +102,14 @@ def test_decision_cap_and_pending(db):
         flag(
             db,
             i,
-            game_date=date(2026, 11, 1 + i % 10),
+            game_date=date(2026, 11, 1 + i % 30),
             clv=0.02 + (i % 7) * 0.001,
             result="hit" if i % 2 else "miss",
             baseline={"price": -110, "clv": 0.0, "win": i % 3 == 0},
         )
     db.commit()
     p = report.section(db, TODAY)["primary"]
-    assert p["n"] == 305 and p["progress"] == "300/300"
+    assert p["n"] == 305 and p["progress"] == "300/300 flags, 30/30 game dates"
     assert p["decision"]["n"] == 300
     assert p["verdict"] in ("GO", "NO GO", "INCONCLUSIVE", "INVALID")
     assert p["roi_stage"] == "pending (305/3000)"
@@ -118,7 +119,17 @@ def test_decision_cap_and_pending(db):
     assert p["n"] == 304
     db.query(F).filter(F.event_id.in_(["ev1", "ev2", "ev3", "ev4", "ev5"])).delete()
     db.commit()
-    assert report.section(db, TODAY)["primary"]["verdict"] == "pending (299/300)"
+    assert (
+        report.section(db, TODAY)["primary"]["verdict"]
+        == "pending (299/300 flags, 30/30 game dates)"
+    )
+
+
+def test_decision_waits_for_30_game_dates():
+    fs = [{"game_date": date(2026, 11, 1 + i % 5)} for i in range(400)]
+    assert report._decision_size(fs) is None
+    fs += [{"game_date": date(2026, 12, 1 + i)} for i in range(25)]
+    assert report._decision_size(fs) == 425
 
 
 def test_sample_membership(db):

@@ -140,7 +140,8 @@ def test_wilson_and_clustered():
     c = bt.clustered_mean([1, 2, 3, 4], ["a", "a", "b", "b"])
     # mean 2.5; cluster sums of deviations -2, +2; G = 2 -> se = sqrt(2 * 8) / 4 = 1
     assert c["mean"] == 2.5 and c["se"] == pytest.approx(1.0)
-    assert c["lo"] == pytest.approx(2.5 - 1.96)
+    # 2 clusters -> 1 degree of freedom -> t = 12.706, not 1.96
+    assert c["lo"] == pytest.approx(2.5 - 12.706, abs=1e-3)
     assert bt.clustered_mean([1.0, 2.0], ["a", "a"])["se"] is None
 
 

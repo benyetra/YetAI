@@ -234,8 +234,8 @@ def test_rule_version(monkeypatch):
             excluded_books=frozenset({"x"}),
         )
     )
-    assert a.startswith("fp-shadow-v1+") and len(a.split("+")[1]) == 8
-    assert b.startswith("fp-shadow-v1+") and a != b
+    assert a.startswith("fp-shadow-v2+") and len(a.split("+")[1]) == 8
+    assert b.startswith("fp-shadow-v2+") and a != b
     assert (
         shadow.rule_version(flags.FlagRule()) != shadow.RULE_VERSION
     )  # empty consensus_only
