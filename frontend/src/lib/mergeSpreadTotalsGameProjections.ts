@@ -51,6 +51,8 @@ function quoteFields(prefix: 'spread' | 'total', row?: Row): Row {
     [`${prefix}_best_line`]: row?.best_line,
     [`${prefix}_best_price`]: row?.best_price,
     [`${prefix}_best_book`]: row?.best_book,
+    [`${prefix}_pick_fair_prob`]: row?.pick_fair_prob,
+    [`${prefix}_pick_ev`]: row?.pick_ev,
   };
 }
 

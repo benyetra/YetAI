@@ -36,17 +36,20 @@ function nbaProp(id: number, name: string, team: string, opp: string, projKey: s
 const open = (rows: Row[]) => rows;
 
 /** An open game market: the backend sends the pick side with its best quote (the line is the side's own). */
-const picked = (row: Row, side: string, line: number, price: number, book: string): Row => ({
+const picked = (row: Row, side: string, line: number, price: number, book: string, fairProb: number, ev: number): Row => ({
   ...row, recommendation: side, betting_recommendation: side,
   best_side: side.toLowerCase(), best_line: line, best_price: price, best_book: book,
+  // the backend clears the projector's edge and strength on a row it picks on price, and sends why
+  edge: null, value_tier: null, pick_fair_prob: fairProb, pick_ev: ev,
 });
 /** An open game market whose row does not pass the EV gates: no pick, and no "not proved" note. */
 const noPick = (row: Row): Row => ({
   ...row, recommendation: null, betting_recommendation: null, edge: null,
   best_side: null, best_line: null, best_price: null, best_book: null,
 });
-/** openGames: first game picked, second open but failing; every other market stays withheld. */
-const gameRows = (rows: Row[], pickIt: (r: Row) => Row): Row[] => [pickIt(rows[0]), noPick(rows[1])];
+/** openGames: per game, `pick` (row picked on its price) or null (open but failing); other markets stay withheld. */
+const gameRows = (rows: Row[], picks: Array<((r: Row) => Row) | null>): Row[] =>
+  rows.map((r, i) => (picks[i] ? picks[i]!(r) : noPick(r)));
 const shut = (rows: Row[]) => rows.map(withhold);
 
 function nba(state: BoardState): Row {
@@ -80,12 +83,14 @@ function nba(state: BoardState): Row {
   }
   const live = state === 'open';
   const games = state === 'openGames';
+  // openGames: game 1 spread passes (total fails); game 2 spread fails, total passes; game 3 nothing passes.
+  const g3 = game(3, 'New York Knicks', 'Brooklyn Nets', '2026-11-18T23:00:00-05:00');
   return {
     spreads: games
-      ? gameRows([spread(g1, 4.2), spread(g2, -1.5)], (r) => picked(r, 'HOME', -3.5, -110, 'fanduel'))
+      ? gameRows([spread(g1, 4.2), spread(g2, -1.5), spread(g3, 1.0)], [(r) => picked(r, 'HOME', -3.5, -110, 'fanduel', 0.5238, 0.024), null, null])
       : shut([spread(g1, 4.2), spread(g2, -1.5)]),
     totals: games
-      ? gameRows([total(g1, 221.8), total(g2, 229.4)], (r) => picked(r, 'OVER', 221.5, -108, 'draftkings'))
+      ? gameRows([total(g1, 221.8), total(g2, 229.4), total(g3, 226.0)], [null, (r) => picked(r, 'OVER', 221.5, -108, 'draftkings', 0.5385, 0.031), null])
       : shut([total(g1, 221.8), total(g2, 229.4)]),
     points: shut(points), assists: live ? open(assists) : shut(assists), rebounds: shut(rebounds),
     three_point: shut(threes), steals: shut(steals), blocks: shut(blocks), pra: shut(pra),
@@ -134,11 +139,13 @@ function nfl(state: BoardState): Row {
   ];
   const games = state === 'openGames';
   return {
+    // Game 1: the spread pick is the AWAY side (against the model's home lean), and the total also
+    // passes with a lower EV, so the card shows the spread. Game 2: nothing passes.
     spreads: games
-      ? gameRows([spread(g1), spread(g2)], (r) => picked(r, 'HOME', -2.5, -105, 'betmgm'))
+      ? gameRows([spread(g1), spread(g2)], [(r) => picked(r, 'AWAY', 2.5, -105, 'betmgm', 0.5385, 0.024), null])
       : shut([spread(g1), spread(g2)]),
     totals: games
-      ? gameRows([total(g1), total(g2)], (r) => picked(r, 'OVER', 47.5, -108, 'draftkings'))
+      ? gameRows([total(g1), total(g2)], [(r) => picked(r, 'OVER', 47.5, -108, 'draftkings', 0.5385, 0.018), null])
       : shut([total(g1), total(g2)]),
     qb_predictions: shut([
       qb(11, 'Josh Allen', 'Buffalo Bills', 'Kansas City Chiefs', 268.4, 255.5),
@@ -181,7 +188,7 @@ function nhl(state: BoardState): Row {
       state === 'openGames'
         ? gameRows(
             [teamTotal(1, 'Boston Bruins', 'New York Rangers'), teamTotal(2, 'Colorado Avalanche', 'Winnipeg Jets')],
-            (r) => picked(r, 'OVER', 5.5, -108, 'draftkings'),
+            [(r) => picked(r, 'OVER', 5.5, -108, 'draftkings', 0.5385, 0.031), null],
           )
         : shut([teamTotal(1, 'Boston Bruins', 'New York Rangers'), teamTotal(2, 'Colorado Avalanche', 'Winnipeg Jets')]),
     goalie_predictions: state === 'open' ? open(goalies) : shut(goalies),
