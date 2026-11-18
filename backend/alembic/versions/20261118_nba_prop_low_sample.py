@@ -36,5 +36,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        for table in TABLES:
+            op.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS low_sample")
+        return
+    inspector = sa.inspect(bind)
     for table in TABLES:
-        op.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS low_sample")
+        if "low_sample" in {c["name"] for c in inspector.get_columns(table)}:
+            with op.batch_alter_table(table) as batch:
+                batch.drop_column("low_sample")
