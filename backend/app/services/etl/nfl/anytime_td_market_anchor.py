@@ -136,11 +136,13 @@ def recommendation_for_market_edge(
     ev: float,
     threshold: float = ANYTIME_TD_EDGE_THRESHOLD,
 ) -> str:
-    """OVER needs edge ≥ τ and EV > 0; UNDER when edge ≤ −τ; else NO_PLAY."""
-    if edge >= threshold and ev > 0:
-        return "OVER"
-    if edge <= -threshold:
-        return "UNDER"
+    """No call sides: always NO_PLAY.
+
+    The probability, market fair probability and edge stay on the row as
+    information, but OVER / UNDER ("No TD") calls come back only once this
+    market has a record in the gate (bd YetAI-mgo). Arguments are kept so
+    callers do not change.
+    """
     return "NO_PLAY"
 
 

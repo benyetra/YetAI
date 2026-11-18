@@ -35,9 +35,10 @@ def test_compute_edge_and_recommendation():
     implied = american_to_implied_prob(-110)
     edge = compute_edge(0.60, implied)
     assert edge > 0
-    assert recommendation_for_edge(edge) == "OVER"
+    # No call sides until the market has a gate record (bd YetAI-mgo).
+    assert recommendation_for_edge(edge) == "NO_PLAY"
     assert recommendation_for_edge(0.01) == "NO_PLAY"
-    assert recommendation_for_edge(ANYTIME_TD_EDGE_THRESHOLD) == "OVER"
+    assert recommendation_for_edge(ANYTIME_TD_EDGE_THRESHOLD) == "NO_PLAY"
 
 
 def test_attach_betting_fields_market_anchor():

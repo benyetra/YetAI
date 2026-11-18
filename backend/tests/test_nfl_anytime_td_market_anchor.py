@@ -84,11 +84,9 @@ def test_week1_thin_form_near_full_anchor():
     assert shrink_weight(0.0) == pytest.approx(0.05)
 
 
-def test_recommendation_over_requires_edge_and_positive_ev():
-    assert recommendation_for_market_edge(0.06, ev=0.02) == "OVER"
-    assert recommendation_for_market_edge(0.06, ev=-0.01) == "NO_PLAY"
-    assert recommendation_for_market_edge(-0.06, ev=-0.05) == "UNDER"
-    assert recommendation_for_market_edge(0.01, ev=0.05) == "NO_PLAY"
+def test_recommendation_never_calls_a_side():
+    for edge, ev in [(0.06, 0.02), (0.06, -0.01), (-0.06, -0.05), (0.01, 0.05)]:
+        assert recommendation_for_market_edge(edge, ev=ev) == "NO_PLAY"
 
 
 def test_stamp_market_model_version_once():
