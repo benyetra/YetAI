@@ -28,9 +28,9 @@ def test_clear_betting_fields_nulls_market_columns():
 
 def test_generate_recommendation_pass_on_thin_edge():
     rec = generate_betting_recommendation(
-        prediction=85.0, ou_line=80.0, confidence=0.72
+        prediction=104.0, ou_line=80.0, confidence=0.72
     )
-    # mean 6% above the line: skew leaves P(over) near breakeven → PASS
+    # mean 30% above the line puts the median near it: P(over) ~ breakeven → PASS
     assert rec["recommendation"] == "PASS"
 
 

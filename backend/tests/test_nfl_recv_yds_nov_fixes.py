@@ -61,6 +61,50 @@ def test_attach_stores_p_over():
     assert 0 < out["p_over"] < 1
 
 
+def _lines(line, over=-110, under=-110):
+    return {
+        "FD": {
+            "over": {"line": line, "odds": over},
+            "under": {"line": line, "odds": under},
+        }
+    }
+
+
+def test_model_mean_equal_to_line_is_not_an_over():
+    out = attach_recv_betting(
+        model_yards=60.0, confidence_score=0.8, player_lines=_lines(60.0)
+    )
+    assert out["p_over"] < 0.5
+    assert out["betting_recommendation"] != "OVER"
+
+
+def test_published_just_under_line_with_high_model_mean_is_not_auto_under():
+    # model 78 vs line 60: published = 0.25*78 + 0.75*60 = 64.5 (above); use a
+    # line the anchor drags under: model 1.3x line still gives P(over) ~ 0.5+.
+    line = 60.0
+    out = attach_recv_betting(
+        model_yards=line * 1.3,
+        confidence_score=0.8,
+        player_lines=_lines(line),
+        anchor_alpha=0.0,
+    )
+    assert out["predicted_receiving_yards"] <= line  # published at/under the line
+    assert out["p_over"] > 0.5
+    assert out["betting_recommendation"] != "UNDER"
+
+
+def test_board_with_median_at_line_has_no_systematic_side():
+    # Gamma median ~ 0.77 x mean at CV 0.85, so mean = line / 0.77 puts the median on the line.
+    calls = []
+    for line in (25.5, 35.5, 45.5, 55.5, 65.5, 75.5):
+        out = attach_recv_betting(
+            model_yards=line / 0.77, confidence_score=0.8, player_lines=_lines(line)
+        )
+        assert abs(out["p_over"] - 0.5) < 0.05
+        calls.append(out["betting_recommendation"])
+    assert set(calls) == {"PASS"}
+
+
 SCHEDULE = [
     {
         "week": 9,

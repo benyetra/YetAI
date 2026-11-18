@@ -68,7 +68,8 @@ def generate_betting_recommendation(
 ) -> dict[str, Any]:
     """Call a side only when P(that side) beats its price's breakeven.
 
-    ``prediction`` is the mean; P(over) comes from a skewed distribution with
+    ``prediction`` must be the model's own MEAN (not the line-anchored number,
+    which sits near the median): P(over) comes from a skewed distribution with
     that mean (``recv_yds_model.p_over``), so a mean above the line does not
     by itself make an over.
     """
@@ -85,18 +86,10 @@ def generate_betting_recommendation(
     }
     if confidence < MIN_CONFIDENCE:
         return {**out, "reason": f"Low confidence ({confidence:.1%})"}
-    # A side also needs the projection on its side of the line: skew alone
-    # (a placeholder CV) is not enough to call an under on a mean above the line.
     margins = {
         "OVER": prob_over - breakeven_rate(over_odds or DEFAULT_PRICE),
         "UNDER": (1 - prob_over) - breakeven_rate(under_odds or DEFAULT_PRICE),
     }
-    if prediction <= ou_line:
-        del margins["OVER"]
-    if prediction >= ou_line:
-        margins.pop("UNDER", None)
-    if not margins:
-        return {**out, "reason": "Projection equals the line"}
     side = max(margins, key=margins.get)
     margin = margins[side]
     if margin < MIN_PROB_MARGIN:
@@ -136,8 +129,9 @@ def attach_recv_betting(
     )
     if published is None or method is None:
         return None
+    # P(over) uses the raw model mean; the soft-anchored number is display only.
     rec = generate_betting_recommendation(
-        prediction=published,
+        prediction=float(model_yards),
         ou_line=ou_line,
         confidence=float(confidence_score),
         over_odds=best["over"]["odds"],
@@ -153,7 +147,7 @@ def attach_recv_betting(
         "best_over_book": best["over"]["book"],
         "best_under_book": best["under"]["book"],
         "edge": published - ou_line,
-        "edge_percentage": rec["edge_percentage"],
+        "edge_percentage": (published - ou_line) / ou_line * 100,
         "betting_recommendation": rec["recommendation"],
         "bet_size": rec["bet_size"],
         "recommendation_reason": rec["reason"],
