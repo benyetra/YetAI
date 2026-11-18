@@ -19,15 +19,18 @@ NBA_STAT_MARKET = {
 }
 
 
-# Spread of a game result around the market median (points / goals), for the no-vig close
-# of game lines. ponytail: one normal sd per league and market; per-game tails if needed.
-GAME_SD = {
-    ("NBA", "spreads"): 12.0,
-    ("NFL", "spreads"): 13.5,
-    ("NBA", "totals"): 18.0,
-    ("NFL", "totals"): 13.0,
-    ("NHL", "totals"): 2.4,
-}
+# Markets whose spread around the median is not measured (game lines, NFL / NHL props): CLV
+# uses only closing books quoting exactly the quote's own line, never a converted one.
+SAME_LINE_MARKETS = frozenset(
+    {
+        "spreads",
+        "totals",
+        "h2h",
+        "player_pass_yds",
+        "player_reception_yds",
+        "player_total_saves",
+    }
+)
 
 
 class SpreadView:
@@ -51,14 +54,13 @@ def fair_prob_clv(
     taken_rows: Iterable,
     close_rows: Iterable,
     market: str,
-    sd: Optional[float] = None,
 ) -> Optional[float]:
     """No-vig close vs no-vig at pick time: the consensus fair probability of ``side`` at the
     taken ``line`` from the close rows minus the same figure from the pick-time rows (+ = the
     market moved our way). Both come from the same books-wide consensus, so the vig is removed
     identically and a market that did not move scores exactly 0. None without a two-way quote
     on either side."""
-    sd = sd or odds_math.MARKET_SD.get(market, odds_math.DEFAULT_SD)
+    sd = odds_math.MARKET_SD.get(market, odds_math.DEFAULT_SD)
     close = odds_math.consensus_center(to_quotes(close_rows), sd)
     taken = odds_math.consensus_center(to_quotes(taken_rows), sd)
     if close is None or taken is None:
@@ -75,7 +77,6 @@ def clv_vs_close(
     book: Optional[str],
     rows: Iterable,
     market: str,
-    sd: Optional[float] = None,
 ) -> Optional[dict]:
     """CLV of ``side`` ('o'/'u') at ``line``/``price`` vs closing ``rows`` (one observation
     per book). Close = the taken book's own closing line, else the modal closing line.
@@ -97,7 +98,7 @@ def clv_vs_close(
             (r for r in rows if r.line == ml),
             key=lambda r: (r.over_price if side == "o" else r.under_price) or -(10**6),
         )
-    sd = sd or odds_math.MARKET_SD.get(market, odds_math.DEFAULT_SD)
+    sd = odds_math.MARKET_SD.get(market, odds_math.DEFAULT_SD)
     return {
         "row": row,
         "book": row.book,

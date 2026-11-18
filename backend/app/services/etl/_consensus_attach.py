@@ -82,7 +82,10 @@ def nfl_event_id(db, game_date, *team_names) -> Optional[str]:
         return None
     day = game_date.date() if hasattr(game_date, "date") else game_date
     wanted = {t for t in team_names if t}
-    for g in db.query(G).filter(G.game_date == day).all():
+    # Savepoint: on Postgres a failed query would abort the writer's transaction.
+    with db.begin_nested():
+        games = db.query(G).filter(G.game_date == day).all()
+    for g in games:
         if g.home_team_name in wanted or g.away_team_name in wanted:
             return g.odds_api_event_id
     return None

@@ -30,6 +30,8 @@ from app.services.accuracy_shared import (
     ou_call_graded_record,
     ou_row_result,
 )
+from app.services import odds_math
+from app.services.consensus_price import same_line_fair
 from app.services.odds_math import breakeven_rate, median_price, units_for_result
 from app.services.auto_pick import record_gate
 from app.services.auto_pick.candidate import EASTERN
@@ -43,7 +45,7 @@ from app.services.odds_snapshots import (
     snapshot_index,
 )
 from app.services.prop_clv import (
-    GAME_SD,
+    SAME_LINE_MARKETS,
     NBA_STAT_MARKET,
     SpreadView,
     clv_vs_close,
@@ -1391,7 +1393,6 @@ def _clv_for_key(key, rows, idx) -> dict:
     seen at or before the row's projection write time ``at``)."""
     market = _clv_market(key)
     game = key[1] in _CLV_GAME_MARKETS
-    sd = GAME_SD.get((key[0], market))
     view = SpreadView if market == "spreads" else (lambda r: r)
     by_all: dict[tuple, list] = defaultdict(list)
     by_close: dict[tuple, list] = defaultdict(list)
@@ -1411,7 +1412,7 @@ def _clv_for_key(key, rows, idx) -> dict:
         by_close[(d, m, p)].extend(close_of(obs))
         shorts[(d, m, short_player_key(p))].add(p)
     graded = priced = with_close = 0
-    stale = no_at = no_indep = ambiguous = no_quote = no_event = 0
+    stale = no_at = no_indep = ambiguous = no_quote = no_event = no_same = 0
     units = 0.0
     line_clvs, prob_clvs, ev_clvs, minutes = [], [], [], []
     for r in rows:
@@ -1477,8 +1478,33 @@ def _clv_for_key(key, rows, idx) -> dict:
         if close and not usable:
             stale += 1
         side = "o" if pick.strip().lower() in ("over", "o") else "u"
+        if market in SAME_LINE_MARKETS:
+            # Only closing books at exactly the quote's line; no line conversion.
+            p_close = same_line_fair(usable, float(line))
+            if p_close is None:
+                no_same += 1
+                continue
+            if side == "u":
+                p_close = 1 - p_close
+            with_close += 1
+            if price:
+                ev_clvs.append(p_close - odds_math.american_to_prob(price))
+            at = r.get("at")
+            p_taken = same_line_fair(
+                (
+                    rows_at(by_all[(day, market, pk)], at)
+                    if isinstance(at, datetime)
+                    else []
+                ),
+                float(line),
+            )
+            if p_taken is None:
+                no_at += 1
+            else:
+                prob_clvs.append(p_close - (p_taken if side == "o" else 1 - p_taken))
+            continue
         c = (
-            clv_vs_close(side, float(line), price, book, usable, market, sd)
+            clv_vs_close(side, float(line), price, book, usable, market)
             if usable
             else None
         )
@@ -1499,7 +1525,7 @@ def _clv_for_key(key, rows, idx) -> dict:
                 getattr(q, "id", None) for q in usable if q.book == book
             } - {None}:
                 no_indep += 1
-            fp = fair_prob_clv(side, float(line), picked, usable, market, sd)
+            fp = fair_prob_clv(side, float(line), picked, usable, market)
             if fp is not None:
                 prob_clvs.append(fp)
         row = c["row"]
@@ -1527,6 +1553,7 @@ def _clv_for_key(key, rows, idx) -> dict:
         "ambiguous_name": ambiguous,
         "no_best_quote": no_quote,
         "no_event_join": no_event,
+        "no_same_line_close": no_same,
     }
 
 
@@ -2203,6 +2230,7 @@ def render_text(review: dict) -> str:
                 (k["ambiguous_name"], "ambiguous short names not joined"),
                 (k["no_best_quote"], "without a stored best quote"),
                 (k["no_event_join"], "games not joined to an odds event"),
+                (k["no_same_line_close"], "without a closing book at the quote's line"),
             ):
                 if n:
                     prob += f", {n} {what}"
@@ -2212,8 +2240,14 @@ def render_text(review: dict) -> str:
                 else f", close {k['median_minutes_before_start']:.0f} min before start"
             )
             L.append(
-                f"{head}; line CLV mean {k['mean_line_clv']:+.2f} / median "
-                f"{k['median_line_clv']:+.2f}{prob}{mins}, units {k['units']:+.1f} "
+                f"{head}; "
+                + (
+                    ""
+                    if k["mean_line_clv"] is None
+                    else f"line CLV mean {k['mean_line_clv']:+.2f} / median "
+                    f"{k['median_line_clv']:+.2f}"
+                )
+                + f"{prob}{mins}, units {k['units']:+.1f} "
                 f"(priced {k['priced']}/{k['graded']})"
             )
         for k, why in c["unjoined"].items():

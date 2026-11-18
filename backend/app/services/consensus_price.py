@@ -143,6 +143,25 @@ def best_same_line(
     return (best[1], best[2]) if best else None
 
 
+def same_line_fair(
+    rows: Iterable, line: float, min_books: int = MIN_OTHER_BOOKS
+) -> Optional[float]:
+    """Pooled no-vig P(over) from the books quoting EXACTLY ``line`` (de-vigged per book, then
+    blended as in best_same_line); None under ``min_books`` such books. Rows need book, line,
+    over_price, under_price. No other line is ever converted."""
+    rule = flags.default_rule()
+    fair = {}
+    for r in rows:
+        if r.line is None or float(r.line) != float(line):
+            continue
+        if r.book in rule.excluded_books:
+            continue
+        two = devig.two_way(r.over_price, r.under_price, rule.method)
+        if two is not None:
+            fair[r.book] = two[0]
+    return consensus.blend(fair, None) if len(fair) >= min_books else None
+
+
 def best_fields(
     db,
     *,

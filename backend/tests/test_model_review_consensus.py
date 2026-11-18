@@ -147,30 +147,77 @@ def _snap(i, book, home_pt, first, commence, event="ev1"):
     )
 
 
-def test_spread_clv_for_the_quotes_side_and_no_close_is_counted():
-    commence = datetime(2026, 11, 11, 0, 0)
-    at = commence - timedelta(hours=6)
+def _spread_idx(close_pt, commence):
+    """3 books quote home `close_pt` at close (and home -4.5 8h out); ev2 only after start."""
     obs = []
     for n, book in enumerate(("a", "b", "c")):
         obs.append(_snap(n, book, -4.5, commence - timedelta(hours=8), commence))
-        obs.append(_snap(10 + n, book, -5.5, commence - timedelta(hours=1), commence))
-    # event ev2 was only seen after the start: no close
+        obs.append(
+            _snap(10 + n, book, close_pt, commence - timedelta(hours=1), commence)
+        )
     late = [_snap(99, "a", -4.5, commence + timedelta(hours=1), commence, "ev2")]
-    idx = {(D, "spreads", "", "ev1"): obs, (D, "spreads", "", "ev2"): late}
-    # away quote at +4.5 (home -4.5) taken at `at`; the market then moved to home -5.5
-    q = ("a", 4.5, -110)
+    return {(D, "spreads", "", "ev1"): obs, (D, "spreads", "", "ev2"): late}
+
+
+def test_spread_clv_uses_only_same_line_close_and_counts_the_rest():
+    commence = datetime(2026, 11, 11, 0, 0)
+    at = commence - timedelta(hours=6)
+    q = ("a", 4.5, -110)  # away +4.5 (home -4.5)
     rows = [
         _spread(-2, -4.5, -10, q, "away", at=at, event_id="ev1"),
         _spread(-2, -4.5, -10, q, "away", at=at, event_id="ev2"),
     ]
+    # every book moved to home -5.5: nobody closes at -4.5 -> counted, never converted
+    out = ms._clv_for_key(KEY, rows, _spread_idx(-5.5, commence))
+    assert out["graded"] == 2 and out["with_close"] == 0
+    assert out["no_same_line_close"] == 2 and out["mean_prob_clv"] is None
+    # books still at -4.5 at close, now with away shaded to -120 / home -100
+    idx = _spread_idx(-4.5, commence)
+    for o in idx[(D, "spreads", "", "ev1")]:
+        if o.first_seen_at > commence - timedelta(hours=2):
+            o.home_price, o.away_price = 100, -120
     out = ms._clv_for_key(KEY, rows, idx)
-    assert (out["graded"], out["with_close"]) == (2, 1)
-    # under the home margin at 4.5: P(under | center 5.5) - P(under | center 4.5)
-    want = NormalDist().cdf((4.5 - 5.5) / 12.0) - 0.5
-    assert out["mean_prob_clv"] == pytest.approx(want, abs=1e-4)
-    assert out["mean_line_clv"] == pytest.approx(-1.0)  # under: taken 4.5, closed 5.5
+    assert (out["with_close"], out["no_same_line_close"]) == (1, 1)
+    from app.services.fair_price import devig
+
+    home_close = devig.two_way(100, -120)[
+        0
+    ]  # all three books identical -> pooled = same
+    # away close fair minus the 50/50 pick-time market
+    assert out["mean_prob_clv"] == pytest.approx(1 - home_close - 0.5, abs=1e-4)
 
 
 def test_game_rows_without_best_quote_are_not_graded_for_clv():
     out = ms._clv_for_key(KEY, [_spread(-2, -4.5, -10)], {})
     assert out["graded"] == 0 and out["no_best_quote"] == 1
+
+
+def test_failed_event_lookup_does_not_poison_the_writers_commit(
+    sqlite_db,
+):  # noqa: F811
+    from unittest.mock import patch
+
+    from app.models.predictions_models import NFLGameLines
+    from app.services.etl import _consensus_attach as ca
+
+    db = sqlite_db
+    db.add(NBAGameLines(game_date=D, home_team_name="H", away_team_name="A"))
+    db.commit()
+    entered = []
+    real = db.begin_nested
+
+    def spy():
+        entered.append(1)
+        return real()
+
+    with (
+        patch.object(db, "begin_nested", spy),
+        patch.object(db, "query", side_effect=RuntimeError("boom")),
+    ):
+        with pytest.raises(RuntimeError):
+            ca.nfl_event_id(db, D, "H")
+    # the query ran inside a savepoint (rolled back on error), so the session still commits
+    assert entered
+    db.add(NFLGameLines(game_date=D, home_team_name="X", away_team_name="Y"))
+    db.commit()
+    assert db.query(NFLGameLines).count() == 1
