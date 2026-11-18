@@ -38,6 +38,11 @@ def test_in_season_run_still_writes(monkeypatch):
     assert len(_run_with_next_game(monkeypatch, soon)) == 1
 
 
+def test_unreadable_kickoff_writes_no_row(monkeypatch):
+    monkeypatch.setattr(kickers, "event_kickoff_eastern", lambda _e: None)
+    assert _run_with_next_game(monkeypatch, datetime.utcnow()) == []
+
+
 def test_kicker_rows_carry_no_call_side():
     # Projection rows hold numbers only: nothing for a pick, side or line.
     for model in (Kickers, KickerPredictions):

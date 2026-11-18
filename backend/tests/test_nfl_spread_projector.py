@@ -56,3 +56,26 @@ def test_spread_no_play_within_threshold():
         **TRUSTED,
     )
     assert row["recommendation"] == "NO_PLAY"
+
+
+def test_game_with_no_time_is_started_from_0930_et_on_its_game_day():
+    from datetime import date, datetime
+    from types import SimpleNamespace
+
+    from app.services.etl.nfl.spread_projector import unstarted_games
+
+    sunday = SimpleNamespace(game_time=None, game_date=date(2026, 11, 15))
+    tomorrow = SimpleNamespace(game_time=None, game_date=date(2026, 11, 16))
+    timed = SimpleNamespace(
+        game_time=datetime(2026, 11, 15, 22, 0), game_date=date(2026, 11, 15)
+    )
+    # 14:30 UTC = 09:30 ET on Sunday 11-15
+    assert unstarted_games([sunday, tomorrow], now=datetime(2026, 11, 15, 14, 29)) == [
+        sunday,
+        tomorrow,
+    ]
+    assert unstarted_games([sunday, tomorrow], now=datetime(2026, 11, 15, 14, 30)) == [
+        tomorrow
+    ]
+    # a game with its own kickoff time keeps using it (22:00 UTC not reached)
+    assert unstarted_games([timed], now=datetime(2026, 11, 15, 18, 0)) == [timed]

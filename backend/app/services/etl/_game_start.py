@@ -9,7 +9,7 @@ no market right now is not a reason to drop the line we already had.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
 
@@ -23,6 +23,7 @@ def has_started(
     game_date: date | None = None,
     now: datetime | None = None,
     naive_tz=UTC,
+    day_start: time | None = None,
 ) -> bool:
     """True once a game's start has passed.
 
@@ -32,6 +33,8 @@ def has_started(
     day: an unknown start keeps today's pre-game board fresh but never lets a
     game on a past ET date be rewritten. Nothing known -> False.
     ``now`` is aware, or naive in ``naive_tz``; default is the current time.
+    ``day_start`` (an Eastern time of day): with no known start, a game dated
+    today also counts as started from then, not only from the next day.
     """
     current = now if now is not None else datetime.now(UTC)
     if current.tzinfo is None:
@@ -45,7 +48,10 @@ def has_started(
         day = day.date()
     if day is None:
         return False
-    return day < current.astimezone(EASTERN).date()
+    current_et = current.astimezone(EASTERN)
+    if day == current_et.date() and start is None and day_start is not None:
+        return current_et.time() >= day_start
+    return day < current_et.date()
 
 
 def keep_known(row: Any, values: dict[str, Any]) -> None:
@@ -61,13 +67,20 @@ def keep_known(row: Any, values: dict[str, Any]) -> None:
 
 
 def not_started(
-    items: Iterable[Any], start_of, *, now: datetime | None = None, naive_tz=UTC
+    items: Iterable[Any],
+    start_of,
+    *,
+    now: datetime | None = None,
+    naive_tz=UTC,
+    day_start: time | None = None,
 ) -> list[Any]:
     """``items`` whose game has not started; ``start_of(item)`` returns
     ``(start, game_date)``."""
     kept = []
     for item in items:
         start, game_day = start_of(item)
-        if not has_started(start, game_date=game_day, now=now, naive_tz=naive_tz):
+        if not has_started(
+            start, game_date=game_day, now=now, naive_tz=naive_tz, day_start=day_start
+        ):
             kept.append(item)
     return kept

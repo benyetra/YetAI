@@ -18,6 +18,7 @@ from app.services.etl.nfl.nfl_common import (
     has_kicked_off,
     now_eastern_naive,
     resolve_nfl_season,
+    started_by_date,
 )
 from app.services.etl.wnba._db_upsert import upsert_many
 
@@ -156,26 +157,50 @@ def build_upsert_row(
     }
 
 
-def _row_kickoff(game_date: Any, features: Any) -> datetime | date | None:
+def _row_kickoff(features: Any) -> datetime | None:
     """Kickoff stored in ``features['kickoff']`` (naive Eastern ISO string or
-    datetime), else the bare game date (counts as started the next day)."""
+    datetime), else None."""
     raw = (features or {}).get("kickoff")
     if isinstance(raw, str):
         try:
             raw = datetime.fromisoformat(raw)
         except ValueError:
             raw = None
-    if isinstance(raw, datetime):
-        return raw
-    if isinstance(game_date, datetime):
-        return game_date.date()
-    return game_date if isinstance(game_date, date) else None
+    return raw if isinstance(raw, datetime) else None
 
 
-def _is_played(game_date: Any, features: Any, now: datetime) -> bool:
-    """True once this row's game has kicked off (Eastern). Unknown kickoff on
-    a past date stays frozen; unknown everything is not played."""
-    return has_kicked_off(_row_kickoff(game_date, features), now=now)
+def _is_played(
+    game_date: Any, features: Any, now: datetime, stored_features: Any = None
+) -> bool:
+    """True once this row's game has kicked off (Eastern).
+
+    Frozen if EITHER the row's own or the already stored row's kickoff has
+    passed (a later run whose schedule lost ``gametime`` must not unfreeze).
+    With no kickoff known at all, fall back on the date: past dates stay
+    frozen, today's game counts as started from the earliest NFL kickoff.
+    """
+    kickoffs = [k for k in map(_row_kickoff, (features, stored_features)) if k]
+    if kickoffs:
+        return any(has_kicked_off(k, now=now) for k in kickoffs)
+    return started_by_date(game_date, now)
+
+
+def _stored_features(season: int, week: int, player_ids: Iterable[str]) -> dict:
+    """player_id -> stored features, for rows already written this week."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(NFLAnytimeTDPredictions)
+            .filter(
+                NFLAnytimeTDPredictions.season == season,
+                NFLAnytimeTDPredictions.week == week,
+                NFLAnytimeTDPredictions.player_id.in_(list(player_ids)),
+            )
+            .all()
+        )
+        return {str(r.player_id): r.features for r in rows}
+    finally:
+        db.close()
 
 
 def delete_stale_week_predictions(
@@ -302,8 +327,23 @@ def run(
     now_et = now_eastern_naive()
     today = now_et.date()
 
+    stored = (
+        _stored_features(
+            resolved_season,
+            resolved_week,
+            [r["player_id"] for r in upsert_rows if r.get("player_id")],
+        )
+        if freeze_played
+        else {}
+    )
+
     def played(r: dict[str, Any]) -> bool:
-        return _is_played(r.get("game_date"), r.get("features"), now_et)
+        return _is_played(
+            r.get("game_date"),
+            r.get("features"),
+            now_et,
+            stored.get(str(r.get("player_id"))),
+        )
 
     frozen = [r for r in upsert_rows if played(r)] if freeze_played else []
     if frozen:

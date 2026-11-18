@@ -99,7 +99,37 @@ def test_betting_refresh_skips_started_game():
 
 def test_unknown_kickoff_on_past_date_stays_frozen():
     assert proj._is_played(date(2026, 11, 14), {}, NOW)
-    assert not proj._is_played(SUNDAY, {}, NOW)
+
+
+def test_unknown_kickoff_today_is_started_from_0930_et():
+    assert not proj._is_played(SUNDAY, {}, datetime(2026, 11, 15, 9, 29))
+    assert proj._is_played(SUNDAY, {}, datetime(2026, 11, 15, 9, 30))
+    assert not proj._is_played(date(2026, 11, 16), {}, NOW)  # tomorrow
+
+
+def test_stored_row_kickoff_freezes_a_new_row_without_one():
+    stored = {"kickoff": datetime(2026, 11, 15, 13, 0).isoformat()}
+    assert proj._is_played(SUNDAY, {}, NOW, stored)
+    later = {"kickoff": datetime(2026, 11, 15, 16, 25).isoformat()}
+    assert not proj._is_played(SUNDAY, {}, NOW, later)
+    # the new row's own kickoff counts too
+    assert proj._is_played(SUNDAY, stored, NOW, later)
+
+
+def test_run_keeps_stored_started_row_when_new_row_lost_its_kickoff():
+    row = {**_feat("early", 13, 0), "kickoff": None}
+    stored = {"early": {"kickoff": datetime(2026, 11, 15, 13, 0).isoformat()}}
+    with (
+        patch.object(proj, "SessionLocal", return_value=MagicMock()),
+        patch.object(proj, "_try_build_feature_rows", return_value=[row]),
+        patch.object(proj, "_stored_features", return_value=stored),
+        patch.object(proj, "now_eastern_naive", return_value=NOW),
+        patch.object(proj, "upsert_many") as um,
+        patch.object(proj, "delete_stale_week_predictions", return_value=0),
+    ):
+        result = proj.run(season=2026)
+    assert result["frozen_played"] == 1
+    um.assert_not_called()
 
 
 def test_kickoff_parsed_from_gametime():

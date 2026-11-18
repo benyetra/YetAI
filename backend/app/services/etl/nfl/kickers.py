@@ -919,11 +919,12 @@ def _run_kickers_core():
                         and len(schedule["events"]) > 0
                     ):
                         next_game = schedule["events"][0]
-                        # Real kickoff (Eastern). "Tomorrow" is only the
-                        # fallback when ESPN's date cannot be read.
-                        game_time = event_kickoff_eastern(
-                            next_game
-                        ) or datetime.now() + timedelta(days=1)
+                        # Real kickoff (Eastern); with no readable date there
+                        # is no game to write a row for.
+                        game_time = event_kickoff_eastern(next_game)
+                        if game_time is None:
+                            print(f"⏭️ {kicker.get('name')}: no kickoff time, no row")
+                            continue
                         if not in_slate_window(game_time):
                             print(
                                 f"⏭️ {kicker.get('name')}: next game {game_time} is "

@@ -36,7 +36,11 @@ from app.services.etl.nba.market_anchor import NO_ANCHOR, Anchor, anchored, fit_
 from app.services.etl.nba.spread_projector import spread_pick_record
 from app.services.etl.nba.totals_baseline import recommend
 from app.services.etl.nfl._team_ppg import compute_team_ppg_stats, team_ppg_for
-from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
+from app.services.etl.nfl.nfl_common import (
+    EARLIEST_KICKOFF_ET,
+    get_current_nfl_week,
+    get_nfl_season,
+)
 from app.services.etl.nfl.qb_spread_adjustment import (
     qb_out_map_from_rows,
     qb_out_margin_adjustment,
@@ -147,9 +151,16 @@ def apply_qb_out_for_game(
 def unstarted_games(games: list, *, now: datetime | None = None) -> list:
     """Drop games whose kickoff has passed: their row and line stay as users saw them.
 
-    ``game_time`` is naive UTC (written from the Odds API commence_time).
+    ``game_time`` is naive UTC (written from the Odds API commence_time). A game
+    with no ``game_time`` counts as started from the earliest NFL kickoff on its
+    own ET game date, not only from the next day.
     """
-    return not_started(games, lambda g: (g.game_time, g.game_date), now=now)
+    return not_started(
+        games,
+        lambda g: (g.game_time, g.game_date),
+        now=now,
+        day_start=EARLIEST_KICKOFF_ET,
+    )
 
 
 def _load_qb_out_by_team(
