@@ -74,7 +74,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           ARGS=(--stat "${{ inputs.stat }}" --start "${{ inputs.start }}" --end "${{ inputs.end }}")
           if [ "${{ inputs.upload }}" = "true" ]; then
@@ -86,4 +86,12 @@ jobs:
           if [ "${{ inputs.cache }}" = "true" ]; then
             ARGS+=(--cache)
           fi
-          python3 -m app.services.etl.nba.ml_training "${ARGS[@]}"
+          scripts/retrain_step.sh "${{ inputs.stat }}" python3 -m app.services.etl.nba.ml_training "${ARGS[@]}"
+
+      - name: Upload summary row
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrain-summary-${{ inputs.stat }}
+          path: backend/summary-${{ inputs.stat }}.json
+          if-no-files-found: ignore
