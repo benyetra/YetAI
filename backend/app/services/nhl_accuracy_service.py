@@ -48,6 +48,13 @@ def _parse_pick(recommendation: Optional[str]) -> Optional[str]:
     return None
 
 
+def _pick_price(row: Any, pick: Optional[str]) -> Optional[int]:
+    """The stored American price of the side ``pick`` names (over_odds / under_odds)."""
+    if pick not in ("over", "under"):
+        return None
+    return getattr(row, f"{pick}_odds", None)
+
+
 def _preseason(*rows: Any) -> bool:
     """NHL game ids are YYYY TT NNNN; type 01 is preseason. True if any row's is."""
     ids = [getattr(r, "game_id", None) for r in rows]
@@ -104,6 +111,7 @@ def _nhl_rows(
                 "betting_pick": (
                     None if scratched else _parse_pick(p.betting_recommendation)
                 ),
+                "pick_price": _pick_price(p, _parse_pick(p.betting_recommendation)),
                 "scratched": scratched,
                 "actual_saves": None if scratched else (a.actual_saves if a else None),
                 "actual_expected": p.game_date in goalie_dates,
@@ -153,6 +161,7 @@ def _nhl_rows(
                 "predicted_total_goals": p.predicted_total_goals,
                 "draftkings_ou_line": p.draftkings_ou_line,
                 "betting_pick": _parse_pick(p.betting_recommendation),
+                "pick_price": _pick_price(p, _parse_pick(p.betting_recommendation)),
                 "actual_total_goals": a.actual_total_goals if a else None,
                 "actual_home_goals": a.actual_home_goals if a else None,
                 "actual_away_goals": a.actual_away_goals if a else None,

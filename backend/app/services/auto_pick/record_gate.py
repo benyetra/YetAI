@@ -10,8 +10,9 @@ real stored prices (nothing is ever valued at an assumed -110):
   would have considered, graded at that best line and price. Withheld candidates that pass
   the hard gates are exactly these rows, graded by the normal actuals ETL; nothing is
   written anywhere for them, so nothing can reach a user. Loaders whose rows carry no
-  stored price (NHL, NFL, NBA totals and spread) cannot be valued: their graded calls are
-  kept as ``unpriced_n`` for display and count toward nothing.
+  stored price (NFL, NHL shots, NBA totals and spread) cannot be valued: their graded calls
+  are kept as ``unpriced_n`` for display and count toward nothing. NHL saves and totals
+  are valued at the stored odds of the picked side where the row has them.
 - bet record: graded AUTO YetAIBet rows of the current ``ev.SELECTION_VERSION`` (a new
   selection version starts a new record), units at the stored odds. Added only for keys
   with no projection loader result: where a shadow record exists the bets are a subset of
@@ -285,11 +286,13 @@ def load_bet_records(
 #   price: unpriced.
 # - NFL spread, NFL total, NFL passing/receiving, NHL saves/shots/total: rows are the
 #   stored recommendation/pick (NO_PLAY and pushes excluded), current model version only.
-#   The row dicts carry no price (NHL tables store over/under odds, but the merged rows
-#   drop them): unpriced.
+#   NFL rows and NHL shots carry no price: unpriced. NHL saves and totals rows carry the
+#   stored over/under odds of the picked side (``pick_price``): those calls are priced,
+#   the ones without odds are unpriced. NHL still cannot be picked (no consensus price).
 # Projection loaders: name -> fn(db, start, end) -> {key: (hits, graded, units, version)};
 # dates inclusive. ``units`` (at stored prices) is None when the rows carry no price: those
-# calls are unpriced and count toward nothing. A bare (hits, graded) is also accepted.
+# calls are unpriced and count toward nothing. Optional 5th/6th elements: distinct graded
+# slate dates and graded calls left unpriced. A bare (hits, graded) is also accepted.
 ProjectionLoader = Callable[[Session, date, date], dict[RecordKey, tuple]]
 
 # part -> (stat, actual field, projected field)
@@ -429,6 +432,35 @@ def _unpriced(rows, version, **fields):
     return (hits, n, None, version)
 
 
+def _graded_dates(rows, *, date_field, line_field, pick_field, actual_field) -> int:
+    return len(
+        {
+            r.get(date_field)
+            for r in rows
+            if ou_row_result(
+                line=r.get(line_field),
+                pick=(r.get(pick_field) or "").strip().lower(),
+                actual=r.get(actual_field),
+            )
+            in ("hit", "miss")
+        }
+    )
+
+
+def _priced_calls(rows, version, *, price_field, date_field, **fields):
+    """Record of the rows with a stored price for their side, valued at that price; the
+    rest are counted as unpriced (6th element) and never valued at an assumed price."""
+    priced = [r for r in rows if r.get(price_field) is not None]
+    if not priced:
+        return _unpriced(rows, version, **fields)
+    hits, n, units, _ = ou_call_graded_record(priced, price_field=price_field, **fields)
+    _, unpriced_n = ou_call_graded_counts(
+        [r for r in rows if r.get(price_field) is None], **fields
+    )
+    dates = _graded_dates(priced, date_field=date_field, **fields)
+    return (hits, n, units, version, dates, unpriced_n)
+
+
 def _nhl(db, start, end):
     from app.services.nhl_accuracy_service import _nhl_rows
 
@@ -441,9 +473,11 @@ def _nhl(db, start, end):
         ]
         versions[part], sets[part] = current_version_rows(rows, "game_date")
     return {
-        ("NHL", "player_prop", "saves"): _unpriced(
+        ("NHL", "player_prop", "saves"): _priced_calls(
             sets["goalie"],
             versions["goalie"],
+            price_field="pick_price",
+            date_field="game_date",
             line_field="saves_line",
             pick_field="betting_pick",
             actual_field="actual_saves",
@@ -455,9 +489,11 @@ def _nhl(db, start, end):
             pick_field="betting_pick",
             actual_field="actual_shots",
         ),
-        ("NHL", "total", None): _unpriced(
+        ("NHL", "total", None): _priced_calls(
             sets["team_totals"],
             versions["team_totals"],
+            price_field="pick_price",
+            date_field="game_date",
             line_field="draftkings_ou_line",
             pick_field="betting_pick",
             actual_field="actual_total_goals",
@@ -616,14 +652,14 @@ def load_records(
     projs = load_projection_records(db, now, loaders)
     out = {}
     for key, (hits, n, *rest) in projs.items():
-        units, version, dates = (*rest, None, None, 0)[:3]
+        units, version, dates, more_unpriced = (*rest, *(None, None, 0, 0)[len(rest) :])
         priced = units is not None
         out[key] = combine(
             key,
             proj_hits=hits if priced else 0,
             proj_n=n if priced else 0,
             proj_units=units,
-            unpriced_n=0 if priced else n,
+            unpriced_n=more_unpriced if priced else n,
             version=version,
             dates=dates if priced else 0,
         )
