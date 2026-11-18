@@ -214,6 +214,10 @@ holdout rows that have a real stored line:
 3. **Better than the live model by more than noise**, on the same lined rows:
    gain >= max(0.5% of the champion's MAE, 1.645 x the bootstrap SE of the gain,
    resampling whole game dates). Otherwise `rejected_by_champion` (`gain_below_noise`).
+   A live model that cannot be scored on 50+ of those rows is not beaten
+   (`champion_not_comparable`); only the residual models, whose champion saw most of the
+   holdout, fall back to the line gate there. A live model whose metadata is missing is
+   an error (red), not a pass.
    Rebounds on 2026-11-16 (+0.00016 MAE, 2.034 vs line 1.959) now fails on step 2.
 
 Lines come from `etl/nba/residual/dataset.load_lines` for points, rebounds, assists,
