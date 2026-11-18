@@ -139,14 +139,16 @@ def _board_payload():
 
 def test_board_strips_pick_labels_for_markets_without_record(sqlite_db):
     out = api._withhold_unproven_picks(
-        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
+        _board_payload(), sqlite_db, api._BOARD_MARKETS["nhl"]
     )
     for group in ("goalie_predictions", "player_shots", "team_totals"):
         (row,) = out[group]
-        assert row["betting_recommendation"] is None
+        assert row.get("betting_recommendation") is None
         assert row["recommendation"] is None
-        assert row["value_tier"] is None
-        assert row["pick_withheld"] == "unproven_record"
+        assert row.get("value_tier") is None
+        # Shots have no gate key at all: withheld as never measured.
+        want = "no_record_check" if group == "player_shots" else "unproven_record"
+        assert row["pick_withheld"] == want
         assert row["id"]  # the projection row itself stays
 
 
@@ -154,7 +156,7 @@ def test_board_keeps_pick_labels_once_the_record_qualifies(sqlite_db):
     yesterday = (datetime.utcnow() - timedelta(days=2)).date()
     _seed_totals(sqlite_db, 60, 36, yesterday)
     out = api._withhold_unproven_picks(
-        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
+        _board_payload(), sqlite_db, api._BOARD_MARKETS["nhl"]
     )
     assert out["team_totals"][0]["betting_recommendation"] == "OVER 5.5"
     assert "pick_withheld" not in out["team_totals"][0]
@@ -171,7 +173,7 @@ def test_pre_repair_rows_do_not_count_toward_the_record(sqlite_db):
         "heuristic-v1",
     )
     out = api._withhold_unproven_picks(
-        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
+        _board_payload(), sqlite_db, api._BOARD_MARKETS["nhl"]
     )
     assert out["team_totals"][0]["pick_withheld"] == "unproven_record"
 
@@ -179,7 +181,7 @@ def test_pre_repair_rows_do_not_count_toward_the_record(sqlite_db):
 def test_board_strips_when_the_record_is_losing(sqlite_db):
     _seed_totals(sqlite_db, 60, 20, (datetime.utcnow() - timedelta(days=2)).date())
     out = api._withhold_unproven_picks(
-        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
+        _board_payload(), sqlite_db, api._BOARD_MARKETS["nhl"]
     )
     assert out["team_totals"][0]["betting_recommendation"] is None
     assert out["team_totals"][0]["pick_withheld"] == "losing_record"
@@ -193,7 +195,7 @@ def test_board_withholds_every_label_when_the_record_cannot_load(
 
     monkeypatch.setattr(rg, "load_records", boom)
     out = api._withhold_unproven_picks(
-        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
+        _board_payload(), sqlite_db, api._BOARD_MARKETS["nhl"]
     )
     assert out["team_totals"][0]["pick_withheld"] == "record_unavailable"
     assert out["team_totals"][0]["betting_recommendation"] is None
@@ -236,14 +238,10 @@ def test_nba_board_strips_labels_for_new_steals_and_blocks_lines(sqlite_db):
         "points": [{"id": 3, "recommendation": "OVER", "fanduel_over_under": "o"}],
     }
     out = api._withhold_unproven_picks(
-        payload,
-        sqlite_db,
-        api._NBA_NEW_MARKET_KEYS,
-        loaders=("nba_props",),
-        no_pick=api._NBA_NO_PICK,
+        payload, sqlite_db, api._BOARD_MARKETS["nba"], loaders=("nba_props",)
     )
-    for group in ("steals", "blocks"):
+    for group, why in (("steals", "unproven_record"), ("blocks", "no_record_check")):
         row = out[group][0]
         assert row["recommendation"] is None and row["fanduel_over_under"] is None
-        assert row["pick_withheld"] == "unproven_record"
+        assert row["pick_withheld"] == why
     assert out["points"][0]["recommendation"] == "OVER"  # not a new market: untouched
