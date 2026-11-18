@@ -153,10 +153,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*/10"),
         "options": {"expires": 540},
     },
-    # Before the 17:30 auto-pick: refreshed NHL starters + saves lines (goalies only).
+    # NHL pregame refresh (starters, saves/shots/totals lines) every 2 hours at :45, ET.
+    # Each run refreshes only unstarted games starting within 3h15m (PREGAME_WINDOW), so
+    # matinees get a 10:45 run and 19:00+ games still get 16:45 before the 17:30 auto pick.
     "nhl-pregame-refresh": {
         "task": "app.tasks.etl_pipeline.run_nhl_pregame_refresh",
-        "schedule": crontab(hour=16, minute=45),  # ET (celery tz)
+        "schedule": crontab(hour="10,12,14,16,18,20", minute=45),  # ET (celery tz)
         "options": {"expires": 3600},
     },
     "nba-spreads-accuracy-morning": {
