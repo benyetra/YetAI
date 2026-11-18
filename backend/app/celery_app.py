@@ -120,6 +120,14 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=[12, 17], minute=0),  # ET (celery tz)
         "options": {"expires": 7200},
     },
+    # Lineups are due 30 minutes before a 19:00 ET tip, so this re-run picks up late
+    # scratches. Games that have started are skipped by active_players_not_started.
+    # Respects NBA_PREGAME_REFRESH_ENABLED; spends Odds API credits like the others.
+    "nba-pregame-refresh-late": {
+        "task": "app.tasks.etl_pipeline.run_nba_pregame_refresh",
+        "schedule": crontab(hour=18, minute=30),  # ET (celery tz)
+        "options": {"expires": 3600},
+    },
     # Closing prop lines: one call per NBA event in the ~25 min before tip-off. Runs that
     # find no event in the window cost nothing (the events list is free), so the window
     # also covers weekend afternoon tips.

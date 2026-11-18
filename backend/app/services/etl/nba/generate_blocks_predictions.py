@@ -27,7 +27,7 @@ from app.services.etl.nba._stale_rows import (
 )
 from app.services.etl.nba import _last10
 from app.services.etl.nba._feature_engineering import build_features
-from app.services.etl.nba._ml_predict import predict
+from app.services.etl.nba._ml_predict import features_version, predict
 from app.services.ml_model_version import resolve_nba_prop_model_version
 
 logger = logging.getLogger(__name__)
@@ -104,6 +104,7 @@ def run() -> dict:
                         game_date=today,
                         opponent_team_id=player.opponent_team_id,
                         stat_col=STAT,
+                        version=features_version(STAT),
                     )
                     if features is None:
                         skipped_insufficient += 1

@@ -44,6 +44,7 @@ def run() -> dict:
         }
 
     team_ids, matchups = build_matchups(games)
+    home_team_ids = {g["home_team_id"] for g in games}
 
     db = SessionLocal()
     try:
@@ -79,6 +80,7 @@ def run() -> dict:
                     opponent_team_id=opponent_team_id,
                     opponent_team_name=NBA_TEAM_NAMES.get(opponent_team_id, "Unknown"),
                     game_date=today,
+                    is_home_game=team_id in home_team_ids,
                 )
             )
 

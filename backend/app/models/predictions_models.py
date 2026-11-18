@@ -1268,6 +1268,7 @@ class PointsProjections(Base):
     best_quoted_at = Column(
         DateTime, nullable=True
     )  # naive UTC, when best_* was quoted
+    low_sample = Column(Boolean, nullable=True)  # < 5 current-season games
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1307,6 +1308,7 @@ class ThreePointProjections(Base):
     best_quoted_at = Column(
         DateTime, nullable=True
     )  # naive UTC, when best_* was quoted
+    low_sample = Column(Boolean, nullable=True)  # < 5 current-season games
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1454,6 +1456,7 @@ class StealsProjections(Base):
     best_quoted_at = Column(
         DateTime, nullable=True
     )  # naive UTC, when best_* was quoted
+    low_sample = Column(Boolean, nullable=True)  # < 5 current-season games
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1534,6 +1537,7 @@ class AssistsProjections(Base):
     best_quoted_at = Column(
         DateTime, nullable=True
     )  # naive UTC, when best_* was quoted
+    low_sample = Column(Boolean, nullable=True)  # < 5 current-season games
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1576,6 +1580,7 @@ class ReboundsProjections(Base):
     best_quoted_at = Column(
         DateTime, nullable=True
     )  # naive UTC, when best_* was quoted
+    low_sample = Column(Boolean, nullable=True)  # < 5 current-season games
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator

@@ -145,6 +145,25 @@ def get_holdout_mae(stat: str) -> float | None:
     return None
 
 
+# A feature only version 4 builds: a model listing it needs the v4 vector even
+# if an upload path dropped `features_version` from its metadata.
+_V4_MARKER = "team_out_min_share"
+
+
+def features_version(stat: str) -> int:
+    """Feature version the model was trained on: metadata `features_version`,
+    else 4 when its feature list has a v4-only feature, else 3."""
+    meta = get_metadata(stat)
+    try:
+        return int(meta["features_version"])
+    except (KeyError, TypeError, ValueError):
+        pass
+    if _V4_MARKER in (meta.get("feature_names") or meta.get("features") or []):
+        logger.warning("NBA %s model metadata lacks features_version; using 4", stat)
+        return 4
+    return 3
+
+
 def get_model_version(stat: str) -> str | None:
     """Manifest version (written by the gated upload), else metadata JSON's."""
     _, meta = _ensure_loaded(stat)
