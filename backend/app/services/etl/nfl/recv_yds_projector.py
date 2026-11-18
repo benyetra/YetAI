@@ -76,6 +76,7 @@ def project_lined_players(
         if attached is None:
             stats["skipped_no_publish"] += 1
             continue
+        p_over = attached.pop("p_over", None)
         payload = {
             "season": feat["season"],
             "week": feat["week"],
@@ -85,7 +86,7 @@ def project_lined_players(
             "position": feat["position"],
             "team_name": feat["team_name"],
             "opponent_team_name": feat["opponent_team_name"],
-            "features": feat.get("features"),
+            "features": {**(feat.get("features") or {}), "p_over": p_over},
             "model_version": feat.get("model_version"),
             **attached,
         }

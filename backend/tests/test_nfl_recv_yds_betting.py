@@ -28,17 +28,17 @@ def test_clear_betting_fields_nulls_market_columns():
 
 def test_generate_recommendation_pass_on_thin_edge():
     rec = generate_betting_recommendation(
-        prediction=85.0, ou_line=80.0, confidence=0.72
+        prediction=104.0, ou_line=80.0, confidence=0.72
     )
-    # edge = 5 yards → 6.25% < 7% → PASS
+    # mean 30% above the line puts the median near it: P(over) ~ breakeven → PASS
     assert rec["recommendation"] == "PASS"
 
 
 def test_generate_recommendation_over_on_strong_edge():
     rec = generate_betting_recommendation(
-        prediction=92.0, ou_line=80.0, confidence=0.80
+        prediction=160.0, ou_line=80.0, confidence=0.80
     )
-    # 15% edge → OVER LARGE
+    # mean far above the line: P(over) clears the breakeven by a wide margin
     assert rec["recommendation"] == "OVER"
     assert rec["bet_size"] == "LARGE"
 

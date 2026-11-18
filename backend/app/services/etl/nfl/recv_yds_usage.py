@@ -375,21 +375,58 @@ def schedule_by_team_for_week(
     return out
 
 
-def load_schedule_by_team(season: int, week: int) -> dict[str, dict[str, Any]] | None:
-    """This week's matchups from nflverse, or None when the schedule is down."""
+def open_slate_week(
+    schedule_rows: Iterable[dict[str, Any]],
+    *,
+    week: int,
+    now: datetime | None = None,
+) -> int:
+    """The week the lines on offer are for: ``week`` while any of its games is
+    still to kick off, else the next week that has one.
+
+    The calendar week rolls on Thursday, so Monday-Wednesday it still names
+    the week just played, while the sportsbooks already post the next slate.
+    Labelling those rows with the calendar week graded them against games
+    played before the line existed.
+    """
+    rows = list(schedule_rows)
+    weeks = sorted({int(_num(g.get("week")) or 0) for g in rows} - {0})
+    for wk in weeks:
+        if wk >= week and schedule_by_team_for_week(rows, week=wk, now=now):
+            return wk
+    return week
+
+
+def load_schedule_rows(season: int) -> list[dict[str, Any]] | None:
+    """nflverse schedule rows, or None when the schedule is down."""
     try:
         import nfl_data_py as nfl
 
-        frame = nfl.import_schedules([int(season)])
-        return schedule_by_team_for_week(frame.to_dict(orient="records"), week=week)
+        return nfl.import_schedules([int(season)]).to_dict(orient="records")
     except Exception:
         return None
 
 
+def load_schedule_by_team(season: int, week: int) -> dict[str, dict[str, Any]] | None:
+    """This week's matchups from nflverse, or None when the schedule is down."""
+    rows = load_schedule_rows(season)
+    return None if rows is None else schedule_by_team_for_week(rows, week=week)
+
+
 def load_usage_priors_for_names(player_names: list[str]) -> list[dict[str, Any]]:
-    """Return skill-position usage dicts for soft-name matches in ``player_names``."""
+    """Return skill-position usage dicts for soft-name matches in ``player_names``.
+
+    Rows are labelled with the week and date of the game the line is for,
+    from the schedule (not the run date's calendar week).
+    """
     season = int(get_nfl_season())
     week = int(get_current_nfl_week())
+    schedule_rows = load_schedule_rows(season)
+    if schedule_rows is not None:
+        week = open_slate_week(schedule_rows, week=week)
+        schedule = schedule_by_team_for_week(schedule_rows, week=week)
+    else:
+        schedule = None
     weekly = load_weekly_receiver_rows(season)
     return select_usage_priors_for_names(
         player_names,
@@ -397,5 +434,5 @@ def load_usage_priors_for_names(player_names: list[str]) -> list[dict[str, Any]]
         season=season,
         week=week,
         game_date=date.today().isoformat(),
-        schedule_by_team=load_schedule_by_team(season, week),
+        schedule_by_team=schedule,
     )
