@@ -116,3 +116,24 @@ def test_short_label_joins_full_snapshot_name_but_ambiguous_does_not():
         assert (r["with_close"], r["ambiguous_name"]) == (0, 1)
     finally:
         ms._CLV_MARKETS[key] = "player_total_saves"
+
+
+def test_clv_units_use_the_called_sides_real_price_and_skip_unpriced_rows():
+    key = ("NHL", "player_prop", "saves")
+
+    def row(over, under, actual):
+        return ms._row(
+            27.0,
+            25.5,
+            actual,
+            "over",
+            ("t", DAY.isoformat(), "x"),
+            "C. Goalie",
+            over_price=over,
+            under_price=under,
+        )
+
+    rows = [row(-120, 100, 30.0), row(None, None, 30.0)]  # both hit; one has no price
+    r = ms._clv_for_key(key, rows, {})
+    assert r["priced"] == 1 and r["graded"] == 2
+    assert r["units"] == round(100 / 120, 2)  # the -120 hit only; no -110 guess

@@ -1238,11 +1238,16 @@ def _clv_for_key(key, rows, idx) -> dict:
             continue
         graded += 1
         book, line, price = r.get("best") or ("fanduel", r["line"], r.get("price"))
+        if not price and ("over_price" in r or "under_price" in r):
+            # NHL / NFL rows keep both sides' prices: take the called side's.
+            over = r["pick"].strip().lower() in ("over", "o")
+            price = r.get("over_price" if over else "under_price")
         priced += bool(price)
-        # Units of the quote we would have taken, graded at that quote's own line.
-        units += units_for_result(
-            ou_row_result(line=line, pick=r["pick"], actual=r["actual"]), price
-        )
+        if price:  # units only at a real price, never a -110 guess
+            # Units of the quote we would have taken, graded at that quote's own line.
+            units += units_for_result(
+                ou_row_result(line=line, pick=r["pick"], actual=r["actual"]), price
+            )
         try:
             day = date.fromisoformat(r["ident"][1])
         except ValueError:
