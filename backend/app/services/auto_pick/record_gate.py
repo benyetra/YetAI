@@ -50,6 +50,7 @@ from app.services.accuracy_shared import (
 )
 from app.services.auto_pick import ev
 from app.services.auto_pick.candidate import BetCandidate, MarketType, utc_to_eastern
+from app.services.mlb_strikeout_pick import signed_edge_for_side
 from app.services.auto_pick.context_builder import (
     _normalize_market_type,
     _normalize_sport,
@@ -338,8 +339,9 @@ def current_version_rows(rows, date_field: str):
 
 
 def _priced_shadow_rows(stat: str, proj_field: str, rows):
-    """Rows the selector would have considered: priced, with a side, inside the default odds
-    bounds, passing the EV gates."""
+    """Rows the selector would have considered: priced, with a side, a positive edge at the
+    best line, inside the default odds bounds, passing the EV gates. Not applied: one pick per
+    game, the daily caps and freshness (the row is its last write of the day)."""
     from app.services.auto_pick.selector import SelectorConfig
 
     bounds = SelectorConfig()
@@ -355,6 +357,9 @@ def _priced_shadow_rows(stat: str, proj_field: str, rows):
         if None in (line, price, fair, proj) or side not in ("o", "u"):
             continue
         if not bounds.odds_min <= price <= bounds.odds_max:
+            continue
+        # hard_gate_reason's non_positive_edge, at the shopped line we would publish
+        if signed_edge_for_side(proj, line, "over" if side == "o" else "under") <= 0:
             continue
         e = ev.prop_ev(stat, side, proj, line, price, fair)
         if ev.gate_reason(e) is None:

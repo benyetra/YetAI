@@ -111,6 +111,10 @@ the line. Each bet stores `prediction_factors.selection_version` ("ev-v1") and `
 (fair_prob, model_part, prob, consensus_ev, ev); its reasoning text states the EV, price and both probabilities.
 Changing k, MIN_EV or the formula means bumping `SELECTION_VERSION`, which starts a new bet record.
 
+Known limits: in pending-approval mode (`AUTO_YETAI_PICKS_AUTO_PUBLISH=false`) a pending pick is not re-checked
+for EV or freshness when an admin approves it later; parlays (off by default) use EV-gated legs but rank them by
+confidence score and carry no EV block.
+
 The confidence score (weighted sub-scores: edge, historical record, freshness, line movement, odds sanity, model
 confidence; `sub_scores.py`) is still computed and stored for display. `score_threshold` and
 `AUTO_YETAI_PICKS_MIN_SCORE` no longer affect straight picks.

@@ -47,6 +47,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        for table in PROP_TABLES:
+            for name, _, _ in COLUMNS:
+                op.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {name}")
+        return
+    inspector = sa.inspect(bind)
     for table in PROP_TABLES:
+        have = {c["name"] for c in inspector.get_columns(table)}
         for name, _, _ in COLUMNS:
-            op.execute(f"ALTER TABLE {table} DROP COLUMN IF EXISTS {name}")
+            if name in have:
+                with op.batch_alter_table(table) as batch:
+                    batch.drop_column(name)

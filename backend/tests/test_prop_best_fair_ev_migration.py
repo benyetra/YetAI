@@ -28,4 +28,9 @@ def test_sqlite_upgrade_adds_columns_and_is_rerunnable():
             mig.upgrade()
         for t in ("t1", "t2"):
             have = {c["name"] for c in sa.inspect(conn).get_columns(t)}
-            assert {"best_fair_prob", "best_ev"} <= have
+            assert {"best_fair_prob", "best_ev", "best_quoted_at"} <= have
+        with Operations.context(MigrationContext.configure(conn)):
+            mig.downgrade()
+        for t in ("t1", "t2"):
+            have = {c["name"] for c in sa.inspect(conn).get_columns(t)}
+            assert not {"best_fair_prob", "best_ev", "best_quoted_at"} & have

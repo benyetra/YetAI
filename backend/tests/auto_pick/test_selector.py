@@ -208,3 +208,13 @@ def test_gate_unknown_start_after_noon_et():
     sc = _sc("e", 70)
     assert _gate(sc, now=datetime(2026, 5, 22, 15, 59)) is None  # 11:59 ET
     assert _gate(sc, now=datetime(2026, 5, 22, 16, 0)) == "start_time_unknown"
+
+
+def test_reselect_clears_the_first_passes_drop_reasons():
+    # The reserve path selects twice; a pick of the second pass must not keep cap_reached.
+    scored = [_sc(f"e{i}", 70, ev=0.1 - i / 100, league=f"L{i}") for i in range(3)]
+    sel = BetSelector(SelectorConfig(max_picks=3))
+    assert len(sel.select(scored, remaining=2)) == 2
+    assert _reasons(scored)["e2"] == "cap_reached"
+    picks = sel.select(scored, remaining=3)
+    assert len(picks) == 3 and all(p.drop_reason is None for p in picks)

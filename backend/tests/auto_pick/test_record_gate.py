@@ -638,3 +638,12 @@ def test_one_stray_row_does_not_switch_the_current_version():
     rows.append(_row(99, True, version="backfill"))  # newest id, same date
     version, kept = rg.current_version_rows(rows, "date")
     assert version == "v2" and len(kept) == 5
+
+
+def test_shadow_skips_rows_with_no_edge_at_the_shopped_line(sqlite_db, monkeypatch):
+    # FanDuel side over (projection 21 vs 20.5), but the best line shopped to 21.5: the
+    # selector drops it as non_positive_edge, so the record must too.
+    rows = [_row(i, True, projected_points=21.0, best_line=21.5) for i in range(5)]
+    rows += [_row(10 + i, True) for i in range(3)]
+    _fake_rows(monkeypatch, "points_ou", rows)
+    assert load_records(sqlite_db, NOW, ("nba_props",))[POINTS].proj_n == 3

@@ -215,3 +215,36 @@ def test_apply_side_flip_clears_fair_prob(monkeypatch):
     _apply_with_best(monkeypatch, row, None, quotes=False)
     assert row.best_price is None
     assert (row.best_fair_prob, row.best_ev, row.best_quoted_at) == (None, None, None)
+
+
+def test_fresh_fanduel_line_on_the_other_side_clears_the_old_best_quote(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services.etl.nba import _fanduel_lines as fdl
+
+    row = SimpleNamespace(
+        fanduel_line=26.5,
+        fanduel_over_under="o",
+        fanduel_price=-120,
+        best_book="dk",
+        best_line=25.5,
+        best_price=105,
+        best_fair_prob=0.55,
+        best_ev=0.05,
+        best_quoted_at="old",
+    )
+    _apply_with_best(monkeypatch, row, None, quotes=False)  # installs the mocks
+    monkeypatch.setattr(
+        fdl, "fetch_fanduel_prop_for_player", lambda *a, **k: (30.5, "u", -110)
+    )
+    row.fanduel_over_under = "o"
+    fdl.apply_fanduel_to_projection(
+        row,
+        team_name="A",
+        opponent_team_name="B",
+        player_name="P",
+        market="player_points",
+        projection=29.0,
+    )
+    assert row.fanduel_over_under == "u"
+    assert (row.best_price, row.best_fair_prob, row.best_quoted_at) == (None,) * 3

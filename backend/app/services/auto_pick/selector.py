@@ -149,6 +149,8 @@ class BetSelector:
             return sc.ev.ev if sc.ev else float("-inf")
 
         ranked = sorted(scored, key=lambda s: (ev_of(s), s.score.total), reverse=True)
+        for sc in ranked:  # a re-select (the reserve path) must not keep an old outcome
+            sc.drop_reason = None
 
         picks: list[ScoredCandidate] = []
         for sc in ranked:
