@@ -57,6 +57,9 @@ for (const sport of SPORTS) {
       await expect(page.getByText(NOTE).first()).toBeVisible();
       if (HAS_BEST_EDGES[sport]) await expect(page.getByText(EMPTY_BEST_EDGES)).toBeVisible();
       await expect(page.locator(GAMBLE)).toHaveCount(0);
+      // No table cell and no Best edges row may carry a pick side.
+      await expect(page.locator('td', { hasText: /^\s*(OVER|UNDER|HOME|AWAY)\b/i })).toHaveCount(0);
+      await expect(page.locator('.predictions-discovery-pick')).toHaveCount(0);
       expect(errors).toEqual([]);
     });
 
