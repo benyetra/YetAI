@@ -253,16 +253,13 @@ def run(
     metadata["promote_gate"] = gate
     metadata["line_comparison"] = gate["lined"]
     logger.info(promote_gate.format_gate_line("NBA " + stat_col, gate))
+    outcome_extra = {
+        "stat": stat_col,
+        "candidate_version": metadata.get("model_version"),
+        "data_window": metadata["data_window"],
+    }
     if upload:
-        promote_gate.record_outcome(
-            live_key,
-            gate,
-            extra={
-                "stat": stat_col,
-                "candidate_version": metadata.get("model_version"),
-                "data_window": metadata["data_window"],
-            },
-        )
+        promote_gate.record_outcome(live_key, gate, extra=outcome_extra)
 
     result: dict[str, Any] = {
         "status": "ok",
@@ -299,6 +296,10 @@ def run(
             manifest_extra={"line_comparison": gate["lined"]},
         )
         result["gate"] = out
+        # the gate passed; record what the upload itself did (e.g. unchanged window)
+        promote_gate.record_outcome(
+            live_key, gate, extra={**outcome_extra, "upload_status": out["status"]}
+        )
         if out["status"] == "rejected_by_champion":
             logger.warning(
                 "NBA %s candidate rejected: holdout MAE %.3f vs live %s (%s)",

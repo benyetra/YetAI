@@ -68,7 +68,8 @@ def test_gate_pass_uploads_with_line_gate(monkeypatch):
     s3 = FakeS3()
     out = T.train("assists", "2026-01-01", "2026-03-01", rows=rows, upload=True, s3=s3)
     assert out["status"] == "ok", out
-    assert json.loads(s3.objects["nba/ml_models/residual_assists_gate.json"])["passes"]
+    rec = json.loads(s3.objects["nba/ml_models/residual_assists_gate.json"])
+    assert rec["passes"] and rec["upload_status"] == "first_upload"
     assert seen["key"] == "nba/ml_models/residual_assists.pkl"
     assert seen["line_gate"]["passes"]
     assert seen["candidate_metric"] == out["holdout_mae"]

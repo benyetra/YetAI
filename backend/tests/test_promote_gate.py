@@ -71,13 +71,25 @@ def test_noise_level_improvement_rejected():
     assert g["status"] == "rejected_by_champion"
 
 
-def test_champion_not_comparable_passes_on_line():
+def test_champion_not_comparable_rejects_unless_caller_opts_in():
     line, signal, actual, dates, _ = _data()
     champ = np.full(N, np.nan)
     champ[:49] = line[:49]
+    # a live model that cannot be scored is not beaten
     g = pg.promote_gate(line + signal, actual, line, dates=dates, champion_pred=champ)
-    assert g["passes"] and g["reason"] == "champion_not_comparable"
+    assert g["status"] == "rejected_by_champion"
+    assert g["reason"] == "champion_not_comparable"
     assert g["champion"]["comparable"] is False and g["champion"]["n"] == 49
+    # residual models opt in: their champion legitimately saw most of the holdout
+    g = pg.promote_gate(
+        line + signal,
+        actual,
+        line,
+        dates=dates,
+        champion_pred=champ,
+        allow_incomparable_champion=True,
+    )
+    assert g["passes"] and g["reason"] == "champion_not_comparable"
 
 
 def test_min_slope_t_rejects_unrelated_edge():

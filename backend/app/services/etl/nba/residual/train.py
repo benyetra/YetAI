@@ -118,6 +118,9 @@ def train(
         dates=hold["date"].to_numpy(),
         champion_pred=champ,
         min_slope_t=MIN_SLOPE_T,
+        # the live model saw holdout dates up to its train_end; too few later rows
+        # means no fair comparison, and the line gate is the bar (as before)
+        allow_incomparable_champion=True,
     )
     logger.info(promote_gate.format_gate_line(f"NBA residual {stat}", gate))
     holdout_mae = float(np.mean(np.abs(hold["resid"].to_numpy() - pred)))
@@ -160,18 +163,14 @@ def train(
             if upload
             else f"promote gate failed ({gate['reason']}): --upload would not upload"
         )
+    outcome_extra = {
+        "stat": stat,
+        "kind": kind,
+        "candidate_version": final.version,
+        "data_window": metadata["data_window"],
+    }
     if upload:
-        promote_gate.record_outcome(
-            model_key(stat),
-            gate,
-            extra={
-                "stat": stat,
-                "kind": kind,
-                "candidate_version": final.version,
-                "data_window": metadata["data_window"],
-            },
-            s3=s3,
-        )
+        promote_gate.record_outcome(model_key(stat), gate, extra=outcome_extra, s3=s3)
     if not gate["passes"] or not upload:
         return result
 
@@ -188,6 +187,13 @@ def train(
         version_prefix=kind.replace("_", ""),  # "ridgecv-2026...", not "xgb-"
     )
     result["upload"] = out
+    # the gate passed; record what the upload itself did (e.g. unchanged window)
+    promote_gate.record_outcome(
+        model_key(stat),
+        gate,
+        extra={**outcome_extra, "upload_status": out["status"]},
+        s3=s3,
+    )
     result["status"] = (
         "ok" if out["status"] in ("first_upload", "uploaded") else out["status"]
     )

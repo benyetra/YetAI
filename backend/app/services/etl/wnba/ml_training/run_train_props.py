@@ -173,14 +173,10 @@ def run(
     lines, gate_dates = stored_lines(stat_col, keys)
     if len(lines) != len(holdout_actuals):
         lines, gate_dates = np.full(len(holdout_actuals), np.nan), None
-    champion_pred = None
-    if upload:
-        try:
-            champion_pred = live_prop_predictions(WNBA_ML_CONFIG, stat_col, X_hold)
-        except Exception as exc:  # no usable champion: judged against the line only
-            logger.warning(
-                "WNBA %s champion predictions unavailable: %s", stat_col, exc
-            )
+    # None: no live model (first upload) or not uploading; a broken live model raises.
+    champion_pred = (
+        live_prop_predictions(WNBA_ML_CONFIG, stat_col, X_hold) if upload else None
+    )
     gate = promote_gate(
         holdout_preds,
         holdout_actuals,

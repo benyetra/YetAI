@@ -150,6 +150,7 @@ def promote_gate(
     dates=None,
     champion_pred=None,
     min_slope_t: float | None = None,
+    allow_incomparable_champion: bool = False,
     min_rows: int = MIN_LINED_ROWS,
     min_dates: int = MIN_LINED_DATES,
     line_tolerance: float = LINE_TOLERANCE,
@@ -169,9 +170,10 @@ def promote_gate(
         groups = np.arange(len(p))  # no dates: every row is its own cluster
     else:
         groups = pd.factorize(pd.Series(np.asarray(dates)))[0]
+        ok &= groups >= 0  # a row without a game date cannot be clustered: drop it
     n_dates = int(len(np.unique(groups[ok]))) if dates is not None else None
 
-    lined = line_comparison(p, a, ln)
+    lined = line_comparison(p[ok], a[ok], ln[ok])
     line_limit = (
         lined["line_mae"] * (1 + line_tolerance)
         if lined["line_mae"] is not None
@@ -204,7 +206,12 @@ def promote_gate(
         status, reason = "rejected_by_line_gate", "edge_not_predictive"
     elif champion is not None:
         if not champion["comparable"]:
-            reason = "champion_not_comparable"
+            # A live model that cannot be scored on these rows is not beaten. Only
+            # callers whose champion legitimately saw part of the holdout opt out.
+            if allow_incomparable_champion:
+                reason = "champion_not_comparable"
+            else:
+                status, reason = "rejected_by_champion", "champion_not_comparable"
         elif champion["gain"] < champion["required_gain"]:
             status, reason = "rejected_by_champion", "gain_below_noise"
 
@@ -230,6 +237,7 @@ def promote_gate(
             "noise_z": noise_z,
             "n_boot": n_boot,
             "min_slope_t": min_slope_t,
+            "allow_incomparable_champion": allow_incomparable_champion,
         },
     }
 

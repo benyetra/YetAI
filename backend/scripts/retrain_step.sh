@@ -15,6 +15,11 @@ python3 "$here/retrain_summary.py" row --model "$model" --rc "$rc" --log "$log" 
 python3 "$here/retrain_summary.py" table "summary-$model.json" >>"$summary"
 if [ "$rc" -eq 0 ]; then
   outcome="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["outcome"])' "summary-$model.json")"
+  if [ "$outcome" = "error" ] || [ -z "$outcome" ]; then
+    # exit 0 but no readable result (or an unknown status): not a success
+    echo "::error::$model exited 0 without a usable result"
+    exit 1
+  fi
   if [ "$outcome" != "promoted" ]; then
     echo "::notice::$model $outcome (live model kept)"
   fi
