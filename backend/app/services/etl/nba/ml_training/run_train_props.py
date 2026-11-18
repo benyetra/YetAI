@@ -105,6 +105,7 @@ def _enrich_metadata(stat_col: str, metadata: dict[str, Any]) -> dict[str, Any]:
     if not out.get("model_version"):
         out["model_version"] = model_version_from_metadata(out, prefix="xgb")
     out["stat"] = stat_col
+    out.setdefault("features_version", FEATURES_VERSION)
     return out
 
 

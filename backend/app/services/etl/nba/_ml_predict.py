@@ -145,6 +145,14 @@ def get_holdout_mae(stat: str) -> float | None:
     return None
 
 
+def features_version(stat: str) -> int:
+    """Feature version the model was trained on (metadata; 3 when absent)."""
+    try:
+        return int(get_metadata(stat).get("features_version", 3))
+    except (TypeError, ValueError):
+        return 3
+
+
 def get_model_version(stat: str) -> str | None:
     """Manifest version (written by the gated upload), else metadata JSON's."""
     _, meta = _ensure_loaded(stat)

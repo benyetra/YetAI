@@ -19,8 +19,18 @@ from app.services.etl.nba._season import season_opener
 MIN_CURRENT_SEASON_GAMES = 1
 
 
-def player_games(db, player_id: int, before: date, limit: int, *criteria) -> list:
-    """The player's last `limit` games before `before`, newest first."""
+def player_games(
+    db,
+    player_id: int,
+    before: date,
+    limit: int,
+    *criteria,
+    min_current: int = MIN_CURRENT_SEASON_GAMES,
+) -> list:
+    """The player's last `limit` games before `before`, newest first.
+
+    This season's games are used when there are at least min(limit, min_current)
+    of them; otherwise last season fills in."""
     query = (
         db.query(RecentGames)
         .filter(
@@ -33,6 +43,19 @@ def player_games(db, player_id: int, before: date, limit: int, *criteria) -> lis
     current = (
         query.filter(RecentGames.game_date >= season_opener(before)).limit(limit).all()
     )
-    if len(current) >= min(limit, MIN_CURRENT_SEASON_GAMES):
+    if len(current) >= min(limit, min_current):
         return current
     return query.limit(limit).all()
+
+
+def current_season_games(db, player_id: int, before: date) -> int:
+    """How many games the player has played this season before `before`."""
+    return (
+        db.query(RecentGames)
+        .filter(
+            RecentGames.player_id == player_id,
+            RecentGames.game_date < before,
+            RecentGames.game_date >= season_opener(before),
+        )
+        .count()
+    )

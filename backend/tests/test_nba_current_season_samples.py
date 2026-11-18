@@ -18,6 +18,7 @@ from app.models.predictions_models import (
     RecentGames,
     TeamDefenseStats,
     TeamRoster,
+    TodayActivePlayers,
 )
 from app.services.etl.nba import _feature_engineering as fe
 from app.services.etl.nba import generate_no_steals as gns
@@ -43,6 +44,7 @@ def db():
         RecentGames,
         TeamDefenseStats,
         TeamRoster,
+        TodayActivePlayers,
     ):
         model.__table__.create(engine)
     session = sessionmaker(bind=engine)()
@@ -133,11 +135,12 @@ def test_features_follow_this_seasons_role(db):
     assert feats["points_matchup_mult"] == 1.0
 
 
-def test_features_skip_until_five_current_season_games(db):
+def test_features_flag_a_short_current_season_sample(db):
     add_games(db, 7, LAST_SEASON, 30, points=30)
     add_games(db, 7, OPENER, 2, points=12)
-    # Two current-season games are not mixed with last season; the model waits.
-    assert fe.build_features(db, 7, TODAY, CELTICS, "points") is None
+    # Under five games this season, last season fills in and the row is flagged.
+    feats = fe.build_features(db, 7, TODAY, CELTICS, "points")
+    assert feats is not None and feats["low_sample"] == 1
 
 
 # --- team defense ---------------------------------------------------------------

@@ -12,9 +12,11 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models.predictions_models import (
     NBAGameLines,
+    PlayerInjuryStatus,
     RecentGames,
     TeamDefenseStats,
     TeamRoster,
+    TodayActivePlayers,
 )
 from app.services.etl.nba import _feature_engineering as fe
 from app.services.etl.nba import _team_defense as td
@@ -31,7 +33,14 @@ LAKERS = 1610612747
 @pytest.fixture
 def db():
     engine = create_engine("sqlite://")
-    for model in (NBAGameLines, RecentGames, TeamDefenseStats, TeamRoster):
+    for model in (
+        NBAGameLines,
+        PlayerInjuryStatus,
+        RecentGames,
+        TeamDefenseStats,
+        TeamRoster,
+        TodayActivePlayers,
+    ):
         model.__table__.create(engine)
     session = sessionmaker(bind=engine)()
     td.clear_cache()
@@ -293,7 +302,7 @@ def test_legacy_feature_names_are_still_produced(db):
         "home_away_split",
     ):
         assert name in feats, name
-    assert fe.FEATURES_VERSION == 3
+    assert fe.FEATURES_VERSION == 4
 
 
 # ---- PRA ----------------------------------------------------------------------------
