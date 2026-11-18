@@ -63,6 +63,9 @@ def raw_edge(candidate: BetCandidate) -> float:
         return (margin if side == "home" else -margin) + candidate.market_line
     if mt == MarketType.MONEYLINE:
         p = candidate.our_projection
+        if md.get("fair_prob") is not None:
+            # consensus fair probability of the side (other books, no vig)
+            return p - float(md["fair_prob"])
         q_odds = md.get("opp_odds")
         own = _implied(candidate.market_odds)
         implied = own if q_odds is None else own / (own + _implied(q_odds))

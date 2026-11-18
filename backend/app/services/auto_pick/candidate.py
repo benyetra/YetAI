@@ -17,6 +17,18 @@ EVENING_RUN_ET = time(18, 0)
 # pregame refreshes and the 18:30 late-scratch refresh, which runs after both pick runs).
 # Must equal every NBA refresh beat entry in celery_app.py; a test fails on drift.
 NBA_REFRESH_STARTS_ET = (time(3, 30), time(12, 0), time(17, 0), time(18, 30))
+# NHL: the 05:00 pipeline and the pregame refresh at :45 of even hours 10-20 (a refresh only
+# rewrites games starting within ~3 h, so a later game keeps its older, stale-for-picks row).
+NHL_REFRESH_STARTS_ET = (time(5, 0),) + tuple(time(h, 45) for h in range(10, 21, 2))
+# NFL: the 04:30 pipeline every day plus the game-day refreshes, by Python weekday
+# (Mon=0 ... Sun=6). Each must equal a beat entry in celery_app.py; a test fails on drift.
+NFL_DAILY_REFRESH_STARTS_ET = (time(4, 30),)
+NFL_WEEKDAY_REFRESH_STARTS_ET: dict[int, tuple] = {
+    6: (time(10, 0), time(12, 30), time(15, 30)),  # Sunday
+    0: (time(17, 0), time(18, 15)),  # Monday
+    3: (time(10, 0), time(17, 0), time(19, 0)),  # Thursday
+    5: (time(12, 30),),  # Saturday
+}
 # A priced projection older than this is not the line on the board any more.
 MAX_LINE_AGE = timedelta(hours=3)
 
@@ -141,17 +153,30 @@ def eastern_naive_to_utc(dt: Optional[datetime]) -> Optional[datetime]:
     return to_naive_utc(dt)
 
 
-def latest_refresh_start(now_utc: datetime) -> datetime:
-    """Naive UTC start of the most recent NBA refresh at or before ``now_utc``.
+def refresh_starts_et(league: str, day: date) -> tuple:
+    """ET start times of ``league``'s projection + line refreshes on ``day``. Leagues
+    without their own schedule (MLB, WNBA: their sources do not stamp projected_at) use NBA's.
+    """
+    if league == "NHL":
+        return NHL_REFRESH_STARTS_ET
+    if league == "NFL":
+        return NFL_DAILY_REFRESH_STARTS_ET + NFL_WEEKDAY_REFRESH_STARTS_ET.get(
+            day.weekday(), ()
+        )
+    return NBA_REFRESH_STARTS_ET
+
+
+def latest_refresh_start(now_utc: datetime, league: str = "NBA") -> datetime:
+    """Naive UTC start of the most recent ``league`` refresh at or before ``now_utc``.
 
     A projection stamped before this was not reached by the latest refresh (or the refresh is
     still half done), so its price is not trustworthy.
     """
     now_et = utc_to_eastern(now_utc)
     starts = [
-        datetime.combine(now_et.date() - timedelta(days=d), t, tzinfo=EASTERN)
-        for d in (0, 1)
-        for t in NBA_REFRESH_STARTS_ET
+        datetime.combine(d, t, tzinfo=EASTERN)
+        for d in (now_et.date() - timedelta(days=n) for n in range(8))
+        for t in refresh_starts_et(league, d)
     ]
     return to_naive_utc(max(s for s in starts if s <= now_et))
 
