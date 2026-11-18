@@ -7,12 +7,15 @@ real stored prices (nothing is ever valued at an assumed -110):
 - projection record: the SHADOW record of the selector. For NBA props it is every stored
   row of the current model version that is priced (best line, best price, consensus fair
   probability) and that the selector's own EV rule (``ev.prop_ev`` / ``ev.gate_reason``)
-  would have considered, graded at that best line and price. Withheld candidates that pass
-  the hard gates are exactly these rows, graded by the normal actuals ETL; nothing is
-  written anywhere for them, so nothing can reach a user. Loaders whose rows carry no
-  stored price (NFL, NHL shots, NBA totals and spread) cannot be valued: their graded calls
-  are kept as ``unpriced_n`` for display and count toward nothing. NHL saves and totals
-  are valued at the stored odds of the picked side where the row has them.
+  would have considered, graded at that best line and price. The game-line keys (NBA and
+  NFL spread, total, moneyline) and the NFL passing / receiving yards and NHL saves / total
+  keys do the same through the consensus shadow loaders below: the rows become candidates
+  by the sources' own functions and providers and pass the selector's clock-free hard
+  gates and the EV gates. Withheld candidates that pass the gates are exactly these rows,
+  graded by the normal actuals ETL; nothing is written anywhere for them, so nothing can
+  reach a user. NHL shots (no stored price) cannot be valued: their graded calls are kept
+  as ``unpriced_n`` for display and count toward nothing, as do the rows of the other keys
+  that have no best quote.
 - bet record: graded AUTO YetAIBet rows of the current ``ev.SELECTION_VERSION`` (a new
   selection version starts a new record), units at the stored odds. Added only for keys
   with no projection loader result: where a shadow record exists the bets are a subset of
@@ -44,7 +47,6 @@ from sqlalchemy.orm import Session
 
 from app.models.database_models import BetSource, BetType, YetAIBet
 from app.services.accuracy_shared import (
-    edge_play_graded_counts,
     ou_call_graded_counts,
     ou_call_graded_record,
     ou_row_result,
@@ -280,15 +282,11 @@ def load_bet_records(
 
 # Which stored rows each projection record grades:
 # - NBA props: the shadow record of the selector (see the module docstring), priced.
-# - NBA total and spread: the would-be calls of the CURRENT model version (the anchored
-#   projectors' own version_pick_record), graded against the stored line, not the stored
-#   recommendation, which is NO_PLAY while the version's record is unproven. No stored
-#   price: unpriced.
-# - NFL spread, NFL total, NFL passing/receiving, NHL saves/shots/total: rows are the
-#   stored recommendation/pick (NO_PLAY and pushes excluded), current model version only.
-#   NFL rows and NHL shots carry no price: unpriced. NHL saves and totals rows carry the
-#   stored over/under odds of the picked side (``pick_price``): those calls are priced,
-#   the ones without odds are unpriced. NHL still cannot be picked (no consensus price).
+# - NBA / NFL spread, total, moneyline, NFL passing / receiving yards, NHL saves / total:
+#   the consensus shadow below (``_shadow``), priced at the best quote; rows with no best
+#   quote are ``unpriced_n``. Current model version only.
+# - NHL shots: rows are the stored pick (NO_PLAY and pushes excluded), current version
+#   only, no price: unpriced.
 # Projection loaders: name -> fn(db, start, end) -> {key: (hits, graded, units, version)};
 # dates inclusive. ``units`` (at stored prices) is None when the rows carry no price: those
 # calls are unpriced and count toward nothing. Optional 5th/6th elements: distinct graded
@@ -405,20 +403,220 @@ def _nba_props(db, start, end):
     return out
 
 
-def _nba_totals(db, start, end):
-    from app.services.etl.nba import totals_projector
+# NHL rows written before the 2026-11-14 input repair (YetAI-5p8) came from stale
+# inputs and the old formulas: they say nothing about the repaired model, so the
+# record (and the prove-in) starts from the repaired rows only.
+NHL_PRE_REPAIR_MODEL_VERSIONS = (None, "", "heuristic-v1")
 
-    hits, n = totals_projector.version_pick_record(db, start, end + timedelta(days=1))
-    return {("NBA", "total", None): (hits, n, None, totals_projector.MODEL_VERSION)}
+
+def _unpriced(rows, version, **fields):
+    hits, n = ou_call_graded_counts(rows, **fields)
+    return (hits, n, None, version)
 
 
-def _nba_spread(db, start, end):
-    from app.services.etl.nba import spread_projector
+# ---------- consensus shadow record: game lines, NFL and NHL props ----------
+#
+# The record of these keys is built like the NBA props one: every stored row of the CURRENT
+# model version becomes a candidate through the same code the selector's sources use (their
+# pure row functions, then the unchanged providers) and is kept only when it passes the
+# selector's own hard gates that do not depend on the clock (valid side, raw_edge > 0, the
+# default odds bounds, not odds_assumed / injury_flag, ``ev.candidate_ev`` with no reason).
+# It is graded at the best line and price (``best_line`` / ``best_price``; ``ml_best_price``
+# for moneylines) on the side ``best_side`` names, with the one grading definition
+# (``yetai_grading.game_result``, ``_compare``); a push counts for nothing.
+# Rows with no best quote that would still have a side are counted as ``unpriced_n``:
+# display only, never valued. Not applied: freshness, start time, one pick per game, caps.
 
-    hits, n = spread_projector.version_pick_record(db, start, end + timedelta(days=1))
-    return {
-        ("NBA", "spread", None): (hits, n, None, spread_projector.SPREAD_MODEL_VERSION)
-    }
+_CLOCKLESS_NOW = datetime(
+    2000, 1, 1, 5
+)  # midnight Eastern: no start-time gate can fire
+
+
+class _Rows:
+    """Source shim: hands a provider rows that are already built."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def get_todays_projections(self, _date_range):
+        return self.rows
+
+
+def _candidates(provider_cls, rows) -> list:
+    """The provider's BetCandidates for ``rows``. The provider's coroutine never suspends
+    (its source just returns the rows), so it is driven by hand: no event loop is needed
+    and it is safe inside a request."""
+    if not rows:
+        return []
+    coro = provider_cls(_Rows(rows)).get_candidates(None)
+    try:
+        coro.send(None)
+    except StopIteration as done:
+        return done.value
+    coro.close()
+    raise RuntimeError("candidate provider suspended")
+
+
+def _passes_gates(c) -> bool:
+    """The selector's clock-free hard gates and the EV gates, on a BetCandidate."""
+    from types import SimpleNamespace
+
+    from app.services.auto_pick.selector import SelectorConfig, hard_gate_reason
+
+    bounds = SelectorConfig()
+    scored = SimpleNamespace(candidate=c)  # hard_gate_reason reads only .candidate
+    if hard_gate_reason(
+        scored, _CLOCKLESS_NOW, bounds.odds_min, bounds.odds_max, fresh=False
+    ):
+        return False
+    return ev.candidate_ev(c)[1] is None
+
+
+def _shadow(rows, version, *, date_field, build, provider_cls, actual_of, grade):
+    """(hits, n, units, version, dates, unpriced_n) over the current-version ``rows``.
+
+    ``build(row, day)`` -> candidate rows (the sources' pure functions on this one row);
+    ``actual_of(row)`` -> the row's actual or None (not graded); ``grade(c, actual)`` ->
+    won | lost | pushed."""
+    from app.services import odds_math
+
+    hits = n = unpriced_n = 0
+    units = 0.0
+    dates = set()
+    for r in rows:
+        actual = actual_of(r)
+        if actual is None:
+            continue
+        day = _as_date(_field(r, date_field))
+        for c in _candidates(provider_cls, build(r, day)):
+            result = grade(c, actual)
+            if result == "pushed":
+                continue
+            if c.projection_metadata.get("fair_prob") is None:  # no best quote
+                unpriced_n += 1
+            elif _passes_gates(c):
+                n += 1
+                hits += result == "won"
+                units += odds_math.units_for_result(
+                    "hit" if result == "won" else "miss", c.market_odds
+                )
+                dates.add(day)
+    return hits, n, units, version, len(dates), unpriced_n
+
+
+def _game_grade(c, scores):
+    from app.services.yetai_grading import game_result
+
+    side = c.projection_metadata["side"]
+    return game_result(c.market_type.value, side, c.market_line, *scores)
+
+
+def _prop_grade(c, actual):
+    from app.services.yetai_grading import _compare
+
+    return _compare(actual, c.market_line, c.projection_metadata["side"])
+
+
+def _between(db, model, start, end):
+    return (
+        db.query(model)
+        .filter(func.date(model.game_date) >= start, func.date(model.game_date) <= end)
+        .all()
+    )
+
+
+def _scores(actuals) -> dict:
+    """{(date, home, away): (home score, away score)} from game-result rows."""
+    out = {}
+    for a in actuals:
+        h, w = getattr(a, "home_score", None), getattr(a, "away_score", None)
+        if h is None:
+            h = getattr(a, "home_actual_score", None)
+            w = getattr(a, "away_actual_score", None)
+        if h is not None and w is not None:
+            out[(a.game_date, a.home_team_name, a.away_team_name)] = (h, w)
+    return out
+
+
+def _game_records(db, start, end, league, lines_model, actual_models, specs):
+    """{(league, market, None): record} for game-line markets.
+
+    ``specs``: (market, projection model, build(row, {(home, away): game line}, day),
+    provider class)."""
+    gkey = lambda x: (_as_date(x.game_date), x.home_team_name, x.away_team_name)
+    lines = {gkey(g): g for g in _between(db, lines_model, start, end)}
+    scores = {}
+    for m in actual_models:
+        scores.update(_scores(_between(db, m, start, end)))
+
+    out = {}
+    for market, model, build, provider_cls in specs:
+        version, rows = current_version_rows(
+            _between(db, model, start, end), "game_date"
+        )
+
+        def build_row(r, day, build=build):
+            gl = lines.get(gkey(r))
+            return (
+                build(r, {(r.home_team_name, r.away_team_name): gl}, day) if gl else []
+            )
+
+        out[(league, market, None)] = _shadow(
+            rows,
+            version,
+            date_field="game_date",
+            build=build_row,
+            provider_cls=provider_cls,
+            actual_of=lambda r: scores.get(gkey(r)),
+            grade=_game_grade,
+        )
+    return out
+
+
+def _nba_games(db, start, end):
+    from app.models.predictions_models import (
+        NBAGameLines,
+        NBASpreadActuals,
+        NBASpreadProjections,
+        NBATotalsProjections,
+    )
+    from app.services.auto_pick.providers.moneyline_provider import (
+        MoneylineCandidateProvider,
+    )
+    from app.services.auto_pick.providers.spread_provider import SpreadCandidateProvider
+    from app.services.auto_pick.providers.totals_provider import (
+        TotalsCandidateProvider,
+    )
+    from app.services.auto_pick.sources import _basketball, nba_moneyline_source
+
+    return _game_records(
+        db,
+        start,
+        end,
+        "NBA",
+        NBAGameLines,
+        (NBASpreadActuals,),
+        (
+            (
+                "spread",
+                NBASpreadProjections,
+                lambda r, gls, _d: _basketball.spread_rows_from([r], gls, "NBA"),
+                SpreadCandidateProvider,
+            ),
+            (
+                "moneyline",
+                NBASpreadProjections,
+                lambda r, gls, _d: nba_moneyline_source.moneyline_rows_from([r], gls),
+                MoneylineCandidateProvider,
+            ),
+            (
+                "total",
+                NBATotalsProjections,
+                lambda r, gls, _d: _basketball.totals_rows_from([r], gls, "NBA"),
+                TotalsCandidateProvider,
+            ),
+        ),
+    )
 
 
 # NHL rows written before the 2026-11-14 input repair (YetAI-5p8) came from stale
@@ -432,78 +630,105 @@ def _unpriced(rows, version, **fields):
     return (hits, n, None, version)
 
 
-def _graded_dates(rows, *, date_field, line_field, pick_field, actual_field) -> int:
-    return len(
-        {
-            r.get(date_field)
-            for r in rows
-            if ou_row_result(
-                line=r.get(line_field),
-                pick=(r.get(pick_field) or "").strip().lower(),
-                actual=r.get(actual_field),
-            )
-            in ("hit", "miss")
-        }
-    )
-
-
-def _priced_calls(rows, version, *, price_field, date_field, **fields):
-    """Record of the rows with a stored price for their side, valued at that price; the
-    rest are counted as unpriced (6th element) and never valued at an assumed price."""
-    # 0 / None is no price (a stored 0 would be valued at -110 downstream).
-    priced = [r for r in rows if r.get(price_field)]
-    if not priced:
-        return _unpriced(rows, version, **fields)
-    hits, n, units, _ = ou_call_graded_record(priced, price_field=price_field, **fields)
-    _, unpriced_n = ou_call_graded_counts(
-        [r for r in rows if not r.get(price_field)], **fields
-    )
-    dates = _graded_dates(priced, date_field=date_field, **fields)
-    return (hits, n, units, version, dates, unpriced_n)
-
-
 def _nhl(db, start, end):
-    from app.services.nhl_accuracy_service import _nhl_rows
+    from app.models.predictions_models import (
+        NHLGoalieActuals,
+        NHLGoaliePredictions,
+        NHLTeamTotalsActuals,
+        NHLTeamTotalsPredictions,
+    )
+    from app.services.auto_pick.providers.player_prop_provider import (
+        PlayerPropCandidateProvider,
+    )
+    from app.services.auto_pick.providers.totals_provider import (
+        TotalsCandidateProvider,
+    )
+    from app.services.auto_pick.sources.nhl_goalie_saves_source import goalie_rows_from
+    from app.services.auto_pick.sources.nhl_totals_source import nhl_totals_rows_from
+    from app.services.nhl_accuracy_service import (
+        _fetch,
+        _latest_by_key,
+        _nhl_rows,
+        _preseason,
+    )
 
-    sets, versions = {}, {}
+    def current(model, key_fn):
+        rows = _latest_by_key(_fetch(db, model, start, end), key_fn)
+        rows = [
+            r
+            for r in rows
+            if getattr(r, "model_version", None) not in NHL_PRE_REPAIR_MODEL_VERSIONS
+        ]
+        return current_version_rows(rows, "game_date")
+
+    goalie = {
+        (a.goalie_id, a.game_date): a for a in _fetch(db, NHLGoalieActuals, start, end)
+    }
+    totals = {
+        (a.game_date, a.home_team_id, a.away_team_id): a
+        for a in _fetch(db, NHLTeamTotalsActuals, start, end)
+    }
+
+    def saves_actual(r):
+        a = goalie.get((r.goalie_id, r.game_date))
+        return None if a is None or _preseason(r, a) else a.actual_saves
+
+    def total_actual(r):
+        a = totals.get((r.game_date, r.home_team_id, r.away_team_id))
+        return (
+            None
+            if a is None or _preseason(a)
+            else (a.actual_home_goals, a.actual_away_goals)
+        )
+
+    saves_v, saves_rows = current(
+        NHLGoaliePredictions, lambda p: (p.goalie_id, p.game_date)
+    )
+    totals_v, totals_rows = current(
+        NHLTeamTotalsPredictions,
+        lambda p: (p.game_date, p.home_team_id, p.away_team_id),
+    )
+    shots = {}
     for part, rows in _nhl_rows(db, start=start, end=end).items():
         rows = [
             r
             for r in rows
             if r.get("model_version") not in NHL_PRE_REPAIR_MODEL_VERSIONS
         ]
-        versions[part], sets[part] = current_version_rows(rows, "game_date")
+        shots[part] = current_version_rows(rows, "game_date")
+    shots_v, shots_rows = shots["player_shots"]
     return {
-        ("NHL", "player_prop", "saves"): _priced_calls(
-            sets["goalie"],
-            versions["goalie"],
-            price_field="pick_price",
+        ("NHL", "player_prop", "saves"): _shadow(
+            saves_rows,
+            saves_v,
             date_field="game_date",
-            line_field="saves_line",
-            pick_field="betting_pick",
-            actual_field="actual_saves",
+            build=lambda r, day: goalie_rows_from([r], day),
+            provider_cls=PlayerPropCandidateProvider,
+            actual_of=saves_actual,
+            grade=_prop_grade,
         ),
         ("NHL", "player_prop", "shots"): _unpriced(
-            sets["player_shots"],
-            versions["player_shots"],
+            shots_rows,
+            shots_v,
             line_field="shots_line",
             pick_field="betting_pick",
             actual_field="actual_shots",
         ),
-        ("NHL", "total", None): _priced_calls(
-            sets["team_totals"],
-            versions["team_totals"],
-            price_field="pick_price",
+        ("NHL", "total", None): _shadow(
+            totals_rows,
+            totals_v,
             date_field="game_date",
-            line_field="draftkings_ou_line",
-            pick_field="betting_pick",
-            actual_field="actual_total_goals",
+            build=lambda r, day: nhl_totals_rows_from([r], day),
+            provider_cls=TotalsCandidateProvider,
+            actual_of=lambda r: (None if (g := total_actual(r)) is None else sum(g)),
+            grade=_prop_grade,
         ),
     }
 
 
 def _nfl(db, start, end):
     from app.models.predictions_models import (
+        NFLGameLines,
         NFLSpreadActuals,
         NFLSpreadProjections,
         NFLTotalsActuals,
@@ -513,78 +738,109 @@ def _nfl(db, start, end):
         RecvYdsActuals,
         RecvYdsPredictions,
     )
-    from app.services.nfl_accuracy_service import (
-        _merge_actuals_qb_range,
-        _merge_actuals_spread,
-        _merge_actuals_totals,
+    from app.services.auto_pick.providers.moneyline_provider import (
+        MoneylineCandidateProvider,
+    )
+    from app.services.auto_pick.providers.player_prop_provider import (
+        PlayerPropCandidateProvider,
+    )
+    from app.services.auto_pick.providers.spread_provider import SpreadCandidateProvider
+    from app.services.auto_pick.providers.totals_provider import (
+        TotalsCandidateProvider,
+    )
+    from app.services.auto_pick.sources import (
+        nfl_moneyline_source,
+        nfl_qb_passing_source,
+        nfl_receiving_yards_source,
+        nfl_spread_source,
+        nfl_totals_source,
     )
 
-    def q(model):
-        return (
-            db.query(model)
-            .filter(
-                func.date(model.game_date) >= start, func.date(model.game_date) <= end
-            )
-            .all()
-        )
+    out = _game_records(
+        db,
+        start,
+        end,
+        "NFL",
+        NFLGameLines,
+        (NFLTotalsActuals, NFLSpreadActuals),  # the spread table's scores win
+        (
+            (
+                "spread",
+                NFLSpreadProjections,
+                lambda r, gls, d: nfl_spread_source.spread_rows_from_nfl([r], gls, d),
+                SpreadCandidateProvider,
+            ),
+            (
+                "moneyline",
+                NFLSpreadProjections,
+                lambda r, gls, d: nfl_moneyline_source.moneyline_rows_from_nfl(
+                    [r], gls, d
+                ),
+                MoneylineCandidateProvider,
+            ),
+            (
+                "total",
+                NFLTotalsProjections,
+                lambda r, gls, d: nfl_totals_source.totals_rows_from_nfl([r], gls, d),
+                TotalsCandidateProvider,
+            ),
+        ),
+    )
 
-    qb_version, qb_preds = current_version_rows(q(QBPredictions), "game_date")
-    qb_rows = _merge_actuals_qb_range(qb_preds, q(QBActuals))
-    recv_act = {(a.player_id, a.game_date): a for a in q(RecvYdsActuals)}
-    recv_version, recv_preds = current_version_rows(q(RecvYdsPredictions), "game_date")
-    recv_rows = []
-    for p in recv_preds:
-        a = recv_act.get((p.player_id, p.game_date))
-        recv_rows.append(
-            {
-                "ou_line": p.ou_line,
-                "betting_recommendation": p.betting_recommendation,
-                "actual_receiving_yards": a.actual_receiving_yards if a else None,
-            }
-        )
-    spread_version, spread_preds = current_version_rows(
-        q(NFLSpreadProjections), "game_date"
-    )
-    spread_rows = _merge_actuals_spread(spread_preds, q(NFLSpreadActuals))
-    totals_version, totals_preds = current_version_rows(
-        q(NFLTotalsProjections), "game_date"
-    )
-    totals_rows = _merge_actuals_totals(totals_preds, q(NFLTotalsActuals))
-    spread_hits, spread_n = edge_play_graded_counts(
-        spread_rows, pick_field="recommendation", correct_field="spread_correct"
-    )
-    return {
-        ("NFL", "player_prop", "passing_yards"): _unpriced(
-            qb_rows,
-            qb_version,
-            line_field="ou_line",
-            pick_field="betting_recommendation",
-            actual_field="actual_passing_yards",
-        ),
-        ("NFL", "player_prop", "receiving_yards"): _unpriced(
-            recv_rows,
-            recv_version,
-            line_field="ou_line",
-            pick_field="betting_recommendation",
-            actual_field="actual_receiving_yards",
-        ),
-        ("NFL", "spread", None): (spread_hits, spread_n, None, spread_version),
-        ("NFL", "total", None): _unpriced(
-            totals_rows,
-            totals_version,
-            line_field="market_total",
-            pick_field="recommendation",
-            actual_field="actual_total",
-        ),
+    lines_by_day = defaultdict(list)
+    for g in _between(db, NFLGameLines, start, end):
+        lines_by_day[g.game_date].append(g)
+    qb = {
+        (a.qb_player_id, _as_date(a.game_date)): a
+        for a in _between(db, QBActuals, start, end)
     }
+    recv = {
+        (a.player_id, a.game_date): a for a in _between(db, RecvYdsActuals, start, end)
+    }
+    qb_v, qb_rows = current_version_rows(
+        _between(db, QBPredictions, start, end), "game_date"
+    )
+    recv_v, recv_rows = current_version_rows(
+        _between(db, RecvYdsPredictions, start, end), "game_date"
+    )
+    out[("NFL", "player_prop", "passing_yards")] = _shadow(
+        qb_rows,
+        qb_v,
+        date_field="game_date",
+        build=lambda r, day: nfl_qb_passing_source.qb_rows_from(
+            [r], lines_by_day[day], day
+        ),
+        provider_cls=PlayerPropCandidateProvider,
+        actual_of=lambda r: (
+            None
+            if (a := qb.get((r.qb_player_id, _as_date(r.game_date)))) is None
+            else a.actual_passing_yards
+        ),
+        grade=_prop_grade,
+    )
+    out[("NFL", "player_prop", "receiving_yards")] = _shadow(
+        recv_rows,
+        recv_v,
+        date_field="game_date",
+        build=lambda r, day: nfl_receiving_yards_source.recv_rows_from(
+            [r], lines_by_day[day], day
+        ),
+        provider_cls=PlayerPropCandidateProvider,
+        actual_of=lambda r: (
+            None
+            if (a := recv.get((r.player_id, r.game_date))) is None
+            else a.actual_receiving_yards
+        ),
+        grade=_prop_grade,
+    )
+    return out
 
 
-# Keys without a projection record (bet record only): NBA moneyline, WNBA and MLB, and
+# Keys without a projection record (bet record only): WNBA and MLB, and
 # any key a new source adds.
 PROJECTION_LOADERS: dict[str, ProjectionLoader] = {
     "nba_props": _nba_props,
-    "nba_totals": _nba_totals,
-    "nba_spread": _nba_spread,
+    "nba_games": _nba_games,
     "nhl": _nhl,
     "nfl": _nfl,
 }

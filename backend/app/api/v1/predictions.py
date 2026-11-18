@@ -186,6 +186,14 @@ _PICK_FIELDS = frozenset(
         "best_fair_prob",
         "best_ev",
         "best_quoted_at",
+        "best_side",
+        # the moneyline quote carried on the NBA / NFL spread rows
+        "ml_best_book",
+        "ml_best_price",
+        "ml_best_side",
+        "ml_best_fair_prob",
+        "ml_best_ev",
+        "ml_best_quoted_at",
         "value_tier",
         "edge_category",
         "pick_confidence",
@@ -219,6 +227,25 @@ def _one(key):
     return ((key, _ALL),)
 
 
+def _spread_and_ml(league):
+    """A spread row also carries the moneyline quote (``ml_best_*``): a moneyline-only
+    withhold strips just those fields, a spread withhold strips the whole row."""
+    return (
+        ((league, "spread", None), _ALL),
+        (
+            (league, "moneyline", None),
+            (
+                "ml_best_book",
+                "ml_best_price",
+                "ml_best_side",
+                "ml_best_fair_prob",
+                "ml_best_ev",
+                "ml_best_quoted_at",
+            ),
+        ),
+    )
+
+
 # Every list group each live endpoint returns -> ((record key, fields), ...). The key
 # is the group's market in record_gate (None = the gate has no key for it); fields are
 # the row fields that market owns (_ALL = the whole row is one market). A key outside
@@ -228,7 +255,7 @@ def _one(key):
 _BOARD_MARKETS: dict[str, dict[str, tuple]] = {
     "nba": {
         "totals": _one(("NBA", "total", None)),
-        "spreads": _one(("NBA", "spread", None)),
+        "spreads": _spread_and_ml("NBA"),
         "points": _one(("NBA", _PROP, "points")),
         "assists": _one(("NBA", _PROP, "assists")),
         "rebounds": _one(("NBA", _PROP, "rebounds")),
@@ -238,7 +265,7 @@ _BOARD_MARKETS: dict[str, dict[str, tuple]] = {
         "pra": _one(("NBA", _PROP, "pra")),
     },
     "nfl": {
-        "spreads": _one(("NFL", "spread", None)),
+        "spreads": _spread_and_ml("NFL"),
         "totals": _one(("NFL", "total", None)),
         "qb_predictions": _one(("NFL", _PROP, "passing_yards")),
         "receiving_yards_predictions": _one(("NFL", _PROP, "receiving_yards")),
@@ -277,7 +304,7 @@ _BOARD_MARKETS: dict[str, dict[str, tuple]] = {
 }
 # Projection loaders per sport (record_gate.PROJECTION_LOADERS); () = bet records only.
 _BOARD_LOADERS = {
-    "nba": ("nba_props", "nba_totals", "nba_spread"),
+    "nba": ("nba_props", "nba_games"),
     "nfl": ("nfl",),
     "nhl": ("nhl",),
     "mlb": (),

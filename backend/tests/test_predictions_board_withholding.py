@@ -33,6 +33,16 @@ PICKY = {
     "confidence_score": 80.0,
     "pick_confidence": 80.0,
     "value_tier": "strong",
+    "best_book": "fanduel",
+    "best_line": -3.5,
+    "best_price": -105,
+    "best_side": "home",
+    "ml_best_book": "fanduel",
+    "ml_best_price": -140,
+    "ml_best_side": "home",
+    "ml_best_fair_prob": 0.58,
+    "ml_best_ev": 0.03,
+    "ml_best_quoted_at": "2026-11-18T12:00:00",
 }
 
 
@@ -75,11 +85,13 @@ def test_every_sport_withholds_what_the_gate_withholds(sport, sqlite_db, monkeyp
     emitted = set().union(*rg.emitted_keys().values())
     for group, entries in spec.items():
         (row,) = out[group]
-        if len(entries) > 1:  # MLB game row: three markets, each owns its fields
+        if len(entries) > 1 and entries[0][1] is not api._ALL:
+            # MLB game row: three markets, each owns its fields
             assert row["ml_pick_withheld"] == "losing_record"
             assert row["ml_recommendation"] is None
             assert "pick_withheld" not in row
             continue
+        # a spread + moneyline row: the spread key decides the whole row
         key = entries[0][0]
         _assert_stripped(row, "losing_record" if key in emitted else "no_record_check")
 
@@ -317,3 +329,42 @@ def test_best_quote_fields_are_stripped_with_the_pick(sqlite_db, monkeypatch):
     assert r["fanduel_line"] == 24.5  # the line stays
     for f in ("fanduel_price", "best_book", "best_line", "best_price", "best_fair_prob", "best_ev", "best_quoted_at"):  # fmt: skip
         assert r[f] is None, f
+
+
+NEW_FIELDS = ("best_book", "best_line", "best_price", "best_side")
+ML_FIELDS = tuple(f for f in PICKY if f.startswith("ml_best_"))
+
+
+@pytest.mark.parametrize("league", ["NBA", "NFL"])
+def test_best_quote_fields_follow_their_own_market(league, sqlite_db, monkeypatch):
+    sport = league.lower()
+    spread, ml = (league, "spread", None), (league, "moneyline", None)
+    # every key unproven: the new fields are stripped on every board group
+    keys = {
+        k for entries in api._BOARD_MARKETS[sport].values() for k, _ in entries if k
+    }
+    _gate_says(monkeypatch, dict.fromkeys(keys, "unproven_record"))
+    out = api._withhold_board_picks(_payload(sport), sqlite_db, sport, None)
+    for group, rows in out.items():
+        for f in NEW_FIELDS + ML_FIELDS:
+            assert rows[0][f] is None, (group, f)
+    # spread proven, moneyline not: spread quote stays, ml quote goes
+    _gate_says(monkeypatch, {ml: "unproven_record"})
+    row = api._withhold_board_picks(_payload(sport), sqlite_db, sport, None)["spreads"][
+        0
+    ]
+    assert all(row[f] == PICKY[f] for f in NEW_FIELDS)
+    assert all(row[f] is None for f in ML_FIELDS)
+    assert row["ml_pick_withheld"] == "unproven_record" and "pick_withheld" not in row
+    # moneyline proven, spread not: conservative, the whole row goes
+    _gate_says(monkeypatch, {spread: "losing_record"})
+    row = api._withhold_board_picks(_payload(sport), sqlite_db, sport, None)["spreads"][
+        0
+    ]
+    assert all(row[f] is None for f in NEW_FIELDS + ML_FIELDS)
+    # both proven: nothing stripped
+    _gate_says(monkeypatch, {})
+    row = api._withhold_board_picks(_payload(sport), sqlite_db, sport, None)["spreads"][
+        0
+    ]
+    assert all(row[f] == PICKY[f] for f in NEW_FIELDS + ML_FIELDS)
