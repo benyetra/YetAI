@@ -42,6 +42,7 @@ from app.services.etl.nba.totals_baseline import (  # noqa: F401 - re-exported
     scoring_averages,
 )
 from app.services.etl.nba.market_anchor import NO_ANCHOR, anchored, fit_anchor
+from app.services.etl._consensus_attach import line_fields
 from app.services.etl.nba.totals_ml import enrich_projection
 
 logger = logging.getLogger(__name__)
@@ -877,6 +878,8 @@ def save_projection(projection: Dict):
             existing.home_starters = projection.get("home_starters")
             existing.away_starters = projection.get("away_starters")
             existing.model_version = projection.get("model_version")
+            for k, v in (projection.get("best") or {}).items():
+                setattr(existing, k, v)
             existing.created_at = datetime.utcnow()
         else:
             # Create new
@@ -909,6 +912,7 @@ def save_projection(projection: Dict):
                 home_starters=projection.get("home_starters"),
                 away_starters=projection.get("away_starters"),
                 model_version=projection.get("model_version"),
+                **(projection.get("best") or {}),
             )
             db.add(new_proj)
 
@@ -940,6 +944,7 @@ def get_todays_games() -> List[Dict]:
                 "home_team": game.home_team_name,
                 "away_team": game.away_team_name,
                 "market_total": game.total,
+                "event_id": game.odds_api_event_id,
                 "spread_home": game.spread_home,
                 "game_time": game.game_time,
             }
@@ -993,6 +998,13 @@ def generate_nightly_report(game_date: Optional[date] = None) -> Dict:
             market_total=game["market_total"],
         )
         enrich_projection(projection)
+        projection["best"] = line_fields(
+            db,
+            event_id=game.get("event_id"),
+            market="totals",
+            projection=projection["projected_total"],
+            line=projection["market_total"],
+        )
 
         # Save to database
         save_projection(projection)

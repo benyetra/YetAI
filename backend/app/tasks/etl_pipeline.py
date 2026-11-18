@@ -522,6 +522,10 @@ NBA_PHASES = [
     (
         "predictions",
         [
+            # Game projectors first: right after nba_update_game_lines the snapshots
+            # they price against are minutes old (the quote window is 30 min).
+            nba_totals_projector,
+            nba_spread_projector,
             nba_generate_no_steals,
             nba_generate_steals_predictions,
             nba_generate_blocks_predictions,
@@ -531,8 +535,6 @@ NBA_PHASES = [
             nba_generate_three_pt_made_predictions,
             nba_generate_free_throws_made_predictions,
             nba_generate_pra_predictions,
-            nba_totals_projector,
-            nba_spread_projector,
             nba_find_top_performers,
         ],
     ),
@@ -878,6 +880,9 @@ NFL_GAMEDAY_AVAILABILITY_PHASES = [
             nfl_recv_yds_weekly,
         ],
     ),
+    # Fresh game lines right before the projectors that price against them (the
+    # spread projector reads this week's QB rows, so after "predictions").
+    ("game_lines", [nfl_update_game_lines]),
     (
         "game_projections",
         [
