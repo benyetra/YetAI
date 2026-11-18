@@ -10,7 +10,8 @@
     "type-check": "tsc --noEmit",
     "test": "playwright test",
     "test:unit": "jest",
-    "test:ci": "playwright test tests/fantasy-happy-path.spec.ts --project=chromium",
+    "test:ci": "jest && playwright test tests/fantasy-happy-path.spec.ts tests/projection-boards.spec.ts --project=chromium",
+    "test:live": "playwright test tests/start-sit-api-test.spec.ts tests/start-sit-recommendations.spec.ts --project=chromium",
     "test:e2e": "playwright test --ui"
   },
   "dependencies": {
