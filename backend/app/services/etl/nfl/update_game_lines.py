@@ -12,6 +12,7 @@ from app.core.database import SessionLocal
 from app.services.etl._game_start import has_started, keep_known
 from app.models.predictions_models import NFLGameLines
 from app.services.etl.nba._espn import EASTERN, now_eastern
+from app.services.etl.nba._fanduel_lines import PROP_BOOKS
 from app.services.etl.nfl.team_names import normalize_team_name
 
 logger = logging.getLogger(__name__)
@@ -78,7 +79,9 @@ def _fetch_bulk_odds() -> list[dict]:
             "regions": "us",
             "markets": "spreads,totals,h2h",
             "oddsFormat": "american",
-            "bookmakers": ",".join(BOOKMAKER_PRIORITY),
+            # 10 books = 1 region = same credits; the extra books feed the consensus
+            # snapshots only (_parse_odds still reads BOOKMAKER_PRIORITY).
+            "bookmakers": PROP_BOOKS,
         },
     )
     return data if isinstance(data, list) else []

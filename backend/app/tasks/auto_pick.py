@@ -30,6 +30,7 @@ from app.services.auto_pick.sources.mlb_strikeout_source import MLBStrikeoutSour
 from app.services.auto_pick.sources.nba_moneyline_source import NBAMoneylineSource
 from app.services.auto_pick.sources.nba_spread_source import NBASpreadSource
 from app.services.auto_pick.sources.nba_totals_source import NBATotalsSource
+from app.services.auto_pick.sources.nfl_moneyline_source import NFLMoneylineSource
 from app.services.auto_pick.sources.nfl_qb_passing_source import NFLQBPassingSource
 from app.services.auto_pick.sources.nfl_receiving_yards_source import (
     NFLReceivingYardsSource,
@@ -65,6 +66,7 @@ def _build_providers(db):
         PlayerPropCandidateProvider(source=NFLQBPassingSource(db)),
         PlayerPropCandidateProvider(source=NFLReceivingYardsSource(db)),
         SpreadCandidateProvider(source=NFLSpreadSource(db)),
+        MoneylineCandidateProvider(source=NFLMoneylineSource(db)),
         TotalsCandidateProvider(source=NFLTotalsSource(db)),
         # WNBA
         PlayerPropCandidateProvider(source=WNBAPlayerPropSource(db)),

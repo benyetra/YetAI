@@ -46,6 +46,16 @@ function formatStarters(starters: unknown): string | undefined {
   return names.length ? names.join(', ') : undefined;
 }
 
+function quoteFields(prefix: 'spread' | 'total', row?: Row): Row {
+  return {
+    [`${prefix}_best_line`]: row?.best_line,
+    [`${prefix}_best_price`]: row?.best_price,
+    [`${prefix}_best_book`]: row?.best_book,
+    [`${prefix}_pick_fair_prob`]: row?.pick_fair_prob,
+    [`${prefix}_pick_ev`]: row?.pick_ev,
+  };
+}
+
 function mergeRow(spread?: Row, total?: Row): Row {
   const home = String(spread?.home_team_name ?? total?.home_team_name ?? '');
   const away = String(spread?.away_team_name ?? total?.away_team_name ?? '');
@@ -71,6 +81,8 @@ function mergeRow(spread?: Row, total?: Row): Row {
     market_spread: spread?.market_spread_home,
     spread_edge: spreadEdge,
     spread_recommendation: spreadSide,
+    // The explicit quote the backend sent with a pick (line is the side's own line).
+    ...(spreadSide ? quoteFields('spread', spread) : {}),
     projected_total: total?.projected_total,
     home_projected_runs: total?.home_projected_score,
     away_projected_runs: total?.away_projected_score,
@@ -78,6 +90,7 @@ function mergeRow(spread?: Row, total?: Row): Row {
     edge_vs_market_total: totalEdge,
     total_recommendation:
       totalRec === 'OVER' || totalRec === 'UNDER' ? totalRec : 'NO_PLAY',
+    ...(totalRec === 'OVER' || totalRec === 'UNDER' ? quoteFields('total', total) : {}),
     model_confidence: num(spread?.confidence_score) ?? num(total?.confidence_score),
     // A value rating only exists alongside an explicit, non-withheld pick.
     value_rating: deriveValueRating(spreadSide, totalRec, spreadEdge, totalEdge),

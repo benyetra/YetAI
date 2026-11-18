@@ -322,8 +322,8 @@ def publish_gate_reason(bet_like, *, now: Optional[datetime] = None) -> Optional
 def auto_pick_stale_reason(
     bet_like, *, now: Optional[datetime] = None
 ) -> Optional[str]:
-    """An AUTO pick waiting for approval was priced at its run; once a newer NBA refresh
-    has started or the run is older than MAX_LINE_AGE, that price is not the board's any
+    """An AUTO pick waiting for approval was priced at its run; once a newer refresh of its
+    league has started or the run is older than MAX_LINE_AGE, that price is not the board's any
     more (the selector would drop it as stale_line), so it cannot be published."""
     if getattr(bet_like, "source", None) != BetSource.AUTO:
         return None
@@ -335,10 +335,13 @@ def auto_pick_stale_reason(
         latest_refresh_start,
         to_naive_utc,
     )
+    from app.services.auto_pick.context_builder import _normalize_sport
 
     now_utc = to_naive_utc(now or datetime.utcnow())
     made = to_naive_utc(made)
-    if made < latest_refresh_start(now_utc) or now_utc - made > MAX_LINE_AGE:
+    sport = getattr(bet_like, "sport", None)
+    league = _normalize_sport(str(getattr(sport, "value", sport) or ""))
+    if made < latest_refresh_start(now_utc, league) or now_utc - made > MAX_LINE_AGE:
         return (
             "Stale price: a newer line refresh ran since this pick was made; reject it"
         )

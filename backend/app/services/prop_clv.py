@@ -19,8 +19,41 @@ NBA_STAT_MARKET = {
 }
 
 
+# Markets whose spread around the median is not measured (game lines, NFL / NHL props): CLV
+# uses only closing books quoting exactly the quote's own line, never a converted one.
+SAME_LINE_MARKETS = frozenset(
+    {
+        "spreads",
+        "totals",
+        "h2h",
+        "player_pass_yds",
+        "player_reception_yds",
+        "player_total_saves",
+    }
+)
+
+
+class SpreadView:
+    """A spreads snapshot row seen as an over/under on the HOME margin: line = the margin the
+    home side must beat (minus the home point), over = home price, under = away price. An away
+    quote's own line is that same number, so both sides share one stat line."""
+
+    def __init__(self, row):
+        self._row = row
+        self.line = None if row.line is None else -float(row.line)
+        self.over_price = row.home_price
+        self.under_price = row.away_price
+
+    def __getattr__(self, name):
+        return getattr(self._row, name)
+
+
 def fair_prob_clv(
-    side: str, line: float, taken_rows: Iterable, close_rows: Iterable, market: str
+    side: str,
+    line: float,
+    taken_rows: Iterable,
+    close_rows: Iterable,
+    market: str,
 ) -> Optional[float]:
     """No-vig close vs no-vig at pick time: the consensus fair probability of ``side`` at the
     taken ``line`` from the close rows minus the same figure from the pick-time rows (+ = the

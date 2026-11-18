@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from app.services.etl._consensus_attach import LEGACY_NFL_PROP_BOOKS
+from app.services.etl.nba._fanduel_lines import PROP_BOOKS
 from app.services.etl.nfl import recv_yds_model
 from app.services.etl.nfl.recv_yds_model import p_over as model_p_over
 from app.services.etl.nfl.recv_yds_model import published_recv_yards
@@ -193,7 +195,9 @@ def fetch_reception_yds_lines() -> dict[str, dict]:
                     "regions": "us",
                     "markets": RECV_YDS_MARKET,
                     "oddsFormat": "american",
-                    "bookmakers": "fanduel,draftkings,betmgm",
+                    # All 10 books (1 region, same credits) for the consensus
+                    # snapshots; stored lines read the 3 legacy books by key.
+                    "bookmakers": PROP_BOOKS,
                 },
                 caller=f"etl.nfl.recv_yds_betting.odds.{event_id}",
                 raise_for_status=False,
@@ -202,6 +206,8 @@ def fetch_reception_yds_lines() -> dict[str, dict]:
                 continue
             odds_data = odds_response.json()
             for bookmaker in odds_data.get("bookmakers", []):
+                if bookmaker.get("key") not in LEGACY_NFL_PROP_BOOKS:
+                    continue
                 bookmaker_name = bookmaker["title"]
                 for market in bookmaker.get("markets", []):
                     if market["key"] != RECV_YDS_MARKET:

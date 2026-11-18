@@ -113,6 +113,11 @@ def written(sqlite_db, monkeypatch):
         return_value=_odds_payload(),
     ):
         assert dp.generate_goalie_predictions([GAME], EVENTS) == 2
+    # The writer stamps the wall clock; the auto-pick run below is pinned to NOW.
+    sqlite_db.query(NHLGoaliePredictions).update(
+        {"prediction_date": NOW}  # NOW is the 16:45 ET refresh itself
+    )
+    sqlite_db.commit()
     return sqlite_db
 
 

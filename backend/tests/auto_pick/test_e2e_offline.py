@@ -86,7 +86,7 @@ def _seed_slate(sqlite_db):
             under_odds=-110,
             confidence=80.0,
             betting_recommendation="OVER 5.5",
-            prediction_date=datetime(2026, 5, 22, 12, 0),
+            prediction_date=datetime(2026, 5, 22, 14, 50),  # after the 10:45 ET refresh
         )
     )
     sqlite_db.commit()

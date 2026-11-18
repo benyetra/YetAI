@@ -3,11 +3,32 @@ import { mkdirSync } from 'fs';
 import { boardPayload, type BoardSport, type BoardState } from './fixtures/board-fixtures';
 
 const SPORTS: BoardSport[] = ['nba', 'nfl', 'nhl'];
-const STATES: BoardState[] = ['withheld', 'open', 'empty'];
+const STATES: BoardState[] = ['withheld', 'open', 'openGames', 'empty'];
 const NOTE = 'No pick: this market has not proved itself against the line yet';
 const EMPTY_BEST_EDGES = 'No picks today: no market on this board has proved itself against the line yet';
 /** Only the NBA board has a Best edges strip (and so Gamble It). */
 const HAS_BEST_EDGES: Record<BoardSport, boolean> = { nba: true, nfl: false, nhl: false };
+/** openGames: the pick each board shows (the card's market, line, price and book), what its Gamble It
+ *  leg must say, and how many open games fail the EV gates. */
+const OPEN_GAMES: Record<BoardSport, { picks: Array<{ text: RegExp; gamble: RegExp }>; noPlay: number }> = {
+  nba: {
+    picks: [
+      { text: /Miami Heat\s*Spread -3\.5\s*at -110, FanDuel/, gamble: /Miami Heat -3\.5 spread \(-110\) at FanDuel/ },
+      // spread fails, total passes: the card shows the total
+      { text: /Over\s*221\.5\s*at -108, DraftKings/, gamble: /Over 221\.5 total \(-108\) at DraftKings/ },
+    ],
+    noPlay: 1,
+  },
+  nfl: {
+    // the pick follows best_side (the away team, against the model's home lean); the total's EV is lower
+    picks: [{ text: /Kansas City Chiefs\s*Spread \+2\.5\s*at -105, BetMGM/, gamble: /Kansas City Chiefs \+2\.5 spread \(-105\) at BetMGM/ }],
+    noPlay: 1,
+  },
+  nhl: {
+    picks: [{ text: /Over\s*5\.5\s*at -108, DraftKings/, gamble: /Over 5\.5 total \(-108\) at DraftKings/ }],
+    noPlay: 1,
+  },
+};
 const GAMBLE = 'a[title="Build a one-click betslip on Gambly"]';
 const SCREENS = process.env.BOARD_SCREENS_DIR || 'test-results/board-screens';
 
@@ -47,6 +68,8 @@ async function load(page: Page, sport: BoardSport, state: BoardState) {
   await page.goto(`/predictions/${sport}`);
   await expect(page.getByRole('heading', { name: `${sport.toUpperCase()} Stat Projections`, exact: false })).toBeVisible();
   await expect(page.getByText('Loading…')).toHaveCount(0);
+  // Team logos are lazy <img>s: wait for them so screenshots (and layout) are the settled page.
+  await page.waitForFunction(() => Array.from(document.images).every((i) => i.complete));
   return errors;
 }
 
@@ -74,6 +97,44 @@ for (const sport of SPORTS) {
       } else {
         await expect(page.locator(GAMBLE)).toHaveCount(0); // these boards have no Gamble It on props
       }
+      expect(errors).toEqual([]);
+    });
+
+    test('open game market: pick with book and price on the game card, Gamble It', async ({ page }) => {
+      const errors = await load(page, sport, 'openGames');
+      const { picks, noPlay } = OPEN_GAMES[sport];
+      const cards = page.locator('.proj-card');
+      await expect(cards).toHaveCount(picks.length + noPlay);
+      const picked = cards.filter({ has: page.locator('.proj-pick:not(.is-none)') });
+      const failing = cards.filter({ has: page.locator('.proj-pick.is-none') });
+      await expect(picked).toHaveCount(picks.length);
+      await expect(failing).toHaveCount(noPlay);
+      for (const { text, gamble } of picks) {
+        // The pick states market, line, price and book; the card says why in plain words, not a model edge.
+        const card = picked.filter({ has: page.locator('.proj-pick-bet', { hasText: text }) });
+        await expect(card).toHaveCount(1);
+        await expect(card.locator('.proj-verdict')).toHaveText('Pick');
+        await expect(card.locator('.proj-pick-why')).toContainText(/Best price -?\d+ at .+ vs a fair price of -?\d+ \(\+[\d.]+% expected value\)/);
+        await expect(card.locator('.proj-pick-why')).not.toContainText(/edge|projects/i);
+        await expect(card.locator('.proj-pick-bet')).not.toContainText('Spread / ML');
+        await expect(card.locator('.proj-card-flag, .proj-verdict.v-strong')).toHaveCount(0);
+        // Gamble It carries the same side, line, price and book.
+        const href = await card.locator(GAMBLE).getAttribute('href');
+        expect(new URL(href ?? '').searchParams.get('prompt')).toMatch(gamble);
+        await expect(card.getByText(NOTE)).toHaveCount(0);
+      }
+      // An open market whose row failed the EV gates: neutral, no team named, not the "not proved" note.
+      for (let i = 0; i < noPlay; i++) {
+        const card = failing.nth(i);
+        await expect(card.locator('.proj-pick')).toContainText('No play at current prices');
+        await expect(card.locator('.proj-pick')).not.toContainText('Model leans');
+        await expect(card.locator('.proj-verdict')).toHaveText('No pick');
+        await expect(card.getByText(NOTE)).toHaveCount(0);
+        await expect(card.locator(GAMBLE)).toHaveCount(0);
+      }
+      // Props are still withheld.
+      await expect(page.getByText(NOTE).first()).toBeVisible();
+      await expect(page.locator('.prop-pick-cell', { hasText: /^OVER/ })).toHaveCount(0);
       expect(errors).toEqual([]);
     });
 

@@ -28,6 +28,37 @@ from sqlalchemy.dialects.postgresql import JSONB
 from app.core.database import Base
 
 
+class BestQuoteColumns:
+    """Best bettable quote for one side across books, with the no-vig consensus of the other
+    books at that same line (app/services/consensus_price.py; the NBA prop tables carry the
+    same columns without best_side). Written when the line is attached; all None when no
+    consensus could be formed (fewer than 3 other books at the line, or no fresh quotes).
+    """
+
+    best_book = Column(String(64), nullable=True)
+    best_line = Column(
+        Float, nullable=True
+    )  # the side's own line (away spread for away)
+    best_price = Column(Integer, nullable=True)
+    best_side = Column(String(8), nullable=True)  # home / away / over / under
+    best_fair_prob = Column(Float, nullable=True)  # consensus P(side) at best_line
+    best_ev = Column(
+        Float, nullable=True
+    )  # EV per 1u at best_price at that probability
+    best_quoted_at = Column(DateTime, nullable=True)  # naive UTC
+
+
+class MoneylineBestQuoteColumns:
+    """The moneyline's best quote on a spread row (one row feeds both markets)."""
+
+    ml_best_book = Column(String(64), nullable=True)
+    ml_best_price = Column(Integer, nullable=True)
+    ml_best_side = Column(String(8), nullable=True)  # home / away
+    ml_best_fair_prob = Column(Float, nullable=True)
+    ml_best_ev = Column(Float, nullable=True)
+    ml_best_quoted_at = Column(DateTime, nullable=True)
+
+
 class HistoricalPitcherStats(Base):
     __tablename__ = "pred_historical_pitcher_stats"
     id = Column(Integer, primary_key=True)
@@ -413,7 +444,7 @@ class NFLGameLines(Base):
         )
 
 
-class NFLSpreadProjections(Base):
+class NFLSpreadProjections(BestQuoteColumns, MoneylineBestQuoteColumns, Base):
     """Spread / win-probability projections for NFL games."""
 
     __tablename__ = "pred_nfl_spread_projections"
@@ -450,7 +481,7 @@ class NFLSpreadProjections(Base):
     )
 
 
-class NFLTotalsProjections(Base):
+class NFLTotalsProjections(BestQuoteColumns, Base):
     """Over/under totals projections for NFL games."""
 
     __tablename__ = "pred_nfl_totals_projections"
@@ -707,7 +738,7 @@ class NFLAnytimeTDActuals(Base):
         )
 
 
-class RecvYdsPredictions(Base):
+class RecvYdsPredictions(BestQuoteColumns, Base):
     """Weekly receiving-yards board rows (lined RB/WR/TE only)."""
 
     __tablename__ = "pred_recv_yds_predictions"
@@ -1740,7 +1771,7 @@ class DailyHRPredictions(Base):
         return f"<DailyHRPredictions {self.date} - {self.batter_name} vs {self.pitcher_name} {self.predicted_prob:.3f}>"
 
 
-class QBPredictions(Base):
+class QBPredictions(BestQuoteColumns, Base):
     __tablename__ = "pred_qb_predictions"
     id = Column(Integer, primary_key=True)
     qb_player_id = Column(String(20), nullable=False)
@@ -2093,7 +2124,7 @@ class NHLGameStats(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
-class NHLGoaliePredictions(Base):
+class NHLGoaliePredictions(BestQuoteColumns, Base):
     __tablename__ = "pred_nhl_goalie_predictions"
     # One live row per team per game date. A superseded starter's row stays for history
     # (was_scratch), so the key only covers rows that are not flagged.
@@ -2256,7 +2287,7 @@ class NHLPlayerShotsPredictions(Base):
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
-class NHLTeamTotalsPredictions(Base):
+class NHLTeamTotalsPredictions(BestQuoteColumns, Base):
     __tablename__ = "pred_nhl_team_totals_predictions"
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False)
@@ -2655,7 +2686,7 @@ class NBAGameLines(Base):
         return 1.0 - minutes_reduction
 
 
-class NBATotalsProjections(Base):
+class NBATotalsProjections(BestQuoteColumns, Base):
     """
     Store NBA game totals (over/under) projections.
     Predicts expected total combined points for both teams.
@@ -2791,7 +2822,7 @@ class NBATotalsActuals(Base):
         return f"<NBATotalsActuals {self.away_team_name} @ {self.home_team_name}: actual={self.actual_total}>"
 
 
-class NBASpreadProjections(Base):
+class NBASpreadProjections(BestQuoteColumns, MoneylineBestQuoteColumns, Base):
     """Own spread / win-probability projections (backported from WNBA Elo+pace model)."""
 
     __tablename__ = "pred_nba_spread_projections"

@@ -103,7 +103,7 @@ def _game(**kw):
     base = dict(
         game_date=date(2026, 11, 15), game_time=KICK, home_team_id=1,
         away_team_id=2, home_team_name="Home Team", away_team_name="Away Team",
-        spread_home=-3.0, total=44.5,
+        spread_home=-3.0, total=44.5, odds_api_event_id=None,
     )  # fmt: skip
     base.update(kw)
     return SimpleNamespace(**base)

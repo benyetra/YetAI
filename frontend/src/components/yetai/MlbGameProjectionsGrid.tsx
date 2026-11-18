@@ -14,6 +14,7 @@ import {
 import { teamColorStyle, teamPrimaryColor } from '@/lib/team-colors';
 import { gamblyLegFromProjection } from '@/lib/gambly';
 import { isPickWithheld, PICK_WITHHELD_NOTE } from '@/lib/pickWithheld';
+import { pickQuoteOf, quoteNote, quoteWhy, type PickQuote } from '@/lib/pickQuote';
 import { resultBadge } from '@/lib/propProjectionDisplay';
 import GambleItButton from './GambleItButton';
 import { TeamGlyph } from './primitives';
@@ -29,7 +30,11 @@ type PrimaryPick = {
   side?: Side;
   team: string;
   betLabel: string;
+  /** Slip bet type when it differs from the label ("Total 221.5"). */
+  betType?: string;
   detail?: string;
+  /** The backend's explicit best quote: the pick is only good at this line, price and book. */
+  quote?: PickQuote | null;
 };
 
 export type { GameProjectionsVariant } from '@/lib/gameProjectionsTypes';
@@ -134,11 +139,28 @@ function teamForSide(proj: GameRow, side: Side): string {
   return side === 'HOME' ? formatString(proj.home_team) : formatString(proj.away_team);
 }
 
+/** The card's pick: its primary market's, or, on a spread card, the total's when the spread has
+ *  no pick or the total's price is the better one (auto picks take one per game, best EV first;
+ *  the backend sends each pick's EV). */
 function primaryPick(proj: GameRow, variant: GameProjectionsVariant): PrimaryPick | null {
-  const cfg = VARIANT[variant];
-  if (kindWithheld(proj, cfg.primaryPickKind)) return null;
+  const kind = VARIANT[variant].primaryPickKind;
+  const main = pickOfKind(proj, variant, kind);
+  if (kind !== 'spread') return main;
+  const total = pickOfKind(proj, variant, 'total');
+  if (!total?.quote) return main;
+  if (!main) return total;
+  return (total.quote.ev ?? -Infinity) > (main.quote?.ev ?? -Infinity) ? total : main;
+}
 
-  if (cfg.primaryPickKind === 'ml') {
+function pickOfKind(
+  proj: GameRow,
+  variant: GameProjectionsVariant,
+  kind: PickKind,
+): PrimaryPick | null {
+  const cfg = VARIANT[variant];
+  if (kindWithheld(proj, kind)) return null;
+
+  if (kind === 'ml') {
     const mlRaw = formatString(proj.ml_recommendation);
     if (mlRaw !== 'HOME' && mlRaw !== 'AWAY') return null;
     const side = mlRaw;
@@ -153,29 +175,42 @@ function primaryPick(proj: GameRow, variant: GameProjectionsVariant): PrimaryPic
     };
   }
 
-  if (cfg.primaryPickKind === 'total') {
+  if (kind === 'total') {
     const totalRaw = formatString(proj.total_recommendation);
     if (totalRaw !== 'OVER' && totalRaw !== 'UNDER') return null;
-    const line = num(proj.market_total);
+    const quote = pickQuoteOf(proj, 'total');
+    const line = quote?.line ?? num(proj.market_total);
     return {
       kind: 'total',
       team: totalRaw === 'OVER' ? 'Over' : 'Under',
       betLabel: line != null ? line.toFixed(1) : cfg.pickBetSuffix,
+      betType: quote && line != null ? `Total ${line.toFixed(1)}` : undefined,
       detail: undefined,
+      quote,
     };
   }
 
   const spreadSide = spreadRecommendation(proj);
   if (!spreadSide) return null;
   const marketSpread = num(proj.market_spread);
+  const quote = pickQuoteOf(proj, 'spread');
   return {
     kind: 'spread',
     side: spreadSide,
     team: teamForSide(proj, spreadSide),
-    betLabel: cfg.pickBetSuffix,
-    detail:
-      marketSpread != null ? formatSpreadLine(spreadSide, marketSpread) : undefined,
+    // With a quote the pick is that exact market and line, never "Spread / ML".
+    betLabel: quote ? `Spread ${signedLine(quote.line)}` : cfg.pickBetSuffix,
+    detail: quote
+      ? signedLine(quote.line)
+      : marketSpread != null
+        ? formatSpreadLine(spreadSide, marketSpread)
+        : undefined,
+    quote,
   };
+}
+
+function signedLine(line: number): string {
+  return `${line > 0 ? '+' : ''}${line.toFixed(1)}`;
 }
 
 function fmtAmerican(odds: number): string {
@@ -197,15 +232,13 @@ function pickResult(proj: GameRow, kind: PickKind): string {
 }
 
 function verdictClass(valueRating: string, hasPick: boolean): string {
-  if (valueRating === 'Strong') return 'proj-verdict v-strong';
-  if (hasPick || valueRating === 'Lean') return 'proj-verdict v-lean';
-  return 'proj-verdict v-none';
+  if (!hasPick) return 'proj-verdict v-none';
+  return valueRating === 'Strong' ? 'proj-verdict v-strong' : 'proj-verdict v-lean';
 }
 
-function verdictLabel(valueRating: string, hasPick: boolean): string {
-  if (valueRating === 'Strong') return 'Strong value';
-  if (hasPick || valueRating === 'Lean') return 'Model lean';
-  return 'No pick';
+/** One wording with the pick row below it. */
+function verdictLabel(hasPick: boolean): string {
+  return hasPick ? 'Pick' : 'No pick';
 }
 
 export default function GameProjectionsGrid({
@@ -237,17 +270,17 @@ export default function GameProjectionsGrid({
     );
   }
 
-  const strong = rows.filter((r) => formatString(r.value_rating) === 'Strong').length;
+  const picks = rows.filter((r) => primaryPick(r, variant) != null).length;
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         <StatChip label="Games" value={String(rows.length)} />
         <StatChip
-          label="Strong picks"
-          value={String(strong)}
-          sub={strong === 0 ? 'no strong picks' : `${strong} ${strong === 1 ? 'pick' : 'picks'} with edge`}
-          muted={strong === 0}
+          label="Picks"
+          value={String(picks)}
+          sub={picks === 0 ? 'no picks at current prices' : `${picks} ${picks === 1 ? 'game' : 'games'} with a pick`}
+          muted={picks === 0}
         />
       </div>
       {rows.map((proj) => (
@@ -337,7 +370,7 @@ function GameCard({
             <div className="proj-head-time mono">{gameTimeLabel}</div>
           ) : null}
         </div>
-        <span className={verdictClass(valueRating, hasPick)}>{verdictLabel(valueRating, hasPick)}</span>
+        <span className={verdictClass(valueRating, hasPick)}>{verdictLabel(hasPick)}</span>
       </div>
 
       {showResults && hasFinalScore(proj) ? <FinalScoreBanner proj={proj} /> : null}
@@ -422,7 +455,9 @@ function GameCard({
         result={pick && showResults ? pickResult(proj, pick.kind) : null}
         matchup={`${away} @ ${home}`}
         pickOdds={
-          pick?.kind === 'ml' && pick.side
+          pick?.quote?.price != null
+            ? pick.quote.price
+            : pick?.kind === 'ml' && pick.side
             ? num(pick.side === 'HOME' ? proj.market_home_ml : proj.market_away_ml)
             : null
         }
@@ -439,10 +474,12 @@ function GameCard({
             ? () =>
                 onAddToSlip({
                   team: pick.kind === 'total' ? `${pick.team} ${pick.betLabel}` : pick.team,
-                  betType: pick.betLabel,
+                  betType: pick.betType ?? pick.betLabel,
                   matchup: `${away} @ ${home}`,
                   odds:
-                    pick.kind === 'ml' && pick.side
+                    pick.quote?.price != null
+                      ? pick.quote.price
+                      : pick.kind === 'ml' && pick.side
                       ? (pick.side === 'HOME'
                           ? num(proj.market_home_ml)
                           : num(proj.market_away_ml)) ?? undefined
@@ -644,17 +681,7 @@ function ModelPickModule({
         <div className="proj-pick-main">
           <span className="proj-pick-kicker">No play</span>
           <span className="proj-pick-bet dim">
-            {withheld ? PICK_WITHHELD_NOTE : null}
-            {withheld ? null : <>Model leans{' '}
-            <ProjTeamInline
-              name={favTeam.name}
-              abbr={favTeam.abbr}
-              league={logoLeague}
-              sportKey={sportKey}
-              size={16}
-              className="proj-team-inline-emphasis"
-            />
-            , below betting threshold</>}
+            {withheld ? PICK_WITHHELD_NOTE : 'No play at current prices'}
           </span>
         </div>
       </div>
@@ -673,11 +700,13 @@ function ModelPickModule({
     />
   );
   const marketLine =
-    pick.kind === 'spread' && pick.side && marketSpread != null
+    pick.kind === 'spread' && pick.side && marketSpread != null && !pick.quote
       ? formatSpreadLine(pick.side, marketSpread)
       : pick.detail;
-  const whyCopy =
-    pick.kind === 'total' ? (
+  const whyCopy = pick.quote ? (
+    // A priced pick: the reason is the price, not the model's margin.
+    quoteWhy(pick.quote)
+  ) : pick.kind === 'total' ? (
       <>
         Model projects{' '}
         <b className="mono">{projectedTotal != null ? projectedTotal.toFixed(1) : '—'}</b> total {scoreUnit}
@@ -717,7 +746,7 @@ function ModelPickModule({
   return (
     <div className="proj-pick" style={pickTeamColors}>
       <div className="proj-pick-main">
-        <span className="proj-pick-kicker">Model pick</span>
+        <span className="proj-pick-kicker">Pick</span>
         <span className="proj-pick-bet">
           {pick.kind === 'total' ? (
             <>
@@ -728,9 +757,14 @@ function ModelPickModule({
               {pickTeamInline} <b>{pick.betLabel}</b>
             </>
           )}
-          {marketLine ? (
+          {marketLine && !pick.quote ? (
             <span className="mono dim" style={{ marginLeft: 8, fontSize: 13 }}>
               Line {marketLine}
+            </span>
+          ) : null}
+          {pick.quote && quoteNote(pick.quote) ? (
+            <span className="mono dim" style={{ marginLeft: 8, fontSize: 13 }}>
+              {quoteNote(pick.quote)}
             </span>
           ) : null}
         </span>
@@ -759,11 +793,12 @@ function ModelPickModule({
                 team: pick.team,
                 line:
                   pick.kind === 'total'
-                    ? marketTotal?.toFixed(1)
+                    ? (pick.quote?.line ?? marketTotal)?.toFixed(1)
                     : pick.kind === 'spread'
                       ? marketLine
                       : null,
                 odds: pickOdds,
+                book: pick.quote?.book,
                 matchup,
               }),
             ]}

@@ -20,6 +20,7 @@ from app.models.predictions_models import (
     TeamOffenseStats,
 )
 from app.services.etl import _spread_model as _sm
+from app.services.etl._consensus_attach import moneyline_fields, spread_fields
 from app.services.etl._game_start import not_started
 from app.services.etl._spread_model import (
     NBA_CONFIG,
@@ -255,6 +256,19 @@ def run() -> dict:
                     },
                     "model_version": SPREAD_MODEL_VERSION,
                     "created_at": datetime.utcnow(),
+                    # best book / same-line consensus price (None when no consensus)
+                    **spread_fields(
+                        db,
+                        event_id=g.odds_api_event_id,
+                        margin=projected_margin,
+                        spread_home=g.spread_home,
+                    ),
+                    **moneyline_fields(
+                        db,
+                        event_id=g.odds_api_event_id,
+                        margin=projected_margin,
+                        spread_home=g.spread_home,
+                    ),
                 }
             )
         upsert_many(

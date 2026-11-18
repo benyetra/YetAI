@@ -75,9 +75,9 @@ Tuning knobs live in the `scoring_config` row: `score_threshold` (default 65; pa
 | `no_play` | The model did not name a side. Sources also skip NO_PLAY / PASS rows outright. |
 | `non_positive_edge` | Edge for the picked side is zero or negative. |
 | `odds_out_of_bounds` | Price outside `odds_min` / `odds_max`. |
-| `stale_line` | NBA props only: the row's line and price (`projected_at`) are older than the latest NBA refresh start (03:30, 12:00 or 17:00 ET) or older than 3 hours. Also drops rows a still-running refresh has not reached yet. |
-| `no_consensus_price` | No fair probability for the side: no multi-book consensus and no two-sided price. Nothing is made up; the candidate is dropped. Today only NBA props carry a consensus. |
-| `no_model_probability` | The market has no probability model (spreads, totals). |
+| `stale_line` | The row's `projected_at` or its quote time `quoted_at` is older than the latest refresh start of ITS league (table below) or older than 3 hours. Also drops rows a still-running refresh has not reached yet. |
+| `no_consensus_price` | No fair probability for the side: no multi-book consensus and no two-sided price. Nothing is made up; the candidate is dropped. Game lines (NBA, NFL), NFL passing / receiving yards and NHL saves / totals carry one too (see "Consensus price for game lines"). |
+| `no_model_probability` | The market has no probability model and no consensus price. |
 | `negative_consensus_ev` | At the market's own fair probability the price loses money (we would pay more than fair). A single book's two prices always fail this: their no-vig split prices the vig in. |
 | `ev_below_threshold` | Blended EV is not above `ev.MIN_EV` (+2%). |
 | `losing_record` / `unproven_record` | The record gate withholds the market (below). |
@@ -138,19 +138,19 @@ A market (league, market, stat) must have earned its place on a record measured 
 - **Prove-in.** `AUTO_PICK_REQUIRE_PROVEN_RECORD` (default **true**) makes every market prove in: withheld unproven
   until n >= 100 over at least 10 slate dates (one night's rows share games, so they are not independent) and shrunk
   ROI >= 0. (At 30 calls a no-edge market shows a non-negative ROI about 40% of the time.) A market with no shadow
-  source (NBA moneyline, MLB, WNBA: no projection record; NHL, NFL, NBA totals/spread: no stored price) cannot build a
-  priced record while withheld, so under prove-in it stays withheld until such a source exists.
+  source (MLB, WNBA, NHL shots, NFL anytime TD: no stored price) cannot build a priced record while withheld, so
+  under prove-in it stays withheld until such a source exists. NBA / NFL spread, total and moneyline, NFL yards
+  and NHL saves / totals now have one (priced shadow loaders in `record_gate`).
   `AUTO_PICK_PROVE_IN_KEYS` lists the markets that prove in even when that flag is false (default: NHL, NBA steals,
   blocks and PRA, NBA moneyline, MLB, WNBA).
 - **Transparency.** `record_gate.all_key_rows(db, now)` returns every market's row (n, hits, units, n_eff, shrunk
   ROI, model and selection version, state open / withheld-losing / withheld-unproven);
   `python -m app.services.auto_pick gate` prints it.
 
-Spread and total sources that price from the game-lines table (NBA, WNBA, NFL) handle a line that moved after
-the projection ran: the edge is re-derived from the stored projected margin/total against the CURRENT line. The
-candidate is kept only if the side is unchanged and the new edge still meets the projector's own play threshold
-(NBA/WNBA spread 2.0, NFL spread 3.0, NBA totals `MIN_EDGE` 4.0, WNBA totals 2.0, NFL totals 3.0), and it is
-published with the current line and price.
+WNBA spread and total sources (no stored consensus yet) still price from the game-lines table and handle a line
+that moved after the projection ran: the edge is re-derived from the stored projected margin/total against the
+CURRENT line, kept only if the side is unchanged and the new edge still meets the projector's own play threshold
+(WNBA spread 2.0, WNBA totals 2.0). NBA and NFL game lines no longer do this: they use the consensus path below.
 
 NBA / WNBA prop tables store the FanDuel price of the picked side in `fanduel_price` (written with the line by
 `apply_fanduel_to_projection`, the PRA / threes generators and `etl/wnba/_prop_lines.py`). The prop sources publish
@@ -227,3 +227,81 @@ make sure `yetai_grading.can_grade` covers its league/market/stat or every candi
 history (the old code's visible set has no `void`): do not roll back the code once voids exist, or fix their
 status first. The cap migration is data-only; `alembic downgrade -1` puts 4 back, but the code clamp still
 yields 3.
+
+## Consensus price for game lines and NFL / NHL props (build 2026-11-18, `20261118_game_best_price`)
+
+NBA / NFL spread, total and moneyline, NFL passing and receiving yards, and NHL saves and team totals are
+priced from the odds snapshots that every Odds API response already records (`consensus_price.best_fields`,
+attached by the writers at write time as `best_*`; moneyline `ml_best_*`). The projector's own
+recommendation, the moved-line re-derivation and the moneyline model-edge floor are not used on this path:
+the EV rule and the record gate decide.
+
+**The rule.**
+- A book's quote counts in the consensus only if it was seen in the last **30 minutes** and its update is
+  within 30 minutes of the freshest book. The **best** book must be live: seen by the newest fetch (within
+  2 minutes) and updated within 5 minutes of the freshest book, so a book that pulled or lags its market
+  is never the price we publish or grade.
+- **Same line only, at least 3 other books.** The best bettable book for our side is priced against the
+  no-vig fair probability of the OTHER books quoting exactly the same line (spread: the same home point;
+  total or prop: the same number). A book at another line is never converted. Fewer than 3 others at the
+  line, a refused capture, or no event id means no quote: every `best_*` is stored as None and the
+  candidate drops as `no_consensus_price`. Reference-only books (e.g. Pinnacle) never supply the price.
+- Side: spread home if projected margin + home spread > 0, away if < 0; total / prop over if projection >
+  line, under if <; moneyline home if the margin beats the margin the stored spread implies. Equal = none.
+- **Model part of p** (p = fair + model part; EV = p x decimal - 1; gates unchanged: consensus EV >= 0 and
+  EV > 2%): spread = logistic(k x (side margin + line) / scale) - 0.5 with the anchor's k and the league's
+  logistic scale; moneyline = the same on the market margin; **totals, NFL / NHL props = 0**, so these
+  only pass when the best book beats the market's fair price by more than 2%. NBA props are unchanged.
+  A missing `anchor_k` / `model_margin` also gives 0.
+
+**Freshness per league** (`candidate.refresh_starts_et`; a row is stale if its write or quote predates the
+latest start; a test fails if these drift from `celery_app.py`):
+
+| League | Refresh starts (ET) |
+|---|---|
+| NBA (and WNBA, MLB) | 03:30, 12:00, 17:00, 18:30; picks at 13:30 and 18:00 |
+| NFL | 04:30 daily; Sun 10:00, 12:30, 15:30; Mon 17:00, 18:15; Thu 10:00, 17:00, 19:00; Sat 12:30 |
+| NHL | 05:00, then :45 of even hours 10-20 (10:45 ... 20:45); a refresh rewrites only games starting within ~3 h, so a late game keeps its 05:00 row and is stale for picks |
+
+**How long each key needs to prove in.** Prove-in needs 100 gate-passing priced rows and 10 slate dates, ROI
+>= 0, on the current model version. The record counts every row that passes the EV gates (one row per game
+or player per day, last write wins), not only the 2-3 a day that can be picked, so:
+
+    weeks to 100 rows = 100 / (games per week x pass rate)
+    weeks to 10 dates = 10 game days / game days per week
+
+and the key opens after the LATER of the two. The pass rate (the share of rows with a consensus quote whose
+best price beats fair by the 2% EV gate) is unknown before deploy; read it from the first week's
+`unpriced` and `n` columns. Worked examples at assumed rates:
+
+| Key | Volume | Rows / week at pass rate 20% / 50% | Weeks to 100 rows | Date floor |
+|---|---|---|---|---|
+| NFL spread (or moneyline, total) | ~14 games a week | 2.8 / 7 | 36 / 14 | 10 NFL game days = at least 4-5 weeks (Thu, Sun, Mon) |
+| NBA spread / total / moneyline | ~45 games a week | 9 / 22 | 11 / 4.5 | 10 game days = ~2 weeks |
+| NHL total | ~50 games a week | 10 / 25 | 10 / 4 | 10 game days = ~2 weeks |
+| NHL saves | ~50 starters a week with a line | 10 / 25 | 10 / 4 | ~2 weeks |
+| NFL passing / receiving yards | ~14 QBs / ~40 WRs with a line | 2.8-8 / 7-20 | 12-36 / 5-14 | 4-5 weeks |
+
+NFL is the slow one: a single NFL week has at most 3 game days, so the date floor alone is 4-5 weeks, and at a
+low pass rate the row floor (14-36 weeks) can outlast the season. A pass rate near zero means the consensus is
+simply not beaten by any book, which is the honest answer. The rows only start counting on deploy day.
+
+**Check qualifying rows per day for a game market** (read-only; NFL spread shown; swap the table and
+`game_date` / `created_at` column for NBA / NHL totals). It counts rows with a consensus quote and a positive
+consensus EV, per day; the record gate's own EV gates (odds bounds, blended EV > 2%) are applied in
+`record_gate`, so this is an upper bound. Use `python -m app.services.auto_pick gate` for the exact n.
+
+```sql
+SELECT game_date,
+       count(*)                                                     AS rows,
+       count(best_price)                                            AS with_quote,
+       count(*) FILTER (WHERE best_ev > 0)                          AS positive_consensus_ev,
+       count(*) FILTER (WHERE best_ev > 0.02)                       AS above_2pct
+FROM pred_nfl_spread_projections
+WHERE game_date >= current_date - 28
+GROUP BY game_date
+ORDER BY game_date DESC;
+```
+
+For the moneyline use `ml_best_price` / `ml_best_ev`; for NHL totals the table is
+`pred_nhl_team_totals_predictions` (`game_date`), for saves `pred_nhl_goalie_predictions`.

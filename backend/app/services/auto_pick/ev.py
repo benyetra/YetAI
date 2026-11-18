@@ -8,13 +8,23 @@ shrunk share of the model's disagreement with the line:
 - over/under props: the model's mean is moved toward the line, mean = line + k * (projection -
   line), and its part is P(side | that mean, the stat's market spread) - 0.5 (the line itself is
   the market's coin flip). p = fair + that part.
-- moneylines: p = fair + k * (model win prob - fair).
-- anything else (spreads, totals): no probability model here, so the candidate is dropped.
+  Only stats whose market spread was measured (the NBA props) get a model part; NFL and NHL
+  props (saves, shots, passing and receiving yards) have only placeholder spreads in
+  ``odds_math.MARKET_SD``, so their model part is 0 and p = fair.
+- spreads and moneylines with a consensus price (NBA, NFL): the projectors publish
+  market + a + k * (model - market) with k fitted near 0 (etl/nba/market_anchor.py); the
+  model part uses that same k and the league's fitted margin -> probability logistic
+  (``_spread_model.margin_to_win_prob`` scale). Spread: P(cover | mean = market margin +
+  k * (model - market)) - 0.5. Moneyline: win prob at that mean minus win prob at the market
+  margin. With k = 0 the model adds nothing. The constant ``a`` is not counted.
+- totals: no fitted spread of game totals exists in the code, so the model part is 0.
+- legacy moneylines with only one book's two prices: p = fair + k * (model - fair).
 
-The fair probability is the line-shopping consensus that ``odds_math.best_quote`` computes
-(stored next to the best price on the NBA prop tables), or the no-vig split of the two prices of
-one book when the candidate carries the other side's price. A candidate with neither is dropped:
-no probability is made up for a market that has no two-sided price.
+The fair probability is the line-shopping consensus: ``odds_math.best_quote`` for NBA props,
+``consensus_price.best_fields`` (other books at the same line) for game lines and NFL / NHL
+props, both stored next to the best price on the row; or the no-vig split of the two prices
+of one book when the candidate carries the other side's price. A candidate with neither is
+dropped: no probability is made up for a market that has no two-sided price.
 
 Hard gates: the consensus EV at the pick price must be >= 0 (we are not paying more than the
 market's own fair price) and the blended EV must exceed MIN_EV.
@@ -22,6 +32,7 @@ market's own fair price) and the blended EV must exceed MIN_EV.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -60,6 +71,11 @@ STAT_MARKET: dict[str, str] = {
     "receiving_yards": "player_reception_yds",
 }
 
+# Stats whose MARKET_SD is a placeholder, not measured: no model part (p = fair).
+NO_MODEL_PART_STATS = frozenset(
+    {"saves", "shots", "shots_on_goal", "passing_yards", "receiving_yards"}
+)
+
 _P_MIN, _P_MAX = 0.01, 0.99
 
 
@@ -81,7 +97,10 @@ def stat_sd(stat: Optional[str]) -> Optional[float]:
 def prop_model_part(
     stat: str, side: str, projection: float, line: float
 ) -> Optional[float]:
-    """P(side | mean = line + k * (projection - line)) - 0.5, or None without a spread."""
+    """P(side | mean = line + k * (projection - line)) - 0.5, or None without a spread
+    (0 for a stat whose spread was never measured)."""
+    if stat in NO_MODEL_PART_STATS:
+        return 0.0
     sd = stat_sd(stat)
     if sd is None:
         return None
@@ -120,6 +139,38 @@ def prop_ev(
     return _ev(float(fair_prob), part, price)
 
 
+def _logistic(x: float) -> float:
+    return 1.0 / (1.0 + math.exp(-x))
+
+
+def game_model_part(c) -> float:
+    """Model part of p for a spread or moneyline candidate with a consensus price, from the
+    metadata the sources set: ``anchor_k``, ``model_margin`` (the raw home margin the anchor
+    weighs), ``margin_scale`` (the league's logistic scale) and, for moneylines,
+    ``market_margin`` (home margin the spread line implies). 0 when any is missing and for
+    totals."""
+    from app.services.auto_pick.candidate import MarketType
+
+    md = c.projection_metadata
+    k, raw, scale = md.get("anchor_k"), md.get("model_margin"), md.get("margin_scale")
+    if None in (k, raw, scale) or not scale:
+        return 0.0
+    k, raw, scale = float(k), float(raw), float(scale)
+    home = (md.get("side") or "") == "home"
+    if c.market_type == MarketType.SPREAD:
+        # side's view: its margin and the margin its own line asks for (-line)
+        r = raw if home else -raw
+        return _logistic(k * (r + float(c.market_line)) / scale) - 0.5
+    if c.market_type == MarketType.MONEYLINE:
+        m = md.get("market_margin")
+        if m is None:
+            return 0.0
+        m = float(m)
+        part = _logistic((m + k * (raw - m)) / scale) - _logistic(m / scale)
+        return part if home else -part
+    return 0.0
+
+
 def gate_reason(e: Optional[EV]) -> Optional[str]:
     """The EV hard gates: why this EV cannot be picked, or None."""
     if e is None:
@@ -137,6 +188,7 @@ def candidate_ev(c) -> tuple[Optional[EV], Optional[str]]:
 
     md = c.projection_metadata
     fair = md.get("fair_prob")
+    consensus = fair is not None
     opp = md.get("opp_odds")
     if fair is None and opp:
         # One book's two prices: its no-vig split. Its EV at its own price is below 0 (the vig),
@@ -153,6 +205,16 @@ def candidate_ev(c) -> tuple[Optional[EV], Optional[str]]:
             c.market_line,
             c.market_odds,
             fair,
+        )
+    elif consensus and c.market_type in (
+        MarketType.SPREAD,
+        MarketType.TOTAL,
+        MarketType.MONEYLINE,
+    ):
+        e = (
+            _ev(float(fair), game_model_part(c), c.market_odds)
+            if c.market_odds
+            else None
         )
     elif c.market_type == MarketType.MONEYLINE:
         e = _ev(

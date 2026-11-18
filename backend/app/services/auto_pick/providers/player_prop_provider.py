@@ -58,10 +58,11 @@ class PlayerPropCandidateProvider:
                     "odds_assumed": bool(r.get("odds_assumed", False)),
                     "fair_prob": r.get("fair_prob"),
                 }
-                # Only sources that emit it (NBA) are subject to the freshness gate.
+                # Only sources that emit it are subject to the freshness gate.
                 if "projected_at" in r:
                     md["projected_at"] = r["projected_at"]
-                    md["quoted_at"] = r.get("quoted_at")
+                if "quoted_at" in r:  # a row with no quote has none to be stale
+                    md["quoted_at"] = r["quoted_at"]
                 out.append(
                     BetCandidate(
                         market_type=MarketType.PLAYER_PROP,

@@ -30,6 +30,8 @@ from app.services.accuracy_shared import (
     ou_call_graded_record,
     ou_row_result,
 )
+from app.services import odds_math
+from app.services.consensus_price import same_line_fair
 from app.services.odds_math import breakeven_rate, median_price, units_for_result
 from app.services.auto_pick import record_gate
 from app.services.auto_pick.candidate import EASTERN
@@ -42,7 +44,13 @@ from app.services.odds_snapshots import (
     short_player_key,
     snapshot_index,
 )
-from app.services.prop_clv import NBA_STAT_MARKET, clv_vs_close, fair_prob_clv
+from app.services.prop_clv import (
+    SAME_LINE_MARKETS,
+    NBA_STAT_MARKET,
+    SpreadView,
+    clv_vs_close,
+    fair_prob_clv,
+)
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +103,41 @@ def _row(proj, line, actual, pick, ident, label, correct=None, **extra) -> dict:
 def _best_quote(r: dict) -> Optional[tuple]:
     q = (r.get("best_book"), r.get("best_line"), r.get("best_price"))
     return q if None not in q else None
+
+
+def _best_of(p, event_id=None, teams=None) -> dict:
+    """Extras for a projection row carrying best_* (game lines, NFL / NHL props): the stored
+    best quote and ITS side, only when all four are set. ``event_id`` / ``teams`` are the
+    keys that join a game to its odds snapshots."""
+    out: dict = {}
+    if event_id:
+        out["event_id"] = event_id
+    if teams:
+        out["teams"] = teams
+    q = (p.best_book, p.best_line, p.best_price)
+    if None not in q and p.best_side:
+        out["best"] = q
+        out["best_side"] = p.best_side
+    return out
+
+
+def _event_ids(db, model, start, end) -> dict:
+    """{(game date, home, away): Odds API event id} from a game-lines table."""
+    rows = (
+        db.query(
+            model.game_date,
+            model.home_team_name,
+            model.away_team_name,
+            model.odds_api_event_id,
+        )
+        .filter(
+            func.date(model.game_date) >= start,
+            func.date(model.game_date) <= end,
+            model.odds_api_event_id.isnot(None),
+        )
+        .all()
+    )
+    return {(_norm(d), h, a): e for d, h, a, e in rows}
 
 
 def _nba_props(db, start, end) -> Loaded:
@@ -187,12 +230,17 @@ def _version_key(kind: str, version) -> tuple:
 
 
 def _nba_totals(db, start, end) -> Loaded:
-    from app.models.predictions_models import NBATotalsActuals, NBATotalsProjections
+    from app.models.predictions_models import (
+        NBAGameLines,
+        NBATotalsActuals,
+        NBATotalsProjections,
+    )
     from app.services.etl.nba.totals_baseline import MIN_EDGE
 
     A, P = NBATotalsActuals, NBATotalsProjections
+    events = _event_ids(db, NBAGameLines, start, end)
     rows = (
-        db.query(A, P.model_version)
+        db.query(A, P)
         .outerjoin(
             P,
             (P.game_date == A.game_date)
@@ -204,7 +252,8 @@ def _nba_totals(db, start, end) -> Loaded:
     )
     table = P.__tablename__
     out: Loaded = {}
-    for r, version in rows:
+    for r, proj in rows:
+        version = proj.model_version if proj else None
         edge = (
             r.projected_total - r.market_total
             if r.projected_total is not None and r.market_total
@@ -225,12 +274,22 @@ def _nba_totals(db, start, end) -> Loaded:
                 (table, r.game_date, r.home_team_name, r.away_team_name),
                 f"{r.away_team_name} @ {r.home_team_name}",
                 version=version,
+                **(
+                    _best_of(
+                        proj,
+                        events.get(
+                            (_norm(r.game_date), r.home_team_name, r.away_team_name)
+                        ),
+                    )
+                    if proj
+                    else {}
+                ),
             )
         )
     return out
 
 
-def _spread_rows(projs, merged) -> list[dict]:
+def _spread_rows(projs, merged, events) -> list[dict]:
     return [
         _row(
             m["projected_margin"],
@@ -241,13 +300,20 @@ def _spread_rows(projs, merged) -> list[dict]:
             f"{p.away_team_name} @ {p.home_team_name}",
             correct=m["spread_correct"],
             version=p.model_version,
+            **_best_of(
+                p, events.get((_norm(p.game_date), p.home_team_name, p.away_team_name))
+            ),
         )
         for p, m in zip(projs, merged)
     ]
 
 
 def _nba_spread(db, start, end) -> Loaded:
-    from app.models.predictions_models import NBASpreadActuals, NBASpreadProjections
+    from app.models.predictions_models import (
+        NBAGameLines,
+        NBASpreadActuals,
+        NBASpreadProjections,
+    )
     from app.services.nfl_accuracy_service import _merge_actuals_spread
 
     def q(model):
@@ -260,7 +326,8 @@ def _nba_spread(db, start, end) -> Loaded:
     projs = q(NBASpreadProjections)
     merged = _merge_actuals_spread(projs, q(NBASpreadActuals))
     out: Loaded = {}
-    for p, row in zip(projs, _spread_rows(projs, merged)):
+    events = _event_ids(db, NBAGameLines, start, end)
+    for p, row in zip(projs, _spread_rows(projs, merged, events)):
         key = _version_key("spread", p.model_version)
         out.setdefault(key, ("edge", []))[1].append(row)
     return out
@@ -308,6 +375,7 @@ def _nhl(db, start, end) -> Loaded:
                 at=p.prediction_date,
                 over_price=p.over_odds,
                 under_price=p.under_odds,
+                **_best_of(p),
             )
         )
     shot_act = {(a.player_id, a.game_date): a for a in q(NHLPlayerShotsActuals)}
@@ -351,6 +419,7 @@ def _nhl(db, start, end) -> Loaded:
                 at=p.prediction_date,
                 over_price=p.over_odds,
                 under_price=p.under_odds,
+                **_best_of(p, teams=(p.home_team_name, p.away_team_name)),
             )
         )
     return {
@@ -362,6 +431,7 @@ def _nhl(db, start, end) -> Loaded:
 
 def _nfl(db, start, end) -> Loaded:
     from app.models.predictions_models import (
+        NFLGameLines,
         NFLSpreadActuals,
         NFLSpreadProjections,
         NFLTotalsActuals,
@@ -390,6 +460,7 @@ def _nfl(db, start, end) -> Loaded:
             .all()
         )
 
+    events = _event_ids(db, NFLGameLines, start, end)
     qb_p = q(QBPredictions)
     qb = [
         _row(
@@ -398,8 +469,9 @@ def _nfl(db, start, end) -> Loaded:
             m["actual_passing_yards"],
             m["betting_recommendation"],
             (p.__table__.name, _game_date_only(p.game_date), p.qb_player_id),
-            f"QB {p.qb_player_id}",
+            p.qb_player_name or f"QB {p.qb_player_id}",
             version=p.model_version,
+            **_best_of(p),
         )
         for p, m in zip(qb_p, _merge_actuals_qb_range(qb_p, q(QBActuals)))
     ]
@@ -416,10 +488,13 @@ def _nfl(db, start, end) -> Loaded:
                 (p.__table__.name, p.game_date, p.player_id),
                 p.player_name,
                 version=p.model_version,
+                **_best_of(p),
             )
         )
     sp_p = q(NFLSpreadProjections)
-    spread = _spread_rows(sp_p, _merge_actuals_spread(sp_p, q(NFLSpreadActuals)))
+    spread = _spread_rows(
+        sp_p, _merge_actuals_spread(sp_p, q(NFLSpreadActuals)), events
+    )
     tot_p = q(NFLTotalsProjections)
     totals = [
         _row(
@@ -430,6 +505,9 @@ def _nfl(db, start, end) -> Loaded:
             (p.__table__.name, p.game_date, p.home_team_name, p.away_team_name),
             f"{p.away_team_name} @ {p.home_team_name}",
             version=p.model_version,
+            **_best_of(
+                p, events.get((_norm(p.game_date), p.home_team_name, p.away_team_name))
+            ),
         )
         for p, m in zip(tot_p, _merge_actuals_totals(tot_p, q(NFLTotalsActuals)))
     ]
@@ -712,8 +790,24 @@ def _side(r: dict) -> Optional[str]:
     return "over" if r["proj"] > r["line"] else "under"
 
 
+def _best_call(r: dict) -> Optional[tuple]:
+    """(over/under, line of the row's own stat, price) of the stored best quote, or None.
+    A spread quote is on the home / away side at its own point; as an over/under on the
+    home margin both sides share the stat line -home point (= the away point)."""
+    best, bs = r.get("best"), r.get("best_side")
+    if not best or bs not in ("home", "away", "over", "under"):
+        return None
+    if bs in ("home", "away"):
+        home = bs == "home"
+        return ("over" if home else "under", -best[1] if home else best[1], best[2])
+    return (bs, best[1], best[2])
+
+
 def _quote(r: dict, side: str) -> Optional[tuple]:
     """(line, American price) really available for ``side``, or None. No -110 guess."""
+    call = _best_call(r)
+    if call:  # the stored quote's own side and line; never mixed with another side
+        return (call[1], call[2]) if call[0] == side else None
     if "over_price" in r or "under_price" in r:
         price = r.get(f"{side}_price")
         return (r["line"], price) if price else None
@@ -748,6 +842,15 @@ def _current_record(kind: str, rows: list[dict]) -> Optional[dict]:
             vrows, pick_field="pick", correct_field="correct"
         )
         units = priced = None
+        for r in vrows:  # priced only where a best quote is stored, graded at its line
+            call = _best_call(r)
+            if call is None:
+                continue
+            res = ou_row_result(line=call[1], pick=call[0], actual=r["actual"])
+            if res in ("hit", "miss"):
+                priced = (priced or 0) + 1
+                units = (units or 0.0) + units_for_result(res, call[2])
+        units = _r(units)
     else:
         hits = calls = priced = 0
         units = 0.0
@@ -1249,53 +1352,113 @@ def _versions_section(db: Session, today: date) -> dict:
 _CLV_MARKETS = {
     ("NHL", "player_prop", "saves"): "player_total_saves",
     ("NFL", "player_prop", "receiving_yards"): "player_reception_yds",
+    ("NFL", "player_prop", "passing_yards"): "player_pass_yds",
     ("NHL", "player_prop", "shots"): "player_shots_on_goal",
 }
-# Not joinable from the review's row loaders (no player name / no loader at all).
+# Game lines join on the Odds API event (NBA / NFL rows carry its id, NHL rows join on date
+# and team names); only rows with a stored best quote are graded for CLV.
+_CLV_GAME_MARKETS = {"spread": "spreads", "total": "totals"}
+# Not joinable from the review's row loaders (no loader at all / no line).
 _CLV_UNJOINED = {
-    ("NFL", "player_prop", "passing_yards"): "passing rows carry a QB id, not a name",
     ("NFL", "player_prop", "anytime_td"): "Yes/No market with no line, so no line CLV",
+    (
+        "NBA",
+        "moneyline",
+        None,
+    ): "no moneyline rows in the review (best quote kept as ml_best_*)",
+    (
+        "NFL",
+        "moneyline",
+        None,
+    ): "no moneyline rows in the review (best quote kept as ml_best_*)",
+    ("NHL", "spread", None): "no NHL spread rows in the review",
 }
+
+
+def _clv_market(key) -> Optional[str]:
+    if key[1] in _CLV_GAME_MARKETS:
+        return _CLV_GAME_MARKETS[key[1]]
+    return _CLV_MARKETS.get(key) or (
+        NBA_STAT_MARKET.get(key[2] or "") if key[0] == "NBA" else None
+    )
+
+
+def _team_key(name: Optional[str]) -> str:
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
 
 
 def _clv_for_key(key, rows, idx) -> dict:
     """``idx`` is odds_snapshots.snapshot_index: every observation per (date, market, player,
     event). Closes come from it, and so do the pick-time quotes (each book's observation first
     seen at or before the row's projection write time ``at``)."""
-    market = _CLV_MARKETS.get(key) or NBA_STAT_MARKET.get(key[2] or "")
+    market = _clv_market(key)
+    game = key[1] in _CLV_GAME_MARKETS
+    view = SpreadView if market == "spreads" else (lambda r: r)
     by_all: dict[tuple, list] = defaultdict(list)
     by_close: dict[tuple, list] = defaultdict(list)
     shorts: dict[tuple, set] = defaultdict(set)
-    for (d, m, p, _e), obs in idx.items():
+    teams: dict[tuple, set] = defaultdict(set)  # (day, market) -> {(event, home, away)}
+    for (d, m, p, e), obs in idx.items():
+        if m != market:
+            continue
+        if game:  # one group per event; player_key is empty
+            by_all[(d, m, e)] = [view(o) for o in obs]
+            by_close[(d, m, e)] = [view(o) for o in close_of(obs)]
+            teams[(d, m)].add(
+                (e, _team_key(obs[0].home_team), _team_key(obs[0].away_team))
+            )
+            continue
         by_all[(d, m, p)].extend(obs)
         by_close[(d, m, p)].extend(close_of(obs))
         shorts[(d, m, short_player_key(p))].add(p)
     graded = priced = with_close = 0
-    stale = no_at = no_indep = ambiguous = 0
+    stale = no_at = no_indep = ambiguous = no_quote = no_event = no_same = 0
     units = 0.0
     line_clvs, prob_clvs, ev_clvs, minutes = [], [], [], []
     for r in rows:
-        res = ou_row_result(line=r["line"], pick=r["pick"], actual=r["actual"])
+        call = _best_call(r)
+        if call:  # the stored quote's own side and line (spreads: on the home margin)
+            pick, line, price = call
+            book = r["best"][0]
+        elif game:
+            no_quote += 1  # no best quote stored: nothing we would have taken
+            continue
+        else:
+            pick = r["pick"]
+            book, line, price = r.get("best") or ("fanduel", r["line"], r.get("price"))
+        res = ou_row_result(
+            line=line if call else r["line"], pick=pick, actual=r["actual"]
+        )
         if res not in ("hit", "miss"):
             continue
         graded += 1
-        book, line, price = r.get("best") or ("fanduel", r["line"], r.get("price"))
         if not price and ("over_price" in r or "under_price" in r):
             # NHL / NFL rows keep both sides' prices: take the called side's.
-            over = r["pick"].strip().lower() in ("over", "o")
+            over = pick.strip().lower() in ("over", "o")
             price = r.get("over_price" if over else "under_price")
         priced += bool(price)
         if price:  # units only at a real price, never a -110 guess
             # Units of the quote we would have taken, graded at that quote's own line.
             units += units_for_result(
-                ou_row_result(line=line, pick=r["pick"], actual=r["actual"]), price
+                ou_row_result(line=line, pick=pick, actual=r["actual"]), price
             )
         try:
             day = date.fromisoformat(r["ident"][1])
         except ValueError:
             continue  # ident without a game date: cannot join
-        pk = player_key(r["label"])
-        if not by_close.get((day, market, pk)):
+        if game:
+            pk = r.get("event_id")
+            if not pk:  # NHL: date + normalised team names, only if exactly one event
+                want = tuple(_team_key(t) for t in r.get("teams") or ())
+                hits = [e for e, h, a in teams[(day, market)] if (h, a) == want]
+                if len(hits) != 1:
+                    ambiguous += len(hits) > 1
+                    no_event += 1
+                    continue
+                pk = hits[0]
+        else:
+            pk = player_key(r["label"])
+        if not game and not by_close.get((day, market, pk)):
             # Exact name found nothing: join on first initial + surname, only if unambiguous.
             cands = shorts.get((day, market, short_player_key(r["label"])), set())
             if len(cands) > 1:
@@ -1314,7 +1477,32 @@ def _clv_for_key(key, rows, idx) -> dict:
         ]
         if close and not usable:
             stale += 1
-        side = "o" if r["pick"].strip().lower() in ("over", "o") else "u"
+        side = "o" if pick.strip().lower() in ("over", "o") else "u"
+        if market in SAME_LINE_MARKETS:
+            # Only closing books at exactly the quote's line; no line conversion.
+            p_close = same_line_fair(usable, float(line))
+            if p_close is None:
+                no_same += 1
+                continue
+            if side == "u":
+                p_close = 1 - p_close
+            with_close += 1
+            if price:
+                ev_clvs.append(p_close - odds_math.american_to_prob(price))
+            at = r.get("at")
+            p_taken = same_line_fair(
+                (
+                    rows_at(by_all[(day, market, pk)], at)
+                    if isinstance(at, datetime)
+                    else []
+                ),
+                float(line),
+            )
+            if p_taken is None:
+                no_at += 1
+            else:
+                prob_clvs.append(p_close - (p_taken if side == "o" else 1 - p_taken))
+            continue
         c = (
             clv_vs_close(side, float(line), price, book, usable, market)
             if usable
@@ -1363,6 +1551,9 @@ def _clv_for_key(key, rows, idx) -> dict:
         "no_pick_time_quotes": no_at,
         "no_independent_close": no_indep,
         "ambiguous_name": ambiguous,
+        "no_best_quote": no_quote,
+        "no_event_join": no_event,
+        "no_same_line_close": no_same,
     }
 
 
@@ -1375,11 +1566,10 @@ def _clv_section(db: Session, today: date, cur: Optional[Loaded] = None) -> dict
     joined = {
         k: rows
         for k, (kind, rows) in cur.items()
-        if kind == "ou"
-        and k[1] == "player_prop"
-        and (k in _CLV_MARKETS or (k[0] == "NBA" and k[2] in NBA_STAT_MARKET))
+        if (kind == "ou" and k[1] == "player_prop" or k[1] in _CLV_GAME_MARKETS)
+        and _clv_market(k)
     }
-    markets = {_CLV_MARKETS.get(k) or NBA_STAT_MARKET[k[2]] for k in joined}
+    markets = {_clv_market(k) for k in joined}
     idx = snapshot_index(db, start, end, markets) if markets else {}
     keys = [
         c
@@ -2038,6 +2228,9 @@ def render_text(review: dict) -> str:
                 (k["no_pick_time_quotes"], "without pick-time quotes"),
                 (k["no_independent_close"], "close is the pick-time quote"),
                 (k["ambiguous_name"], "ambiguous short names not joined"),
+                (k["no_best_quote"], "without a stored best quote"),
+                (k["no_event_join"], "games not joined to an odds event"),
+                (k["no_same_line_close"], "without a closing book at the quote's line"),
             ):
                 if n:
                     prob += f", {n} {what}"
@@ -2047,8 +2240,14 @@ def render_text(review: dict) -> str:
                 else f", close {k['median_minutes_before_start']:.0f} min before start"
             )
             L.append(
-                f"{head}; line CLV mean {k['mean_line_clv']:+.2f} / median "
-                f"{k['median_line_clv']:+.2f}{prob}{mins}, units {k['units']:+.1f} "
+                f"{head}; "
+                + (
+                    ""
+                    if k["mean_line_clv"] is None
+                    else f"line CLV mean {k['mean_line_clv']:+.2f} / median "
+                    f"{k['median_line_clv']:+.2f}"
+                )
+                + f"{prob}{mins}, units {k['units']:+.1f} "
                 f"(priced {k['priced']}/{k['graded']})"
             )
         for k, why in c["unjoined"].items():

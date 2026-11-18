@@ -80,11 +80,12 @@ def _qb(db, **kw):
 def test_qb_passing(sqlite_db):
     _line(sqlite_db)
     _qb(sqlite_db)
+    # the projector's PASS no longer hides a row: the EV rule decides
     _qb(sqlite_db, qb_player_id="q2", betting_recommendation="PASS")
     _qb(sqlite_db, qb_player_id="q3", over_odds=None)  # no price for side
     _qb(sqlite_db, qb_player_id="q4", game_date=datetime(2026, 11, 16, 20, 0))
     rows = run(NFLQBPassingSource(sqlite_db).get_todays_projections(DR))
-    assert len(rows) == 1
+    assert len(rows) == 2
     r = rows[0]
     assert (r["side"], r["line"], r["odds"], r["stat"]) == (
         "over",
@@ -97,9 +98,9 @@ def test_qb_passing(sqlite_db):
     assert r["opponent"] == AWAY and r["event_id"].startswith("evt1")
     assert r["generated_at"] == datetime(2026, 11, 15, 9, 0)
 
-    (c,) = run(
+    c = run(
         PlayerPropCandidateProvider(NFLQBPassingSource(sqlite_db)).get_candidates(DR)
-    )
+    )[0]
     assert c.market_type == MarketType.PLAYER_PROP
     assert c.projection_metadata["side"] == "over"
     assert c.game_date == DAY and c.commence_time == KICK_UTC
@@ -107,7 +108,7 @@ def test_qb_passing(sqlite_db):
 
 def test_qb_under_uses_under_price(sqlite_db):
     _line(sqlite_db)
-    _qb(sqlite_db, betting_recommendation="UNDER")
+    _qb(sqlite_db, predicted_passing_yards=250.0)  # below the 271.5 line
     (r,) = run(NFLQBPassingSource(sqlite_db).get_todays_projections(DR))
     assert (r["side"], r["odds"]) == ("under", -105)
 
@@ -140,31 +141,32 @@ def test_receiving_yards(sqlite_db):
         sqlite_db.add(RecvYdsPredictions(**base))
 
     rec("a")
-    rec("b", betting_recommendation="PASS")
-    rec("c", under_odds=None)
+    rec("b", betting_recommendation="PASS")  # no longer hides the row
+    rec("c", over_odds=None)  # no price for the over side
     rec("d", game_date=date(2026, 11, 16))
     sqlite_db.commit()
     rows = run(NFLReceivingYardsSource(sqlite_db).get_todays_projections(DR))
-    assert len(rows) == 1
+    assert len(rows) == 2
     r = rows[0]
     assert (r["side"], r["line"], r["odds"], r["stat"]) == (
-        "under",
+        "over",  # 70.0 projected vs 61.5
         61.5,
-        100,
+        -120,
         "receiving_yards",
     )
+    assert "projected_at" not in r and r["fair_prob"] is None  # no quote, no stamp
     assert r["commence_time"] == KICK_UTC and r["game_date"] == DAY
     assert (r["home_team_name"], r["away_team_name"]) == (HOME, AWAY)
     assert r["generated_at"] is None
 
 
-def _spread(db, rec="HOME", **kw):
+def _spread(db, rec="HOME", margin=6.0, **kw):
     db.add(
         NFLSpreadProjections(
             game_date=kw.pop("game_date", DAY),
             home_team_name=HOME,
             away_team_name=AWAY,
-            projected_margin=6.0,
+            projected_margin=margin,
             home_win_prob=0.7,
             market_spread_home=-2.5,
             edge=3.5,
@@ -194,17 +196,15 @@ def test_spread_home_and_away(sqlite_db):
 
 def test_spread_away_price_and_skips(sqlite_db):
     _line(sqlite_db)
-    _spread(sqlite_db, rec="AWAY")
+    _spread(sqlite_db, margin=-6.0)
     (r,) = run(NFLSpreadSource(sqlite_db).get_todays_projections(DR))
     assert (r["side"], r["spread_odds"]) == ("away", -112)
 
 
-def test_spread_no_play_missing_price_other_day(sqlite_db):
+def test_spread_missing_price_other_day(sqlite_db):
     _line(sqlite_db)
-    _spread(sqlite_db, rec="NO_PLAY")
     _spread(sqlite_db, game_date=date(2026, 11, 16))
     assert run(NFLSpreadSource(sqlite_db).get_todays_projections(DR)) == []
-    sqlite_db.query(NFLSpreadProjections).delete()
     sqlite_db.query(NFLGameLines).delete()
     gl = _line(sqlite_db)
     gl.spread_home_odds = None
@@ -213,13 +213,13 @@ def test_spread_no_play_missing_price_other_day(sqlite_db):
     assert run(NFLSpreadSource(sqlite_db).get_todays_projections(DR)) == []
 
 
-def _total(db, rec="OVER", **kw):
+def _total(db, rec="OVER", projected=51.0, **kw):
     db.add(
         NFLTotalsProjections(
             game_date=kw.pop("game_date", DAY),
             home_team_name=HOME,
             away_team_name=AWAY,
-            projected_total=51.0,
+            projected_total=projected,
             market_total=47.5,
             edge=3.5,
             recommendation=rec,
@@ -244,46 +244,9 @@ def test_totals(sqlite_db):
 
 def test_totals_under_and_skips(sqlite_db):
     _line(sqlite_db)
-    _total(sqlite_db, rec="UNDER")
+    _total(sqlite_db, projected=44.0)
     (r,) = run(NFLTotalsSource(sqlite_db).get_todays_projections(DR))
     assert (r["side"], r["line_odds"]) == ("under", -115)
     sqlite_db.query(NFLTotalsProjections).delete()
-    _total(sqlite_db, rec="NO_PLAY")
     _total(sqlite_db, game_date=date(2026, 11, 16))
     assert run(NFLTotalsSource(sqlite_db).get_todays_projections(DR)) == []
-
-
-def test_moved_line_spread_and_totals_rederive_edge(sqlite_db):
-    # Projection: margin 6.0 vs -2.5 (HOME), total 51.0 vs 47.5 (OVER); threshold 3.0.
-    for spread, total, kept in (
-        (-4.0, 49.0, False),  # edge shrinks to 2.0 / 2.0
-        (-1.5, 46.5, True),  # edge grows to 4.5 / 4.5
-        (-10.0, 55.0, False),  # side flips
-    ):
-        sqlite_db.query(NFLSpreadProjections).delete()
-        sqlite_db.query(NFLTotalsProjections).delete()
-        sqlite_db.query(NFLGameLines).delete()
-        gl = NFLGameLines(
-            game_date=DAY,
-            home_team_name=HOME,
-            away_team_name=AWAY,
-            odds_api_event_id="evt1",
-            game_time=KICK_UTC,
-            spread_home=spread,
-            spread_home_odds=-108,
-            spread_away_odds=-112,
-            total=total,
-            over_odds=-105,
-            under_odds=-115,
-        )
-        sqlite_db.add(gl)
-        sqlite_db.commit()
-        _spread(sqlite_db)
-        _total(sqlite_db)
-        s = run(NFLSpreadSource(sqlite_db).get_todays_projections(DR))
-        t = run(NFLTotalsSource(sqlite_db).get_todays_projections(DR))
-        if kept:
-            assert s[0]["market_spread_home"] == spread and s[0]["edge"] == 4.5
-            assert t[0]["market_total"] == total and t[0]["edge"] == 4.5
-        else:
-            assert s == [] and t == []

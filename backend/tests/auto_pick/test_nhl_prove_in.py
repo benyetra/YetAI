@@ -1,9 +1,8 @@
 """NHL keys must prove in: no auto pick and no board pick label without a qualifying
 record (100 priced calls at or above breakeven), with the global
 AUTO_PICK_REQUIRE_PROVEN_RECORD switch off. NHL saves and totals rows are valued at the
-stored over/under odds of the picked side; rows without odds (and every shots row) are
-``unpriced_n`` only. NHL candidates carry no consensus price, so even an open NHL key is
-never auto-picked."""
+best consensus quote (best_line / best_price); rows without one (and every shots row) are
+``unpriced_n`` only."""
 
 from datetime import date, datetime, timedelta
 
@@ -100,16 +99,17 @@ def test_gate_report_marks_nhl_as_prove_in(sqlite_db):
 
 
 def _seed_totals(
-    db, n, hits, day, model_version="heuristic-v2", over_odds=None, base=0
+    db, n, hits, day, model_version="heuristic-v2", over_odds=None, base=0, quote=False
 ):
     """n graded NHL totals OVER 5.5 calls on ``day``; ``hits`` of them go over."""
     for i in range(base, base + n):
         db.add(
             NHLTeamTotalsPredictions(
                 game_date=day,
-                home_team_id=100 + i,
+                home_team_id=1
+                + i % 10,  # real NHL ids: the source names the teams from them
                 home_team_name=f"H{i}",
-                away_team_id=200 + i,
+                away_team_id=12 + i % 10,
                 away_team_name=f"A{i}",
                 predicted_home_goals=3.5,
                 predicted_away_goals=3.0,
@@ -121,6 +121,19 @@ def _seed_totals(
                 model_version=model_version,
                 over_odds=over_odds,
                 under_odds=-130 if over_odds is not None else None,
+                # the consensus best quote the priced record needs
+                **(
+                    dict(
+                        best_book="fanduel",
+                        best_line=5.5,
+                        best_price=over_odds,
+                        best_side="over",
+                        best_fair_prob=0.55,
+                        best_ev=0.1,
+                    )
+                    if quote
+                    else {}
+                ),
             )
         )
         goals = 7 if i - base < hits else 4
@@ -128,9 +141,10 @@ def _seed_totals(
             NHLTeamTotalsActuals(
                 game_id=2026020000 + i,
                 game_date=day,
-                home_team_id=100 + i,
+                home_team_id=1
+                + i % 10,  # real NHL ids: the source names the teams from them
                 home_team_name=f"H{i}",
-                away_team_id=200 + i,
+                away_team_id=12 + i % 10,
                 away_team_name=f"A{i}",
                 actual_home_goals=goals - 2,
                 actual_away_goals=2,
@@ -166,9 +180,11 @@ def test_board_strips_pick_labels_for_markets_without_record(sqlite_db):
 
 
 def test_nhl_winning_record_is_unpriced_so_labels_stay_stripped(sqlite_db):
-    # 60 winning NHL totals calls: counted for display only, no stored price to value them.
-    yesterday = (datetime.utcnow() - timedelta(days=2)).date()
-    _seed_totals(sqlite_db, 60, 36, yesterday)
+    # 60 winning NHL totals calls with stored odds but no best quote: counted for display
+    # only, never valued.
+    for d in range(6):
+        day = (datetime.utcnow() - timedelta(days=2 + d)).date()
+        _seed_totals(sqlite_db, 10, 6, day, over_odds=-110, base=100 * d)
     rec = rg.load_records(sqlite_db, datetime.utcnow())[TOTAL]
     assert (rec.unpriced_n, rec.n_eff, rec.version) == (60, 0, "heuristic-v2")
     out = api._withhold_unproven_picks(
@@ -273,12 +289,15 @@ def test_nhl_totals_with_stored_odds_build_a_priced_record(sqlite_db):
             (today - timedelta(days=2 + d)).date(),
             over_odds=100,
             base=100 * d,
+            quote=True,
         )
-    _seed_totals(sqlite_db, 5, 5, (today - timedelta(days=2)).date(), base=5000)
+    _seed_totals(
+        sqlite_db, 5, 5, (today - timedelta(days=20)).date(), base=5000, over_odds=100
+    )
     rec = rg.load_records(sqlite_db, today, ("nhl",))[TOTAL]
     assert (rec.proj_n, rec.proj_hits, rec.dates) == (120, 72, 12)
     assert rec.proj_units == pytest.approx(24.0)  # at +100, never at an assumed -110
-    assert rec.unpriced_n == 5  # rows without odds are counted, never valued
+    assert rec.unpriced_n == 5  # rows without a best quote are counted, never valued
     assert rg.drop_reason(rec) is None  # proved in
     # ...and an NHL candidate still has no consensus price, so it is never picked.
     from app.services.auto_pick import ev

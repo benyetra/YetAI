@@ -435,11 +435,25 @@ def test_steals_blocks_pra_nhl_must_prove_in(monkeypatch):
 
 
 def test_unpriced_loader_rows_count_only_as_unpriced_n(sqlite_db):
-    from app.models.predictions_models import NBASpreadActuals, NBASpreadProjections
+    from app.models.predictions_models import (
+        NBAGameLines,
+        NBASpreadActuals,
+        NBASpreadProjections,
+    )
     from app.services.etl.nba.spread_projector import SPREAD_MODEL_VERSION
 
     day = NOW.date() - timedelta(days=2)
     for i in range(100):
+        sqlite_db.add(  # the stored line and price the would-be side is graded at
+            NBAGameLines(
+                game_date=day,
+                home_team_name=f"H{i}",
+                away_team_name=f"A{i}",
+                spread_home=-3.5,
+                spread_home_odds=-110,
+                spread_away_odds=-110,
+            )
+        )
         sqlite_db.add(
             NBASpreadProjections(
                 game_date=day,
@@ -472,12 +486,26 @@ def test_unpriced_loader_rows_count_only_as_unpriced_n(sqlite_db):
 
 
 def test_nba_totals_record_counts_only_current_version(sqlite_db):
-    from app.models.predictions_models import NBASpreadActuals, NBATotalsProjections
+    from app.models.predictions_models import (
+        NBAGameLines,
+        NBASpreadActuals,
+        NBATotalsProjections,
+    )
     from app.services.etl.nba.totals_projector import MODEL_VERSION
 
     day = NOW.date() - timedelta(days=2)
     for i in range(30):
-        cur = i < 10
+        cur = i < 20  # the version most rows carry is the current one
+        sqlite_db.add(
+            NBAGameLines(
+                game_date=day,
+                home_team_name=f"H{i}",
+                away_team_name=f"A{i}",
+                total=225.0,
+                over_odds=-110,
+                under_odds=-110,
+            )
+        )
         sqlite_db.add(
             NBATotalsProjections(
                 game_date=day,
@@ -501,7 +529,7 @@ def test_nba_totals_record_counts_only_current_version(sqlite_db):
             )
         )
     sqlite_db.commit()
-    assert load_records(sqlite_db, NOW)[("NBA", "total", None)].unpriced_n == 10
+    assert load_records(sqlite_db, NOW)[("NBA", "total", None)].unpriced_n == 20
 
 
 # ---------- reporting and wiring ----------

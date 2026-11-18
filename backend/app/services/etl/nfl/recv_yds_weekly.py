@@ -5,6 +5,44 @@ from __future__ import annotations
 from typing import Any, Callable
 
 
+def attach_best_quotes(session, feature_rows, all_lines) -> int:
+    """Set best_* (consensus price, None when none) on this run's lined rows; returns how
+    many got a consensus price.
+
+    The projector writes the row; this prices its published yards against the stored
+    ou_line. Rows whose game has kicked off stay frozen."""
+    from app.models.predictions_models import RecvYdsPredictions as R
+    from app.services.etl._consensus_attach import nfl_prop_fields
+    from app.services.etl.nfl.nfl_common import has_kicked_off
+    from app.services.etl.nfl.recv_yds_betting import match_player_lines
+
+    n = 0
+    for feat in feature_rows:
+        if not match_player_lines(feat["player_name"], all_lines):
+            continue
+        row = (
+            session.query(R)
+            .filter_by(
+                season=feat["season"], week=feat["week"], player_id=feat["player_id"]
+            )
+            .one_or_none()
+        )
+        if row is None or has_kicked_off(row.game_date):
+            continue
+        quote = nfl_prop_fields(
+            session,
+            row,
+            market="player_reception_yds",
+            projection=row.predicted_receiving_yards,
+            line=row.ou_line,
+            player=row.player_name,
+        )
+        for key, value in quote.items():
+            setattr(row, key, value)
+        n += quote.get("best_book") is not None  # rows that got a consensus price
+    return n
+
+
 def _run_core(
     session,
     *,
@@ -33,6 +71,7 @@ def _run_core(
         if feat is not None:
             feature_rows.append(feat)
     stats = project_lined_players(session, feature_rows, all_lines)
+    stats["best_quotes"] = attach_best_quotes(session, feature_rows, all_lines)
     session.commit()
     return {"status": "ok", "task": "nfl_recv_yds_weekly", **stats}
 

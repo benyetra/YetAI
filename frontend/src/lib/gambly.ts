@@ -100,6 +100,8 @@ export type GamblyProjectionPick = {
   /** Market line text: "+1.5" for spreads, "8.5" for totals. */
   line?: string | null;
   odds?: number | null;
+  /** The book the line and price were quoted at. */
+  book?: string | null;
   matchup: string;
 };
 
@@ -110,7 +112,7 @@ export function gamblyLegFromProjection(p: GamblyProjectionPick): string {
   if (p.kind === 'total') bet = `${p.team} ${line ?? ''} total`.replace(/\s+/g, ' ');
   else if (p.kind === 'spread') bet = line ? `${p.team} ${line} spread` : `${p.team} spread`;
   else bet = `${p.team} moneyline`;
-  return `${withOdds(bet, p.odds)} — ${p.matchup}`;
+  return `${withOdds(bet, p.odds)}${p.book ? ` at ${p.book}` : ''} — ${p.matchup}`;
 }
 
 /** Map a stat-group title to the prop market name Gambly understands. */

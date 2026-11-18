@@ -52,6 +52,15 @@ export function mapNhlTeamTotalsRows(totals: Row[]): Row[] {
       total_recommendation:
         totalRec === 'OVER' || totalRec === 'UNDER' ? totalRec : 'NO_PLAY',
       model_confidence: num(total.confidence),
+      ...(totalRec === 'OVER' || totalRec === 'UNDER'
+        ? {
+            total_best_line: total.best_line,
+            total_best_price: total.best_price,
+            total_best_book: total.best_book,
+            total_pick_fair_prob: total.pick_fair_prob,
+            total_pick_ev: total.pick_ev,
+          }
+        : {}),
       value_rating: deriveValueRating(totalRec, edge),
       total_pick_withheld: total.pick_withheld ?? null,
       away_pitcher_name: '',

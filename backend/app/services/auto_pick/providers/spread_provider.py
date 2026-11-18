@@ -21,6 +21,17 @@ from app.services.auto_pick.candidate import BetCandidate, DateRange, MarketType
 
 log = logging.getLogger(__name__)
 
+# Consensus-path metadata, passed through only when the source row carries it.
+CONSENSUS_MD_KEYS = (
+    "fair_prob",
+    "projected_at",
+    "quoted_at",
+    "anchor_k",
+    "model_margin",
+    "margin_scale",
+    "market_margin",
+)
+
 
 class SpreadCandidateProvider:
     def __init__(self, source):
@@ -47,6 +58,18 @@ class SpreadCandidateProvider:
                     else -float(market_spread_home)
                 )
                 selection = f"{team} {line:+.1f}"
+                md = {
+                    "edge": r.get("edge"),
+                    "recommendation": r.get("recommendation"),
+                    "confidence_score": r.get("confidence_score"),
+                    "home_win_prob": r.get("home_win_prob"),
+                    "factors": r.get("factors"),
+                    "generated_at": r.get("generated_at"),
+                    "side": side,
+                    "projection_ref": r.get("projection_ref"),
+                    "model_version": r.get("model_version"),
+                }
+                md.update({k: r[k] for k in CONSENSUS_MD_KEYS if k in r})
                 out.append(
                     BetCandidate(
                         market_type=MarketType.SPREAD,
@@ -60,17 +83,7 @@ class SpreadCandidateProvider:
                         home_team=r.get("home_team_name"),
                         commence_time=r.get("commence_time"),
                         game_date=r.get("game_date"),
-                        projection_metadata={
-                            "edge": r.get("edge"),
-                            "recommendation": r.get("recommendation"),
-                            "confidence_score": r.get("confidence_score"),
-                            "home_win_prob": r.get("home_win_prob"),
-                            "factors": r.get("factors"),
-                            "generated_at": r.get("generated_at"),
-                            "side": side,
-                            "projection_ref": r.get("projection_ref"),
-                            "model_version": r.get("model_version"),
-                        },
+                        projection_metadata=md,
                     )
                 )
             except Exception as e:

@@ -415,6 +415,26 @@ def _compare(value: float, line: float, side: str) -> str:
     return "won" if (value > line) == (side == "over") else "lost"
 
 
+def game_result(
+    market: str, side: str, line, home_score, away_score, soccer: bool = False
+) -> str:
+    """won | lost | pushed for a full-game total, moneyline or spread: the one definition
+    (pure). A spread or total pushes on the number; a moneyline tie is a push (a loss in
+    soccer, where the pick is the 90-minute result)."""
+    if market == "total":
+        return _compare(home_score + away_score, line, side)
+    if side == "draw":
+        return "won" if home_score == away_score else "lost"
+    mine, theirs = (
+        (home_score, away_score) if side == "home" else (away_score, home_score)
+    )
+    if market == "moneyline":
+        if mine == theirs:
+            return "lost" if soccer else "pushed"
+        return "won" if mine > theirs else "lost"
+    return _compare(mine + line, theirs, "over")
+
+
 class EspnPayloadError(Exception):
     """ESPN answered, but the payload is not shaped as expected: retry, never void."""
 
@@ -612,23 +632,16 @@ def _grade_game(spec: dict, league: str, game, line) -> Outcome:
             return Outcome("void", f"No regulation score: {game.detail}")
         return Outcome("not_ready", "No final score")
     hs, aws = game.home_score, game.away_score
+    kind = game_result(market, side, line, hs, aws, soccer)
     if market == "total":
-        kind = _compare(hs + aws, line, side)
         return Outcome(
             kind, f"{kind.title()}: {side.title()} {_fmt(line)} (total {hs + aws})"
         )
-
     if side == "draw":
-        kind = "won" if hs == aws else "lost"
         return Outcome(kind, f"{kind.title()}: Draw ({hs}-{aws})")
     mine, theirs = (hs, aws) if side == "home" else (aws, hs)
     team = spec["home_team"] if side == "home" else spec["away_team"]
     score = f"{mine}-{theirs}"
     if market == "moneyline":
-        if mine == theirs:
-            kind = "lost" if soccer else "pushed"
-        else:
-            kind = "won" if mine > theirs else "lost"
         return Outcome(kind, f"{kind.title()}: {team} ML ({score})")
-    kind = _compare(mine + line, theirs, "over")
     return Outcome(kind, f"{kind.title()}: {team} {line:+g} ({score})")

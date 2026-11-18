@@ -186,6 +186,17 @@ _PICK_FIELDS = frozenset(
         "best_fair_prob",
         "best_ev",
         "best_quoted_at",
+        "best_side",
+        # why a picked game price is good: consensus fair probability and expected value
+        "pick_fair_prob",
+        "pick_ev",
+        # the moneyline quote carried on the NBA / NFL spread rows
+        "ml_best_book",
+        "ml_best_price",
+        "ml_best_side",
+        "ml_best_fair_prob",
+        "ml_best_ev",
+        "ml_best_quoted_at",
         "value_tier",
         "edge_category",
         "pick_confidence",
@@ -219,6 +230,25 @@ def _one(key):
     return ((key, _ALL),)
 
 
+def _spread_and_ml(league):
+    """A spread row also carries the moneyline quote (``ml_best_*``): a moneyline-only
+    withhold strips just those fields, a spread withhold strips the whole row."""
+    return (
+        ((league, "spread", None), _ALL),
+        (
+            (league, "moneyline", None),
+            (
+                "ml_best_book",
+                "ml_best_price",
+                "ml_best_side",
+                "ml_best_fair_prob",
+                "ml_best_ev",
+                "ml_best_quoted_at",
+            ),
+        ),
+    )
+
+
 # Every list group each live endpoint returns -> ((record key, fields), ...). The key
 # is the group's market in record_gate (None = the gate has no key for it); fields are
 # the row fields that market owns (_ALL = the whole row is one market). A key outside
@@ -228,7 +258,7 @@ def _one(key):
 _BOARD_MARKETS: dict[str, dict[str, tuple]] = {
     "nba": {
         "totals": _one(("NBA", "total", None)),
-        "spreads": _one(("NBA", "spread", None)),
+        "spreads": _spread_and_ml("NBA"),
         "points": _one(("NBA", _PROP, "points")),
         "assists": _one(("NBA", _PROP, "assists")),
         "rebounds": _one(("NBA", _PROP, "rebounds")),
@@ -238,7 +268,7 @@ _BOARD_MARKETS: dict[str, dict[str, tuple]] = {
         "pra": _one(("NBA", _PROP, "pra")),
     },
     "nfl": {
-        "spreads": _one(("NFL", "spread", None)),
+        "spreads": _spread_and_ml("NFL"),
         "totals": _one(("NFL", "total", None)),
         "qb_predictions": _one(("NFL", _PROP, "passing_yards")),
         "receiving_yards_predictions": _one(("NFL", _PROP, "receiving_yards")),
@@ -277,7 +307,7 @@ _BOARD_MARKETS: dict[str, dict[str, tuple]] = {
 }
 # Projection loaders per sport (record_gate.PROJECTION_LOADERS); () = bet records only.
 _BOARD_LOADERS = {
-    "nba": ("nba_props", "nba_totals", "nba_spread"),
+    "nba": ("nba_props", "nba_games"),
     "nfl": ("nfl",),
     "nhl": ("nhl",),
     "mlb": (),
@@ -304,9 +334,7 @@ def _withhold_unproven_picks(
     gated = {k for entries in spec.values() for k, _ in entries if k and k in emitted}
     try:
         with db.begin_nested():
-            withheld = record_gate.withheld_keys(
-                db, datetime.utcnow(), gated, loaders=loaders
-            )
+            withheld = record_gate.withheld_keys(db, _now(), gated, loaders=loaders)
     except Exception:
         logger.exception("record gate failed; withholding every pick label")
         withheld = dict.fromkeys(gated, "record_unavailable")
@@ -319,10 +347,189 @@ def _withhold_unproven_picks(
             (withheld.get(key) if key in gated else "no_record_check")
             for key, _ in entries
         ]
-        if not any(reasons):
+        markets = _open_game_markets(entries, reasons)
+        if not any(reasons) and not markets:
             continue
-        out[group] = [_strip_row(r, entries, reasons) for r in rows]
+        stripped = [
+            _strip_row(r, entries, reasons) if any(reasons) else dict(r) for r in rows
+        ]
+        out[group] = _pick_open_game_markets(db, entries, markets, rows, stripped)
     return out
+
+
+def _open_game_markets(entries: tuple, reasons: list) -> list:
+    """[(entry index, (league, market))] for the OPEN game markets of a group."""
+    return [
+        (i, (key[0], key[1]))
+        for i, ((key, _), r) in enumerate(zip(entries, reasons))
+        if key and not r and (key[0], key[1]) in _GAME_PICKS
+    ]
+
+
+# (league, market) -> (build, provider): the candidate the auto picker would form from one
+# stored row. build(row, game lines {(home, away): line}, day) is the source's own pure row
+# function, the provider the one the selector runs: the board asks the same code.
+def _game_pick_builders() -> dict:
+    from app.services.auto_pick.providers.moneyline_provider import (
+        MoneylineCandidateProvider as ML,
+    )
+    from app.services.auto_pick.providers.spread_provider import (
+        SpreadCandidateProvider as SP,
+    )
+    from app.services.auto_pick.providers.totals_provider import (
+        TotalsCandidateProvider as TT,
+    )
+    from app.services.auto_pick.sources import (
+        _basketball,
+        nba_moneyline_source,
+        nfl_moneyline_source,
+        nfl_spread_source,
+        nfl_totals_source,
+    )
+    from app.services.auto_pick.sources.nhl_totals_source import nhl_totals_rows_from
+
+    return {
+        ("NBA", "spread"): (
+            lambda r, g, d: _basketball.spread_rows_from([r], g, "NBA"),
+            SP,
+        ),
+        ("NBA", "moneyline"): (
+            lambda r, g, d: nba_moneyline_source.moneyline_rows_from([r], g),
+            ML,
+        ),
+        ("NBA", "total"): (
+            lambda r, g, d: _basketball.totals_rows_from([r], g, "NBA"),
+            TT,
+        ),
+        ("NFL", "spread"): (
+            lambda r, g, d: nfl_spread_source.spread_rows_from_nfl([r], g, d),
+            SP,
+        ),
+        ("NFL", "moneyline"): (
+            lambda r, g, d: nfl_moneyline_source.moneyline_rows_from_nfl([r], g, d),
+            ML,
+        ),
+        ("NFL", "total"): (
+            lambda r, g, d: nfl_totals_source.totals_rows_from_nfl([r], g, d),
+            TT,
+        ),
+        ("NHL", "total"): (lambda r, g, d: nhl_totals_rows_from([r], d), TT),
+    }
+
+
+_GAME_PICKS = {
+    ("NBA", "spread"), ("NBA", "moneyline"), ("NBA", "total"),
+    ("NFL", "spread"), ("NFL", "moneyline"), ("NFL", "total"),
+    ("NHL", "total"),
+}  # fmt: skip
+_ML_FIELDS = _spread_and_ml("NBA")[1][1]
+_SIDE_WORDS = {"home": "HOME", "away": "AWAY", "over": "OVER", "under": "UNDER"}
+
+
+def _game_lines(db: Session, league: str, rows: list) -> dict:
+    """{game_date: {(home, away): game line}} for the NBA / NFL rows (NHL has none)."""
+    model = {"NBA": NBAGameLines, "NFL": NFLGameLines}.get(league)
+    days = {r.get("game_date") for r in rows} - {None}
+    out: dict = {}
+    if model is None or not days:
+        return out
+    with db.begin_nested():
+        for g in db.query(model).filter(model.game_date.in_(days)).all():
+            out.setdefault(g.game_date, {})[(g.home_team_name, g.away_team_name)] = g
+    return out
+
+
+def _now() -> datetime:
+    return datetime.utcnow()
+
+
+def _selector_ev(builder, row: dict, lines: dict, now: datetime):
+    """The selector's EV for this stored row, or None when the selector would not pick it:
+    a candidate from the source's own row function and provider that passes every hard gate
+    at the real clock (fresh refresh, not started, odds bounds from the loaded config) and
+    the EV gates (consensus EV >= 0, blended EV above MIN_EV)."""
+    from types import SimpleNamespace
+
+    from app.services.auto_pick import record_gate
+
+    build, provider = builder
+    day = record_gate._as_date(row.get("game_date"))
+    cands = record_gate._candidates(
+        provider,
+        build(SimpleNamespace(**row), lines.get(row.get("game_date"), {}), day),
+    )
+    evs = [e for e in (record_gate._passes_gates(c, now) for c in cands) if e]
+    return evs[0] if evs else None
+
+
+# Projector fields that say the model likes a side: gone on a row picked on price.
+_MODEL_STRENGTH = ("edge", "edge_percentage", "value_tier", "edge_category")
+
+
+def _pick_open_game_markets(
+    db: Session, entries: tuple, markets: list, rows: list, out: list
+) -> list:
+    """Game markets whose gate key is OPEN: the row's pick is the stored best quote
+    (``best_side`` at ``best_line``, ``best_book``, ``best_price``; ``ml_best_*`` for the
+    moneyline on a spread row) when the selector would pick it right now, else no pick at
+    all (not the "not proved" note). The board shows what auto picks publish. A picked row
+    carries ``pick_fair_prob`` / ``pick_ev`` (why the price is good) and loses the
+    projector's edge and strength (the pick is the price, not the model's margin). Any
+    failure fails closed: no pick. Withheld markets were stripped before this."""
+    if not markets:
+        return out
+    from app.services.auto_pick import record_gate
+
+    now = _now()
+    token = record_gate._BOUNDS.set(record_gate.odds_bounds(db))
+    try:
+        builders = _game_pick_builders()
+        lines = _game_lines(db, markets[0][1][0], rows)
+    except Exception:
+        logger.exception("open game markets: setup failed; showing no pick")
+        builders, lines = {}, {}
+    try:
+        result = []
+        for orig, row in zip(rows, out):
+            row = dict(row)
+            if row.get("pick_withheld"):  # a withheld row keeps today's behaviour
+                result.append(row)
+                continue
+            # decide every open market on the stored quotes before any field is cleared
+            evs = {}
+            for i, (lg, market) in markets:
+                try:
+                    evs[i] = _selector_ev(builders[(lg, market)], orig, lines, now)
+                except Exception:
+                    logger.exception("open game market check failed; showing no pick")
+                    evs[i] = None
+            for i, (_league, market) in markets:
+                moneyline = market == "moneyline"
+                e = evs[i]
+                side = orig.get(("ml_" if moneyline else "") + "best_side")
+                if moneyline:
+                    if e is None or side not in _SIDE_WORDS:
+                        row.update(dict.fromkeys(_ML_FIELDS))
+                        row["ml_recommendation"] = None
+                    else:
+                        row["ml_recommendation"] = _SIDE_WORDS[side]
+                    continue
+                keep = _ML_FIELDS if len(entries) > 1 else ()
+                if e is not None and side in _SIDE_WORDS:
+                    row["recommendation"] = _SIDE_WORDS[side]
+                    if "betting_recommendation" in row:  # NHL boards read this one
+                        row["betting_recommendation"] = _SIDE_WORDS[side]
+                    row.update(dict.fromkeys(_MODEL_STRENGTH))
+                    row["pick_fair_prob"], row["pick_ev"] = e.fair_prob, e.ev
+                else:
+                    gone = (
+                        (_PICK_FIELDS & row.keys()) | {"recommendation", "edge"}
+                    ) - set(keep)
+                    row.update(dict.fromkeys(gone))
+            result.append(row)
+        return result
+    finally:
+        record_gate._BOUNDS.reset(token)
 
 
 def _strip_row(row: dict[str, Any], entries: tuple, reasons: list) -> dict[str, Any]:

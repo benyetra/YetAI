@@ -82,7 +82,12 @@ def test_gameday_availability_beat_and_catalog():
     assert "app.tasks.etl_pipeline.nfl.anytime_td_projector" in flat
     assert "app.tasks.etl_pipeline.nfl.anytime_td_betting" in flat
     phase_names = [p for p, _ in NFL_GAMEDAY_AVAILABILITY_PHASES]
-    assert phase_names == ["predictions", "game_projections", "anytime_td"]
+    assert phase_names == [
+        "predictions",
+        "game_lines",
+        "game_projections",
+        "anytime_td",
+    ]
     qb = flat.index("app.tasks.etl_pipeline.nfl.qb_weekly")
     spread = flat.index("app.tasks.etl_pipeline.nfl.spread_projector")
     atd = flat.index("app.tasks.etl_pipeline.nfl.anytime_td_projector")

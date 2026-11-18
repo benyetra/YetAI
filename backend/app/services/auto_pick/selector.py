@@ -100,7 +100,7 @@ def hard_gate_reason(
             oldest = None if oldest is None or quoted is None else min(oldest, quoted)
         if (
             oldest is None
-            or oldest < latest_refresh_start(now_utc)
+            or oldest < latest_refresh_start(now_utc, c.league)
             or oldest < to_naive_utc(now_utc) - MAX_LINE_AGE
         ):
             return "stale_line"

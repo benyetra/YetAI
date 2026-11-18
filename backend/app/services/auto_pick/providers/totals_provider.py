@@ -18,6 +18,7 @@ Audit findings:
 import logging
 
 from app.services.auto_pick.candidate import BetCandidate, DateRange, MarketType
+from app.services.auto_pick.providers.spread_provider import CONSENSUS_MD_KEYS
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,18 @@ class TotalsCandidateProvider:
                 side = r["side"]  # model-named side; no default
                 market_total = float(r["market_total"])
                 selection = f"{r['away_team_name']} vs {r['home_team_name']} {side.upper()} {market_total}"
+                md = {
+                    "edge": r.get("edge"),
+                    "recommendation": r.get("recommendation"),
+                    "confidence_score": r.get("confidence_score"),
+                    "factors": r.get("factors"),
+                    "injury_report": r.get("injury_report"),
+                    "generated_at": r.get("generated_at"),
+                    "side": side,
+                    "projection_ref": r.get("projection_ref"),
+                    "model_version": r.get("model_version"),
+                }
+                md.update({k: r[k] for k in CONSENSUS_MD_KEYS if k in r})
                 out.append(
                     BetCandidate(
                         market_type=MarketType.TOTAL,
@@ -52,17 +65,7 @@ class TotalsCandidateProvider:
                         home_team=r.get("home_team_name"),
                         commence_time=r.get("commence_time"),
                         game_date=r.get("game_date"),
-                        projection_metadata={
-                            "edge": r.get("edge"),
-                            "recommendation": r.get("recommendation"),
-                            "confidence_score": r.get("confidence_score"),
-                            "factors": r.get("factors"),
-                            "injury_report": r.get("injury_report"),
-                            "generated_at": r.get("generated_at"),
-                            "side": side,
-                            "projection_ref": r.get("projection_ref"),
-                            "model_version": r.get("model_version"),
-                        },
+                        projection_metadata=md,
                     )
                 )
             except Exception as e:

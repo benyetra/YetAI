@@ -19,6 +19,7 @@ from app.models.predictions_models import (
     NFLSpreadActuals,
     NFLTotalsProjections,
 )
+from app.services.etl._consensus_attach import line_fields
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba.market_anchor import NO_ANCHOR, Anchor, anchored, fit_anchor
 from app.services.etl.nba.totals_baseline import pick_record, recommend
@@ -306,6 +307,13 @@ def run() -> dict:
                     "created_at": datetime.utcnow(),
                     "model_version": TOTALS_MODEL_VERSION,
                     **projection,
+                    **line_fields(
+                        db,
+                        event_id=g.odds_api_event_id,
+                        market="totals",
+                        projection=projection["projected_total"],
+                        line=g.total,
+                    ),
                 }
             )
 
