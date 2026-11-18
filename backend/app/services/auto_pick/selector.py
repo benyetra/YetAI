@@ -3,8 +3,15 @@ from datetime import datetime, timedelta
 from typing import Callable, Optional
 
 from app.models.database_models import SubscriptionTier
-from app.services.auto_pick.candidate import BetCandidate, utc_to_eastern
+from app.services.auto_pick.candidate import (
+    MAX_LINE_AGE,
+    BetCandidate,
+    latest_refresh_start,
+    to_naive_utc,
+    utc_to_eastern,
+)
 from app.services.auto_pick.confidence_score import ConfidenceScore
+from app.services.auto_pick.ev import EV
 from app.services.auto_pick.sub_scores import raw_edge
 
 VALID_SIDES = ("home", "away", "over", "under")
@@ -19,10 +26,14 @@ class ScoredCandidate:
     score: ConfidenceScore
     tier: Optional[SubscriptionTier] = None
     drop_reason: Optional[str] = None
+    # Set by the orchestrator's EV gate; picks are ranked by ev.ev.
+    ev: Optional[EV] = None
 
 
 @dataclass
 class SelectorConfig:
+    # threshold / min_score / min_picks no longer pick straight bets (the EV gate does);
+    # kept so the scoring_config row and parlay settings still load.
     threshold: float = 65.0
     odds_min: int = -300
     odds_max: int = 400
@@ -57,9 +68,17 @@ def market_key(c: BetCandidate) -> tuple:
 
 
 def hard_gate_reason(
-    sc: ScoredCandidate, now_utc: datetime, odds_min: int, odds_max: int
+    sc: ScoredCandidate,
+    now_utc: datetime,
+    odds_min: int,
+    odds_max: int,
+    fresh: bool = True,
 ) -> Optional[str]:
-    """Pure gates that need no DB/grader: stable reason name or None."""
+    """Pure gates that need no DB/grader: stable reason name or None.
+
+    ``fresh`` False skips the stale-line check (the evening-run look-ahead: that run will
+    read refreshed rows).
+    """
     c = sc.candidate
     side = (c.projection_metadata.get("side") or "").lower()
     if side not in VALID_SIDES:
@@ -72,6 +91,19 @@ def hard_gate_reason(
         return "odds_assumed"
     if c.projection_metadata.get("injury_flag"):
         return "injury_flag"
+    md = c.projection_metadata
+    if fresh and "projected_at" in md:
+        # Both the projection and the quote (line + price) must come from the latest refresh.
+        oldest = to_naive_utc(md["projected_at"])
+        if "quoted_at" in md:
+            quoted = to_naive_utc(md["quoted_at"])
+            oldest = None if oldest is None or quoted is None else min(oldest, quoted)
+        if (
+            oldest is None
+            or oldest < latest_refresh_start(now_utc)
+            or oldest < to_naive_utc(now_utc) - MAX_LINE_AGE
+        ):
+            return "stale_line"
     if c.commence_time is not None:
         if c.commence_time <= now_utc + START_BUFFER:
             return "started_or_starting"
@@ -92,15 +124,17 @@ class BetSelector:
         already_published: int = 0,
         used_games: Optional[set] = None,
         market_counts: Optional[dict] = None,
-        fill_floor: bool = True,
         key_fn: Callable[[BetCandidate], tuple] = game_key,
     ) -> list[ScoredCandidate]:
         """Rank already-gated candidates and choose today's picks.
 
         ``remaining`` = open slots under the daily cap; ``already_published`` =
-        straight picks already live today (sets tier rank and the fill-to-2 rule);
-        ``market_counts`` = today's live picks per ``market_key``; ``fill_floor``
-        False skips the fill-to-2-from-floor step (left to a later run).
+        straight picks already live today (sets tier rank);
+        ``market_counts`` = today's live picks per ``market_key``.
+
+        Candidates are already gated (each beats MIN_EV), so they are taken best expected
+        value first under the caps; a confidence score never lets a worse-EV pick in or
+        keeps a better one out (it only breaks ties).
         """
         cfg = self.config
         if remaining is None:
@@ -111,45 +145,27 @@ class BetSelector:
         def crowded(c: BetCandidate) -> bool:
             return per_market.get(market_key(c), 0) >= cfg.max_per_market
 
-        ranked = sorted(scored, key=lambda s: s.score.total, reverse=True)
+        def ev_of(sc: ScoredCandidate) -> float:
+            return sc.ev.ev if sc.ev else float("-inf")
+
+        ranked = sorted(scored, key=lambda s: (ev_of(s), s.score.total), reverse=True)
+        for sc in ranked:  # a re-select (the reserve path) must not keep an old outcome
+            sc.drop_reason = None
 
         picks: list[ScoredCandidate] = []
-        chosen: set[int] = set()
-
-        def take(floor: float, limit: int) -> None:
-            for sc in ranked:
-                if len(picks) >= limit:
-                    return
-                if id(sc) in chosen or sc.score.total < floor:
-                    continue
-                k = key_fn(sc.candidate)
-                if k in used or crowded(sc.candidate):
-                    continue
-                picks.append(sc)
-                chosen.add(id(sc))
-                used.add(k)
-                mk = market_key(sc.candidate)
-                per_market[mk] = per_market.get(mk, 0) + 1
-
-        take(cfg.threshold, remaining)
-        if fill_floor:
-            fill_to = min(remaining, max(0, cfg.min_picks - already_published))
-            take(cfg.min_score, fill_to)
-
         for sc in ranked:
-            if id(sc) in chosen:
-                continue
             k = key_fn(sc.candidate)
-            if sc.score.total < cfg.min_score:
-                sc.drop_reason = "below_floor"
-            elif sc.score.total < cfg.threshold:
-                sc.drop_reason = "below_threshold"
+            if len(picks) >= remaining:
+                sc.drop_reason = "cap_reached"
             elif k in used:
                 sc.drop_reason = "same_event"
             elif crowded(sc.candidate):
                 sc.drop_reason = "market_concentration"
             else:
-                sc.drop_reason = "cap_reached"
+                picks.append(sc)
+                used.add(k)
+                mk = market_key(sc.candidate)
+                per_market[mk] = per_market.get(mk, 0) + 1
 
         for i, p in enumerate(picks):
             p.tier = _TIER_BY_RANK[min(already_published + i, len(_TIER_BY_RANK) - 1)]

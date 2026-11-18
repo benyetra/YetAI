@@ -10,7 +10,7 @@ from app.services.etl.nfl.recv_yds_model import (
 )
 
 SKILL_POSITIONS = frozenset({"RB", "WR", "TE"})
-MODEL_VERSION = "recv_nonml_v2"
+MODEL_VERSION = "recv_nonml_v3"
 
 # Catch rate by position, for callers that only know yards per reception.
 _CATCH_RATE = {"WR": 0.63, "TE": 0.72, "RB": 0.79}

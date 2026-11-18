@@ -237,10 +237,7 @@ def _run_qb_betting_core():
 
     # Get current QB predictions
     qb_predictions = (
-        db_session.query(QBPredictions)
-        .filter_by(season=season, week=week)
-        .limit(32)
-        .all()
+        db_session.query(QBPredictions).filter_by(season=season, week=week).all()
     )
     print(f"📊 Found {len(qb_predictions)} QB predictions")
 
@@ -254,10 +251,7 @@ def _run_qb_betting_core():
 
         # Re-query for predictions after generation
         qb_predictions = (
-            db_session.query(QBPredictions)
-            .filter_by(season=season, week=week)
-            .limit(32)
-            .all()
+            db_session.query(QBPredictions).filter_by(season=season, week=week).all()
         )
         print(f"📊 After generation: Found {len(qb_predictions)} QB predictions")
 
@@ -308,6 +302,11 @@ def _run_qb_betting_core():
                     fi.get("features") if isinstance(fi.get("features"), dict) else {}
                 )
                 feat_ctx = dict(feat_ctx) if feat_ctx else {}
+
+                # No call when the published number is the ML output (it is the
+                # line plus noise) or when the ML block failed (the yards would
+                # be the tier's, not what was meant to be published).
+                no_call_reason = None
 
                 # Reinject real prop line into feature vector + publish yards
                 try:
@@ -366,8 +365,10 @@ def _run_qb_betting_core():
                     if ml_yards is not None and pub_method != "gbm":
                         fi["ml_shadow_yards"] = float(ml_yards)
                     qb.feature_importance = fi
+                    if pub_method == "gbm":
+                        no_call_reason = "Published yards are the ML output: no call"
                 except Exception:
-                    pass
+                    no_call_reason = "ML publish failed: no call"
 
                 try:
                     from app.services.etl.nfl.qb_ou_classifier import (
@@ -378,12 +379,20 @@ def _run_qb_betting_core():
                 except Exception:
                     over_prob = None
 
-                recommendation = generate_betting_recommendation(
-                    qb.predicted_passing_yards,
-                    ou_line,
-                    qb.model_confidence or 0.5,
-                    over_probability=over_prob,
-                )
+                if no_call_reason:
+                    recommendation = {
+                        "recommendation": "PASS",
+                        "reason": no_call_reason,
+                        "edge_percentage": None,
+                        "bet_size": None,
+                    }
+                else:
+                    recommendation = generate_betting_recommendation(
+                        qb.predicted_passing_yards,
+                        ou_line,
+                        qb.model_confidence or 0.5,
+                        over_probability=over_prob,
+                    )
 
                 # Update QB prediction with betting data
                 qb.ou_line = ou_line

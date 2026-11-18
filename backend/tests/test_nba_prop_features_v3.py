@@ -12,9 +12,11 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models.predictions_models import (
     NBAGameLines,
+    PlayerInjuryStatus,
     RecentGames,
     TeamDefenseStats,
     TeamRoster,
+    TodayActivePlayers,
 )
 from app.services.etl.nba import _feature_engineering as fe
 from app.services.etl.nba import _team_defense as td
@@ -31,7 +33,14 @@ LAKERS = 1610612747
 @pytest.fixture
 def db():
     engine = create_engine("sqlite://")
-    for model in (NBAGameLines, RecentGames, TeamDefenseStats, TeamRoster):
+    for model in (
+        NBAGameLines,
+        PlayerInjuryStatus,
+        RecentGames,
+        TeamDefenseStats,
+        TeamRoster,
+        TodayActivePlayers,
+    ):
         model.__table__.create(engine)
     session = sessionmaker(bind=engine)()
     td.clear_cache()
@@ -218,9 +227,12 @@ def test_line_is_found_through_the_opponent_even_after_a_trade(db):
 
 def test_no_line_leaves_the_market_features_neutral(db):
     add_player_games(db, 7, [20.0] * 6)
-    feats = fe.build_features(db, 7, TODAY, NUGGETS, "points")
+    feats = fe.build_features(db, 7, TODAY, NUGGETS, "points", version=3)
     assert (feats["spread"], feats["total"], feats["is_home"]) == (0, 0, 0)
     assert feats["blowout_risk"] == 0.15
+    # v4: unknown is NaN, so training rows with no stored line match serving (AC5)
+    v4 = fe.build_features(db, 7, TODAY, NUGGETS, "points")
+    assert all(v4[k] != v4[k] for k in ("spread", "total", "blowout_risk"))
 
 
 # ---- recency / rate / volume --------------------------------------------------------
@@ -293,7 +305,7 @@ def test_legacy_feature_names_are_still_produced(db):
         "home_away_split",
     ):
         assert name in feats, name
-    assert fe.FEATURES_VERSION == 3
+    assert fe.FEATURES_VERSION == 4
 
 
 # ---- PRA ----------------------------------------------------------------------------
@@ -301,6 +313,19 @@ def test_legacy_feature_names_are_still_produced(db):
 
 def test_pra_mean_is_the_sum_of_its_parts():
     assert pra.CORRELATION_ADJUSTMENT == 1.0
+
+
+def test_pra_skips_a_player_with_under_five_games_this_season(db):
+    # 0 games this season, 30 last season: last season would fill the window, but PRA has
+    # no low_sample flag, so the row is not written (it could otherwise be picked).
+    for i in range(30):
+        db.add(RecentGames(player_id=7, opponent_team_id=1, game_date=date(2026, 2, 1) + timedelta(days=i), points=20.0, rebounds=5.0, assists=4.0, minutes=30.0))  # fmt: skip
+    db.commit()
+    assert pra._short_current_sample(db, 7, TODAY)
+    for i in range(5):
+        db.add(RecentGames(player_id=7, opponent_team_id=1, game_date=TODAY - timedelta(days=2 + i), points=20.0, rebounds=5.0, assists=4.0, minutes=30.0))  # fmt: skip
+    db.commit()
+    assert not pra._short_current_sample(db, 7, TODAY)
 
 
 # ---- a player ruled out after the overnight run ---------------------------------

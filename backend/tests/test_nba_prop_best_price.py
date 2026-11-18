@@ -182,3 +182,34 @@ def test_mismatched_over_under_points_split_into_one_sided_quotes(monkeypatch):
         (11.5, None, -120),
     ]
     fdl.clear_cache()
+
+
+def test_a_book_far_behind_the_others_is_left_out(monkeypatch):
+    def book(key, updated, over):
+        return {
+            "key": key,
+            "markets": [
+                {
+                    "key": "player_points",
+                    "last_update": updated,
+                    "outcomes": [
+                        {"name": "Over", "description": "A B", "point": 10.5, "price": over},
+                        {"name": "Under", "description": "A B", "point": 10.5, "price": -110},
+                    ],
+                }
+            ],
+        }  # fmt: skip
+
+    payload = {
+        "bookmakers": [
+            book("fanduel", "2026-11-18T22:00:00Z", -110),
+            book("draftkings", "2026-11-18T21:55:00Z", -112),
+            book("stalebook", "2026-11-18T20:00:00Z", 150),  # 2 h behind: an outlier
+        ]
+    }
+    fdl.clear_cache()
+    monkeypatch.setattr(fdl.settings, "ODDS_API_KEY", "k", raising=False)
+    monkeypatch.setattr(fdl, "sync_odds_get", lambda *a, **k: _Resp(payload))
+    qs = fdl.prop_quotes(fdl.NBA_SPORT, "e", "A B", "player_points")
+    assert sorted(q.book for q in qs) == ["draftkings", "fanduel"]
+    fdl.clear_cache()

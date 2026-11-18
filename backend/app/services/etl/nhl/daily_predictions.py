@@ -41,7 +41,7 @@ from app.services.etl.nhl.generate_daily_predictions import (
     get_odds_api_team_name,
     clear_nhl_event_odds_cache,
 )
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timedelta, timezone
 from app.services.etl._game_start import EASTERN, keep_known, not_started
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nhl._config import get_nhl_season
@@ -77,6 +77,34 @@ def _pregame(games: list[dict]) -> list[dict]:
     return not_started(
         games, lambda g: game_datetime_et(g)[::-1], now=_now(), naive_tz=EASTERN
     )
+
+
+# Pregame refresh window: a game is refreshed only while it is unstarted and starts within
+# this long from now. The beat runs every 2 hours at :45 (10:45 ... 20:45 ET), so a
+# 3h15m window gives every game at least one refresh in the 3 hours before its start (a
+# 12:30 matinee at 10:45; a 19:00 game at 16:45, before the 18:00 auto pick), while a game
+# far ahead is left for a later run. The 15 minutes of slack lets the 19:00 game fall in
+# the 16:45 run even when the beat fires a little late.
+PREGAME_WINDOW = timedelta(hours=3, minutes=15)
+
+
+def games_to_refresh(games: list[dict], slate_date: date, now: datetime) -> list[dict]:
+    """Today's (ET) unstarted games that start within PREGAME_WINDOW of ``now``.
+
+    A game with no known start time is kept: it cannot be placed in the window, and
+    refreshing it once is cheaper than leaving it stale.
+    """
+    kept = []
+    for g in games:
+        game_day, start_et = game_datetime_et(g, slate_date)
+        if g.get("gameState") not in ("FUT", "PRE") or game_day != slate_date:
+            continue
+        if start_et is not None:
+            start = start_et.replace(tzinfo=EASTERN)
+            if start <= now or start - now > PREGAME_WINDOW:
+                continue
+        kept.append(g)
+    return kept
 
 
 def find_odds_event(odds_events, home_name, home_abbrev, away_name, away_abbrev):
@@ -234,6 +262,8 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
                     existing.was_scratch = True
                     stale_scratched += 1
                     existing = None
+                    # Flag before reviving: the unique index allows one live row per team.
+                    db_session.flush()
                 if existing is None:
                     # A goalie who comes back gets his flagged row revived.
                     existing = next((r for r in rows if r.goalie_id == goalie_id), None)
@@ -662,9 +692,14 @@ def _run_daily_core() -> dict:
             "slate_date_et": str(slate_date),
         }
 
-    games = []
-    for game_day in schedule["gameWeek"]:
-        games.extend(game_day.get("games", []))
+    # get_schedule returns a 7-day gameWeek; project only today's (ET) games, the same
+    # filter the pregame refresh uses. Future days get their own morning run.
+    games = [
+        g
+        for game_day in schedule["gameWeek"]
+        for g in game_day.get("games", [])
+        if game_datetime_et(g, slate_date)[0] == slate_date
+    ]
 
     if not games:
         logging.warning("⚠️  No games found in schedule")
@@ -741,8 +776,8 @@ def run() -> dict:
 
 
 def run_goalie_refresh() -> dict:
-    """Pregame refresh: today's not-yet-started games; goalie saves, player shots and
-    team totals lines and predictions.
+    """Pregame refresh: today's not-yet-started games starting within PREGAME_WINDOW;
+    goalie saves, player shots and team totals lines and predictions.
 
     Odds credits: one event-odds call per event covering all three markets (3
     credits per event); the goalie, shots and totals readers share its payload.
@@ -753,13 +788,15 @@ def run_goalie_refresh() -> dict:
     init_session()
     try:
         schedule = NHLAPIClient().get_schedule(slate_date.strftime("%Y-%m-%d"))
-        games = [
-            g
-            for day in (schedule or {}).get("gameWeek", [])
-            for g in day.get("games", [])
-            if g.get("gameState") in ("FUT", "PRE")
-            and game_datetime_et(g, slate_date)[0] == slate_date
-        ]
+        games = games_to_refresh(
+            [
+                g
+                for day in (schedule or {}).get("gameWeek", [])
+                for g in day.get("games", [])
+            ],
+            slate_date,
+            _now(),
+        )
         if not games:
             return {
                 "task": "nhl_goalie_pregame_refresh",

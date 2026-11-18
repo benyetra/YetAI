@@ -140,6 +140,9 @@ def test_line_conversion_and_no_conversion(db):
     assert f.close_prob > 0.5  # over is likelier at the lower line
     db.query(S).delete()
     db.commit()
+    # A bulk delete leaves the old snapshots in the identity map; sqlite then reuses id 1
+    # and the flush warns (an error under this suite), depending on GC timing.
+    db.expunge_all()
     others(db, line=9.5)  # shift 3.0 > MAX_SHIFT 2.0
     go(db)
     f = db.query(F).one()

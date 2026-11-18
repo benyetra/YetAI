@@ -35,9 +35,25 @@ def test_gate_failed_no_upload(monkeypatch):
     monkeypatch.setattr(
         T.upload_to_s3, "upload_gated_pickle", lambda *a, **k: called.append(1)
     )
-    out = T.train("rebounds", "2026-01-01", "2026-03-01", rows=_rows(), upload=True)
-    assert out["status"] == "gate_failed" and not called
+    s3 = FakeS3()
+    out = T.train(
+        "rebounds",
+        "2026-01-01",
+        "2026-03-01",
+        rows=_rows(per_day=20),
+        upload=True,
+        s3=s3,
+    )
+    assert out["status"] == "rejected_by_line_gate" and not called
     assert not out["gate"]["passes"]
+    # the rejection is recorded next to the model
+    rec = json.loads(s3.objects["nba/ml_models/residual_rebounds_gate.json"])
+    assert rec["status"] == "rejected_by_line_gate" and rec["stat"] == "rebounds"
+
+
+def test_too_few_lined_rows_is_no_line_evidence(monkeypatch):
+    out = T.train("rebounds", "2026-01-01", "2026-03-01", rows=_rows(signal=3.0))
+    assert out["status"] == "no_line_evidence" and out["gate"]["n_lined"] < 150
 
 
 def test_gate_pass_uploads_with_line_gate(monkeypatch):
@@ -49,12 +65,17 @@ def test_gate_pass_uploads_with_line_gate(monkeypatch):
 
     monkeypatch.setattr(T.upload_to_s3, "upload_gated_pickle", fake)
     rows = _rows(per_day=20, signal=3.0)
-    out = T.train("assists", "2026-01-01", "2026-03-01", rows=rows, upload=True)
+    s3 = FakeS3()
+    out = T.train("assists", "2026-01-01", "2026-03-01", rows=rows, upload=True, s3=s3)
     assert out["status"] == "ok", out
+    rec = json.loads(s3.objects["nba/ml_models/residual_assists_gate.json"])
+    assert rec["passes"] and rec["upload_status"] == "first_upload"
     assert seen["key"] == "nba/ml_models/residual_assists.pkl"
     assert seen["line_gate"]["passes"]
     assert seen["candidate_metric"] == out["holdout_mae"]
     assert seen["meta"]["train_end"] == "2026-03-01"
+    # version label names the model kind, not "xgb" (review F6)
+    assert seen["version_prefix"] == T.DEFAULT_KIND.replace("_", "")
     # dry without --upload
     seen.clear()
     assert (
@@ -74,21 +95,29 @@ def test_save_local_on_gate_failure(tmp_path):
         "rebounds", "2026-01-01", "2026-03-01", rows=_rows(), save_local=tmp_path
     )
     meta = json.loads((tmp_path / "residual_rebounds_metadata.json").read_text())
-    assert out["status"] == "gate_failed" and meta["status"] == "gate_failed"
+    assert out["status"] == "no_line_evidence" == meta["status"]
     assert (tmp_path / "residual_rebounds.pkl").exists()
 
 
-def test_score_champion_inf_below_50_rows_and_scores_above():
+def test_champion_predictions_nan_up_to_train_end():
     rows = _rows(signal=1.0)
     fit_df, hold = T.split_holdout(rows)
     live = T.residual_model.fit(fit_df, feature_columns(), "ridge", stat="rebounds")
-    body = pickle.dumps(live)
-    meta = lambda te: json.dumps({"train_end": te}).encode()  # noqa: E731
-    s3 = FakeS3({T._meta_key("rebounds"): meta("2026-03-01")})
-    assert T.score_champion("rebounds", hold, s3)(body) == float("inf")
-    s3 = FakeS3({T._meta_key("rebounds"): meta("2026-01-01")})
-    assert np.isfinite(T.score_champion("rebounds", hold, s3)(body))
-    assert T.score_champion("rebounds", hold, FakeS3())(body) == float("inf")
+    objs = lambda te: {  # noqa: E731
+        T.model_key("rebounds"): pickle.dumps(live),
+        T._meta_key("rebounds"): json.dumps({"train_end": te}).encode(),
+    }
+    # live model trained through the whole holdout: nothing comparable
+    out = T.champion_predictions("rebounds", hold, FakeS3(objs("2026-03-01")))
+    assert np.isnan(out).all()
+    # trained before it: every row is scored, as line + predicted residual
+    out = T.champion_predictions("rebounds", hold, FakeS3(objs("2026-01-01")))
+    pred, _ = live.predict(hold)
+    assert np.allclose(out, hold["line"].to_numpy() + pred)
+    # no live model, or no metadata to date it
+    assert T.champion_predictions("rebounds", hold, FakeS3()) is None
+    only_model = {T.model_key("rebounds"): pickle.dumps(live)}
+    assert T.champion_predictions("rebounds", hold, FakeS3(only_model)) is None
 
 
 def test_inf_champion_does_not_block_upload(monkeypatch):

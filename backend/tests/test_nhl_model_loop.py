@@ -143,7 +143,8 @@ def test_heuristic_always_in_features_used(name, flag, monkeypatch):
     assert fu[key] is not None and fu[key] != 99.0
 
 
-@pytest.mark.parametrize("name", IDS)
+# Shots and goalie uploads also go through the line gate (tests/test_wnba_nhl_line_gate.py).
+@pytest.mark.parametrize("name", ["totals"])
 def test_upload_is_champion_gated(name, monkeypatch):
     mod, trainer, _, upload, _ = CASES[name]
     pkl, meta = _keys(mod)

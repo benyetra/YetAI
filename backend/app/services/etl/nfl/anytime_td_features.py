@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Iterable, Mapping, Sequence
 
 from app.services.etl.nfl.team_names import _CANONICAL_BY_ABBR, normalize_team_name
@@ -38,7 +38,11 @@ _LEAGUE_AVG_TEAM_TOTAL = 22.5
 # opportunity share (not among-pass target share); PBP rz_target_share is
 # already in a higher band and lands similarly once conversion is raised.
 _PLAYER_RZ_SHARE_PRIOR_BY_DEPTH: dict[str, dict[int, float]] = {
-    "QB": {1: 0.07},
+    # QB share x conversion = 0.286 x 0.14 = 0.040 -> P(TD) ~0.12 at the default
+    # 3.2 trips, matching the backtest's QB prior (POSITION_ANYTIME_PRIOR). The
+    # old 0.07 x 0.14 gave ~0.03. Not refitted on data: see docs in the ATD
+    # handoff for the refit command.
+    "QB": {1: 0.286},
     "RB": {1: 0.30, 2: 0.12},
     "WR": {1: 0.26, 2: 0.16, 3: 0.10},
     "TE": {1: 0.15, 2: 0.08},
@@ -945,6 +949,19 @@ def _fill_remaining_slots_from_usage(
             counts[(team, pos)] = counts.get((team, pos), 0) + 1
 
 
+def _kickoff(game_date: date | None, gametime: Any) -> datetime | None:
+    """Naive Eastern kickoff from nflverse gameday + gametime ("13:00"); None if unknown."""
+    if game_date is None or gametime is None or _is_missing(gametime):
+        return None
+    try:
+        hh, mm = str(gametime).strip()[:5].split(":")
+        return datetime(
+            game_date.year, game_date.month, game_date.day, int(hh), int(mm)
+        )
+    except ValueError:
+        return None
+
+
 def _schedule_matchups(
     schedule_records: Iterable[dict[str, Any]], *, week: int
 ) -> dict[str, dict[str, Any]]:
@@ -972,6 +989,8 @@ def _schedule_matchups(
         else:
             game_date = None
 
+        kickoff = _kickoff(game_date, raw.get("gametime"))
+
         roof = _str(raw, "roof").lower()
         outdoor = roof not in ("dome", "closed", "indoor")
         wind = raw.get("wind")
@@ -982,6 +1001,7 @@ def _schedule_matchups(
         home_entry = {
             "opponent_abbr": away,
             "game_date": game_date,
+            "kickoff": kickoff,
             "home": True,
             "outdoor": outdoor,
             "wind_mph": wind_mph,
@@ -991,6 +1011,7 @@ def _schedule_matchups(
         away_entry = {
             "opponent_abbr": home,
             "game_date": game_date,
+            "kickoff": kickoff,
             "home": False,
             "outdoor": outdoor,
             "wind_mph": wind_mph,
@@ -1226,6 +1247,8 @@ def build_weekly_feature_rows(
         )
         if match.get("game_date") is not None:
             row["game_date"] = match["game_date"]
+        if match.get("kickoff") is not None:
+            row["kickoff"] = match["kickoff"]
         rows.append(row)
 
     # Sort by opportunity proxy (λ inputs); projector re-ranks by P(TD).

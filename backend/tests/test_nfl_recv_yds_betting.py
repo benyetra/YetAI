@@ -1,3 +1,4 @@
+from app.services.etl.nfl import recv_yds_model
 from app.services.etl.nfl.recv_yds_betting import (
     RECV_YDS_MARKET,
     attach_recv_betting,
@@ -28,17 +29,18 @@ def test_clear_betting_fields_nulls_market_columns():
 
 def test_generate_recommendation_pass_on_thin_edge():
     rec = generate_betting_recommendation(
-        prediction=85.0, ou_line=80.0, confidence=0.72
+        prediction=104.0, ou_line=80.0, confidence=0.72
     )
-    # edge = 5 yards → 6.25% < 7% → PASS
+    # mean 30% above the line puts the median near it: P(over) ~ breakeven → PASS
     assert rec["recommendation"] == "PASS"
 
 
-def test_generate_recommendation_over_on_strong_edge():
+def test_generate_recommendation_over_on_strong_edge(monkeypatch):
+    monkeypatch.setattr(recv_yds_model, "RECV_CV_FITTED", True)
     rec = generate_betting_recommendation(
-        prediction=92.0, ou_line=80.0, confidence=0.80
+        prediction=160.0, ou_line=80.0, confidence=0.80
     )
-    # 15% edge → OVER LARGE
+    # mean far above the line: P(over) clears the breakeven by a wide margin
     assert rec["recommendation"] == "OVER"
     assert rec["bet_size"] == "LARGE"
 
@@ -131,3 +133,22 @@ def test_match_player_lines_does_not_substring_match():
 
     lines = {"Josh Allen Smith": {"FanDuel": {}}}
     assert match_player_lines("Josh Allen", lines) is None
+
+
+def test_unfitted_cv_writes_shadow_pass_when_mean_equals_line():
+    rec = generate_betting_recommendation(
+        prediction=60.0, ou_line=60.0, confidence=0.80
+    )
+    assert rec["recommendation"] == "PASS"
+    assert rec["bet_size"] is None
+    assert 0.0 < rec["p_over"] < 0.5
+    assert rec["reason"].startswith("shadow: would be UNDER")
+    assert "CV not fitted" in rec["reason"]
+
+
+def test_fitted_cv_keeps_side_logic(monkeypatch):
+    monkeypatch.setattr(recv_yds_model, "RECV_CV_FITTED", True)
+    rec = generate_betting_recommendation(
+        prediction=60.0, ou_line=60.0, confidence=0.80
+    )
+    assert rec["recommendation"] == "UNDER"

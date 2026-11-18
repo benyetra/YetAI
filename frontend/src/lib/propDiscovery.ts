@@ -1,5 +1,7 @@
 /** Client-side player search + best-edges discovery for stat projection pages. */
 
+import { isPickWithheld, isRealPickSide } from '@/lib/pickWithheld';
+
 export const PERSON_NAME_KEYS = [
   'player_name',
   'pitcher_name',
@@ -64,12 +66,20 @@ export function rowMatchesPlayerSearch(
   return false;
 }
 
+/**
+ * Best edges: only rows carrying an explicit backend pick (real side in `pickKey`, no
+ * `pick_withheld`) with a positive edge. Rows are never eligible on projection-vs-line alone.
+ * Order: highest edge first; a row with a null edge is not eligible, so it sorts after all
+ * rows with an edge by never appearing here (the full table keeps its own order for them).
+ */
 export function selectTopPositiveEdge(
   rows: Array<Record<string, unknown>>,
   edgeKey = 'edge',
-  limit = DEFAULT_LIMIT
+  limit = DEFAULT_LIMIT,
+  pickKey = 'recommendation'
 ): Array<Record<string, unknown>> {
   return rows
+    .filter((row) => !isPickWithheld(row) && isRealPickSide(row[pickKey]))
     .map((row) => ({ row, edge: asNumber(row[edgeKey]) }))
     .filter((x): x is { row: Record<string, unknown>; edge: number } => x.edge != null && x.edge > 0)
     .sort((a, b) => b.edge - a.edge)
@@ -83,6 +93,7 @@ export function selectTopByNumericField(
   limit = DEFAULT_LIMIT
 ): Array<Record<string, unknown>> {
   return rows
+    .filter((row) => !isPickWithheld(row))
     .map((row) => ({ row, value: asNumber(row[valueKey]) }))
     .filter((x): x is { row: Record<string, unknown>; value: number } => x.value != null)
     .sort((a, b) => b.value - a.value)
@@ -96,7 +107,7 @@ export function selectDiscoveryRows(
 ): Array<Record<string, unknown>> {
   const limit = group.limit ?? DEFAULT_LIMIT;
   if (group.mode === 'positive_edge') {
-    return selectTopPositiveEdge(rows, group.edgeKey ?? 'edge', limit);
+    return selectTopPositiveEdge(rows, group.edgeKey ?? 'edge', limit, group.pickKey ?? 'recommendation');
   }
   const valueKey = group.valueKey;
   if (!valueKey) return [];

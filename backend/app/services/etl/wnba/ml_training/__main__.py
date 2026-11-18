@@ -9,6 +9,7 @@ from datetime import date
 
 from app.services.etl.wnba.ml_training.config import WNBA_ML_CONFIG
 from app.services.etl.wnba.ml_training.run_train_props import run
+from app.services.ml.promote_gate import exit_code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -48,10 +49,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(json.dumps(result, indent=2, default=str))
-    status = result.get("status")
-    if status in ("ok", "dry_run", "rejected_by_champion"):
-        return 0
-    return 1
+    return exit_code(result.get("status"))
 
 
 if __name__ == "__main__":

@@ -29,9 +29,16 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import and_, or_
 
-from app.models.predictions_models import NBAGameLines, TeamDefenseStats
+from app.models.predictions_models import (
+    NBAGameLines,
+    RecentGames,
+    TeamDefenseStats,
+    TodayActivePlayers,
+)
 from app.services.etl.nba._espn import NBA_TEAM_NAMES
-from app.services.etl.nba._samples import player_games
+from app.services.etl.nba._last10 import _MIN_GAMES as MIN_SAMPLE_GAMES
+from app.services.etl.nba._samples import current_season_games, player_games
+from app.services.etl.nba._team_context import RETURN_GAP_DAYS, team_context
 from app.services.etl.nba._team_defense import team_defense_as_of
 
 logger = logging.getLogger(__name__)
@@ -39,7 +46,10 @@ logger = logging.getLogger(__name__)
 # Cached training datasets are keyed by this; bump it when features change.
 # v3: opponent defense as of each game's date, the Vegas line found through
 # the opponent, and the rate / recency / volume features below.
-FEATURES_VERSION = 3
+# v4: who is missing from the player's team (`_team_context`), expected
+# minutes and starter rate, minutes trend, games since a return from a long
+# absence, and a home flag that survives a missing game line.
+FEATURES_VERSION = 4
 
 # Half-lives (in games) of the exponentially weighted averages.
 EWM_HALF_LIVES = (5, 10)
@@ -198,12 +208,86 @@ def _game_line_vs(db, opponent_team_id: int, game_date: date):
     return line, not opponent_is_home
 
 
+def _home_flag(db, player_id: int, game_date: date, line_is_home=None) -> float:
+    """Home flag: the player's own box row for the date, else the game line's side,
+    else tonight's active-players row, else NaN (unknown, never 0)."""
+    own = (
+        db.query(RecentGames.home_game)
+        .filter_by(player_id=player_id, game_date=game_date)
+        .first()
+    )
+    if own is not None and own[0] is not None:
+        return 1 if own[0] else 0
+    if line_is_home is not None:
+        return 1 if line_is_home else 0
+    today = (
+        db.query(TodayActivePlayers.is_home_game)
+        .filter_by(player_id=player_id, game_date=game_date)
+        .first()
+    )
+    if today is not None and today[0] is not None:
+        return 1 if today[0] else 0
+    return float("nan")
+
+
+def _line_features_v4(db, player_id: int, game_date: date, game_line) -> dict:
+    """spread / total / is_favorite / blowout_risk / is_home for version 4: NaN where
+    no stored line (or no stored number) says otherwise; a real 0 spread stays 0."""
+    nan = float("nan")
+    out = dict(spread=nan, total=nan, is_favorite=nan, blowout_risk=nan)
+    line_is_home = None
+    if game_line is not None:
+        line, line_is_home = game_line
+        spread = line.spread_home if line_is_home else line.spread_away
+        if spread is not None:
+            out["spread"] = spread
+            out["is_favorite"] = 1 if spread < 0 else 0
+        if line.total is not None:
+            out["total"] = line.total
+        if line.spread_home is not None:
+            out["blowout_risk"] = line.get_blowout_risk()
+    out["is_home"] = _home_flag(db, player_id, game_date, line_is_home)
+    return out
+
+
+def _games_since_return(games_df: pd.DataFrame, game_date: date) -> int:
+    """Games played (newest first) before the first gap of more than
+    RETURN_GAP_DAYS; 0 when the latest game is itself that far back."""
+    dates = list(games_df["game_date"])
+    if (game_date - dates[0]).days > RETURN_GAP_DAYS:
+        return 0
+    count = 1
+    for newer, older in zip(dates, dates[1:]):
+        if (newer - older).days > RETURN_GAP_DAYS:
+            break
+        count += 1
+    return min(count, 20)
+
+
+def _v4_features(db, player_id, game_date, opponent_team_id, games_df, features):
+    # Imported here: update_expected_minutes pulls in the database module.
+    from app.services.etl.nba.update_expected_minutes import _calc_for
+
+    # Same sample rule as the rest of the vector: last season fills in a short
+    # current season, so a low-sample row does not read as 0 expected minutes.
+    expected = (
+        _calc_for(db, player_id, "", game_date, min_current=MIN_SAMPLE_GAMES) or {}
+    )
+    out = team_context(db, player_id, game_date, opponent_team_id)
+    out["exp_minutes"] = expected.get("expected_minutes_today", 0)
+    out["starter_rate_10"] = expected.get("starter_rate", 0)
+    out["minutes_trend"] = features["minutes_avg_3"] - features["avg_minutes_10"]
+    out["games_since_return"] = _games_since_return(games_df, game_date)
+    return out
+
+
 def build_features(
     db,
     player_id: int,
     game_date: date,
     opponent_team_id: int,
     stat_col: str,
+    version: int = FEATURES_VERSION,
 ) -> Optional[dict]:
     """Build a stat-specific feature vector for one player-vs-opponent matchup.
 
@@ -218,6 +302,9 @@ def build_features(
     Returns:
         A dict keyed by the training-time feature names, or None if the player
         has fewer than 5 games (insufficient data — caller should skip).
+        With fewer than 5 games this season, last season fills in and
+        `low_sample` is 1. `version` 3 returns the v3 keys only (plus
+        `low_sample`); 4 adds the availability and role features.
     """
     if stat_col not in _OPP_STAT_ALLOWED_COL:
         raise ValueError(
@@ -225,13 +312,18 @@ def build_features(
             f"{sorted(_OPP_STAT_ALLOWED_COL)}"
         )
 
-    historical_games = player_games(db, player_id, game_date, 50)
-    if len(historical_games) < 5:
+    historical_games = player_games(
+        db, player_id, game_date, 50, min_current=MIN_SAMPLE_GAMES
+    )
+    if len(historical_games) < MIN_SAMPLE_GAMES:
         return None
 
     games_df = _games_to_df(historical_games)
 
     features: dict = {}
+    features["low_sample"] = (
+        1 if current_season_games(db, player_id, game_date) < MIN_SAMPLE_GAMES else 0
+    )
 
     # ---- Rolling avg/std for the target stat (5/10/20 games) and minutes
     # (5/10). A window longer than the sample, early in the season, averages
@@ -339,7 +431,12 @@ def build_features(
     # table only knows a player's team today, which is the wrong game for
     # anyone traded since.
     game_line = _game_line_vs(db, opponent_team_id, game_date)
-    if game_line is not None:
+    if version >= 4:
+        # Train/serve parity: about half of the training rows have no stored line, and a
+        # 0 fill taught the model "total == 0". Unknown is NaN (XGBoost's missing branch),
+        # and is_home comes from the box row first, which training rows always have.
+        features.update(_line_features_v4(db, player_id, game_date, game_line))
+    elif game_line is not None:
         line, is_home = game_line
         spread = line.spread_home if is_home else line.spread_away
         features["spread"] = spread if spread else 0
@@ -371,6 +468,10 @@ def build_features(
     else:
         features["home_away_split"] = 0
 
+    if version >= 4:
+        features.update(
+            _v4_features(db, player_id, game_date, opponent_team_id, games_df, features)
+        )
     return features
 
 
@@ -379,6 +480,7 @@ def build_points_features(
     player_id: int,
     game_date: date,
     opponent_team_id: int,
+    version: int = FEATURES_VERSION,
 ) -> Optional[dict]:
     """Backward-compat wrapper. Calls `build_features(..., stat_col="points")`
     to preserve the existing import in generate_points_predictions.py."""
@@ -388,4 +490,5 @@ def build_points_features(
         game_date=game_date,
         opponent_team_id=opponent_team_id,
         stat_col="points",
+        version=version,
     )

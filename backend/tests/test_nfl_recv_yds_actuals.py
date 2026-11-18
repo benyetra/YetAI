@@ -44,7 +44,10 @@ def test_run_grades_against_this_seasons_week_only(monkeypatch):
 
     out = mod.run()
 
-    assert out["week"] == 9
-    assert captured["weekly_stats"] == [
-        {"player_id": "b", "season": 2026, "week": 9, "receiving_yards": 64}
-    ]
+    # Current week 10 and the week before are both graded; the last call
+    # (week 10) must not see last season's week 10 or this season's week 8.
+    assert out["weeks"] == [9, 10]
+    assert captured["week"] == 10
+    assert all(
+        r["season"] == 2026 and r["week"] == 10 for r in captured["weekly_stats"]
+    )

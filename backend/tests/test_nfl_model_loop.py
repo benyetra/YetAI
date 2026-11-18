@@ -312,8 +312,16 @@ def test_prod_eval_upload_needs_promote_and_force_still_hits_champion_gate(
     skipped = ev.maybe_upload({"promote_recommended": False}, holdout=holdout)
     assert "s3_upload_skipped" in skipped and not s3.names("put")
 
-    forced = ev.maybe_upload(
+    # force never waives the line gate: no gate result, nothing uploaded
+    no_gate = ev.maybe_upload(
         {"promote_recommended": False}, force=True, holdout=holdout
+    )
+    assert "s3_upload" not in no_gate and not s3.names("put")
+
+    forced = ev.maybe_upload(
+        {"promote_recommended": False, "promote_gate": {"passes": True}},
+        force=True,
+        holdout=holdout,
     )
     assert forced["force_upload"] is True
     assert forced["s3_upload"]["qb_passing_yards"]["status"] == "rejected_by_champion"

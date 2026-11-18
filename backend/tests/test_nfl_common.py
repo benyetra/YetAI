@@ -52,3 +52,15 @@ def test_week_before_2026_kickoff_is_week_one():
 
 def test_week_after_2026_kickoff():
     assert nfl_common.get_current_nfl_week(season=2026, today=date(2026, 9, 17)) == 2
+
+
+def test_started_by_date_uses_earliest_kickoff_today():
+    from datetime import date, datetime
+
+    from app.services.etl.nfl.nfl_common import started_by_date
+
+    day = date(2026, 11, 15)
+    assert not started_by_date(day, datetime(2026, 11, 15, 9, 29))
+    assert started_by_date(day, datetime(2026, 11, 15, 9, 30))
+    assert started_by_date(day, datetime(2026, 11, 16, 0, 1))
+    assert not started_by_date(None, datetime(2026, 11, 15, 12))

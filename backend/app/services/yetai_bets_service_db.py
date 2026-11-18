@@ -314,7 +314,35 @@ def publish_gate_reason(bet_like, *, now: Optional[datetime] = None) -> Optional
     elif pick_started(getattr(bet_like, "commence_time", None), now=now):
         game = getattr(bet_like, "title", None) or getattr(bet_like, "selection", "")
         return f"Game has already started (or starts within 20 minutes): {game}"
+    if stale := auto_pick_stale_reason(bet_like, now=now):
+        return stale
     return yetai_pick_ungradeable_reason(bet_like)
+
+
+def auto_pick_stale_reason(
+    bet_like, *, now: Optional[datetime] = None
+) -> Optional[str]:
+    """An AUTO pick waiting for approval was priced at its run; once a newer NBA refresh
+    has started or the run is older than MAX_LINE_AGE, that price is not the board's any
+    more (the selector would drop it as stale_line), so it cannot be published."""
+    if getattr(bet_like, "source", None) != BetSource.AUTO:
+        return None
+    made = getattr(bet_like, "created_at", None)
+    if made is None:
+        return None
+    from app.services.auto_pick.candidate import (
+        MAX_LINE_AGE,
+        latest_refresh_start,
+        to_naive_utc,
+    )
+
+    now_utc = to_naive_utc(now or datetime.utcnow())
+    made = to_naive_utc(made)
+    if made < latest_refresh_start(now_utc) or now_utc - made > MAX_LINE_AGE:
+        return (
+            "Stale price: a newer line refresh ran since this pick was made; reject it"
+        )
+    return None
 
 
 def yetai_pick_gradeable(bet: YetAIBet, *, now: Optional[datetime] = None) -> bool:

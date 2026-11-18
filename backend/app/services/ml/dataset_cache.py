@@ -36,7 +36,12 @@ def load(key: str):
         if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
             return None
         raise
-    frame = pd.read_pickle(io.BytesIO(body))  # nosec B301 - our own private bucket
+    obj = pd.read_pickle(io.BytesIO(body))  # nosec B301 - our own private bucket
+    # New entries carry attrs (the row keys the promote gate needs) next to the frame,
+    # so they survive whatever a pandas version does with attrs on pickle.
+    frame = obj["frame"] if isinstance(obj, dict) else obj
+    if isinstance(obj, dict):
+        frame.attrs.update(obj.get("attrs") or {})
     target = frame.pop("__target__")
     logger.info("dataset cache hit: %s (%d rows)", key, len(frame))
     return frame, target.rename(None)
@@ -46,6 +51,7 @@ def save(key: str, features_df: pd.DataFrame, target: pd.Series) -> None:
     import boto3
 
     buf = io.BytesIO()
-    features_df.assign(__target__=target.to_numpy()).to_pickle(buf)
+    frame = features_df.assign(__target__=target.to_numpy())
+    pd.to_pickle({"frame": frame, "attrs": dict(features_df.attrs)}, buf)
     boto3.client("s3").put_object(Bucket=BUCKET, Key=key, Body=buf.getvalue())
     logger.info("dataset cache saved: %s (%d rows)", key, len(features_df))

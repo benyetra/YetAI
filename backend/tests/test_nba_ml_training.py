@@ -16,6 +16,11 @@ from app.services.etl.nba.ml_training import (
     validate_model,
 )
 from app.services.etl.nba.ml_training.config import NBA_ML_CONFIG
+from app.services.ml import promote_gate as _promote_gate
+from app.services.ml import upload_to_s3 as _ml_upload
+
+_REAL_LIVE_PREDICTIONS = _ml_upload.live_prop_predictions
+_REAL_RECORD_OUTCOME = _promote_gate.record_outcome
 
 
 @pytest.fixture
@@ -44,6 +49,36 @@ def small_dataset():
         0.7 * feats["points_l5"] + 0.3 * rng.normal(0, 3, n), name="points"
     )
     return feats, target
+
+
+@pytest.fixture
+def lined(small_dataset, monkeypatch):
+    """Give the 200-row dataset stored lines (far worse than the model) and relax the
+    promote gate's evidence minimums to fit 40 holdout rows; no live model, no S3."""
+    feats, target = small_dataset
+    dates = pd.date_range("2024-10-01", periods=len(feats))
+    feats.attrs["keys"] = [(i % 7, d.date()) for i, d in enumerate(dates)]
+    noise = np.random.default_rng(5).normal(0, 6, len(feats))
+    lines = pd.DataFrame(
+        {
+            "player_id": [k[0] for k in feats.attrs["keys"]],
+            "date": dates,
+            "line": np.clip(target.to_numpy() + noise, 1, None),
+        }
+    )
+    monkeypatch.setattr(run_train_props, "_load_lines", lambda *a: lines)
+    monkeypatch.setattr(
+        run_train_props.ml_upload, "live_prop_predictions", lambda *a: None
+    )
+    monkeypatch.setattr(
+        run_train_props.promote_gate, "record_outcome", lambda *a, **k: "gate.json"
+    )
+    real = run_train_props.promote_gate.promote_gate
+    monkeypatch.setattr(
+        run_train_props.promote_gate,
+        "promote_gate",
+        lambda *a, **k: real(*a, min_rows=20, min_dates=5, **k),
+    )
 
 
 def test_train_returns_model_and_metadata(small_dataset):
@@ -109,7 +144,7 @@ def test_enrich_metadata_shape(small_dataset):
     assert len(enriched["model_version"]) <= 20
 
 
-def test_run_pipeline_mocked_build_and_upload(small_dataset, monkeypatch):
+def test_run_pipeline_mocked_build_and_upload(small_dataset, lined, monkeypatch):
     feats, target = small_dataset
 
     monkeypatch.setattr(
@@ -199,7 +234,7 @@ def test_chronological_split_holds_out_the_latest_rows(small_dataset):
     assert X_train.index.max() < X_test.index.min()
 
 
-def test_run_requires_beating_the_recent_average(small_dataset, monkeypatch):
+def test_run_requires_beating_the_recent_average(small_dataset, lined, monkeypatch):
     feats, target = small_dataset
     monkeypatch.setattr(
         "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload_gated",
@@ -306,7 +341,9 @@ def test_props_train_with_the_shallow_setting(small_dataset, monkeypatch):
     assert hp["min_child_weight"] == 50
 
 
-def test_run_rejected_by_champion_when_live_model_is_better(small_dataset, monkeypatch):
+def test_run_rejected_by_champion_when_live_model_is_better(
+    small_dataset, lined, monkeypatch
+):
     feats, target = small_dataset
     monkeypatch.setattr(
         "app.services.etl.nba.ml_training.run_train_props.build_training_dataset.build",
@@ -373,10 +410,21 @@ def test_score_live_mae_uses_live_feature_list_and_zero_fills(monkeypatch):
     assert score(pickle.dumps(ColumnA())) == 0.5
 
 
+class Oracle:
+    """Live model that knows the answer for every row."""
+
+    def __init__(self, target):
+        self.target = target
+
+    def predict(self, X):
+        return self.target.loc[X.index].to_numpy()
+
+
 def test_run_end_to_end_gate_rejects_worse_candidate_without_put(
-    small_dataset, monkeypatch
+    small_dataset, lined, monkeypatch
 ):
-    """Real model_store against a fake S3 whose live model is better."""
+    """Real gate, model_store and champion scoring against a fake S3 whose live model
+    is better: only the gate record is written."""
     import json
     import pickle
 
@@ -384,23 +432,40 @@ def test_run_end_to_end_gate_rejects_worse_candidate_without_put(
     from tests.fake_s3 import FakeS3
 
     feats, target = small_dataset
+    # 600 rows so the holdout has >= 50 rows the champion can be compared on
+    feats = pd.concat([feats] * 3, ignore_index=True)
+    target = pd.concat([target] * 3, ignore_index=True)
+    dates = pd.date_range("2024-10-01", periods=len(feats))
+    feats.attrs["keys"] = [(i % 7, d.date()) for i, d in enumerate(dates)]
+    noise = np.random.default_rng(5).normal(0, 6, len(feats))
+    lines = pd.DataFrame(
+        {
+            "player_id": [k[0] for k in feats.attrs["keys"]],
+            "date": dates,
+            "line": np.clip(target.to_numpy() + noise, 1, None),
+        }
+    )
+    monkeypatch.setattr(run_train_props, "_load_lines", lambda *a: lines)
     monkeypatch.setattr(
         "app.services.etl.nba.ml_training.run_train_props.build_training_dataset.build",
         lambda stat, start, end: (feats, target),
     )
+    monkeypatch.setattr(
+        run_train_props.ml_upload, "live_prop_predictions", _REAL_LIVE_PREDICTIONS
+    )
+    monkeypatch.setattr(
+        run_train_props.promote_gate, "record_outcome", _REAL_RECORD_OUTCOME
+    )
     s3 = FakeS3(
         {
-            # unscorable live model (no metadata) -> falls back to manifest metric
-            "nba/ml_models/xgb_points.pkl": pickle.dumps(ConstModel(0)),
-            "nba/ml_models/xgb_points_manifest.json": json.dumps(
-                {"holdout_metric": 0.0001}
+            "nba/ml_models/xgb_points.pkl": pickle.dumps(Oracle(target)),
+            "nba/ml_models/xgb_points_metadata.json": json.dumps(
+                {"feature_names": list(feats.columns)}
             ).encode(),
         }
     )
     monkeypatch.setattr(model_store.boto3, "client", lambda *_a, **_k: s3)
-    monkeypatch.setattr(
-        "app.services.ml.upload_to_s3.boto3.client", lambda *_a, **_k: s3
-    )
+    monkeypatch.setattr("boto3.client", lambda *_a, **_k: s3)
     out = run_train_props.run(
         "points",
         season_start=date(2024, 10, 1),
@@ -408,4 +473,33 @@ def test_run_end_to_end_gate_rejects_worse_candidate_without_put(
         upload=True,
     )
     assert out["status"] == "rejected_by_champion"
-    assert s3.names("put") == [] and s3.names("copy") == []
+    assert s3.names("put") == [("put", "nba/ml_models/xgb_points_gate.json")]
+    assert s3.names("copy") == []
+
+
+def test_dataset_cache_round_trip_keeps_the_row_keys(monkeypatch):
+    # The promote gate finds each holdout row's line through attrs["keys"]; a cache hit
+    # that dropped them would turn every cached run into no_line_evidence.
+    import boto3
+    import pandas as pd
+
+    from app.services.ml import dataset_cache
+
+    store = {}
+
+    class _S3:
+        def put_object(self, Bucket, Key, Body):
+            store[Key] = Body
+
+        def get_object(self, Bucket, Key):
+            import io
+
+            return {"Body": io.BytesIO(store[Key])}
+
+    monkeypatch.setattr(boto3, "client", lambda *a, **k: _S3())
+    df = pd.DataFrame({"a": [1.0, 2.0]})
+    df.attrs["keys"] = [(1, "2026-11-01"), (2, "2026-11-02")]
+    dataset_cache.save("k.pkl", df, pd.Series([3.0, 4.0]))
+    frame, target = dataset_cache.load("k.pkl")
+    assert frame.attrs["keys"] == df.attrs["keys"]
+    assert target.tolist() == [3.0, 4.0]

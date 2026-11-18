@@ -7,6 +7,7 @@ import json
 import sys
 
 from app.services.etl.nba.residual import train as trainer
+from app.services.ml.promote_gate import exit_code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"status": "error", "error": str(exc)}), file=sys.stderr)
         return 1
     print(json.dumps(result, indent=2, default=str))
-    return 0
+    return exit_code(result.get("status"))
 
 
 if __name__ == "__main__":

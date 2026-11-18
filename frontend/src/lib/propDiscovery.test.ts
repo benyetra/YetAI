@@ -24,12 +24,12 @@ describe('rowPersonName / search', () => {
 describe('selectTopPositiveEdge', () => {
   it('keeps only positive edges and ranks highest first', () => {
     const rows = [
-      { player_name: 'A', edge: 1.2 },
-      { player_name: 'B', edge: -2.0 },
-      { player_name: 'C', edge: 3.5 },
-      { player_name: 'D', edge: 0 },
-      { player_name: 'E', edge: 2.1 },
-      { player_name: 'F', edge: 0.5 },
+      { player_name: 'A', edge: 1.2, recommendation: 'OVER' },
+      { player_name: 'B', edge: -2.0, recommendation: 'OVER' },
+      { player_name: 'C', edge: 3.5, recommendation: 'OVER' },
+      { player_name: 'D', edge: 0, recommendation: 'OVER' },
+      { player_name: 'E', edge: 2.1, recommendation: 'OVER' },
+      { player_name: 'F', edge: 0.5, recommendation: 'OVER' },
     ];
     const top = selectTopPositiveEdge(rows, 'edge', 3);
     expect(top.map((r) => r.player_name)).toEqual(['C', 'E', 'A']);
@@ -37,9 +37,9 @@ describe('selectTopPositiveEdge', () => {
 
   it('supports alternate edge keys', () => {
     const rows = [
-      { pitcher_name: 'A', k_edge: 0.8 },
-      { pitcher_name: 'B', k_edge: 2.2 },
-      { pitcher_name: 'C', k_edge: -1 },
+      { pitcher_name: 'A', k_edge: 0.8, recommendation: 'OVER' },
+      { pitcher_name: 'B', k_edge: 2.2, recommendation: 'OVER' },
+      { pitcher_name: 'C', k_edge: -1, recommendation: 'OVER' },
     ];
     const top = selectTopPositiveEdge(rows, 'k_edge', 3);
     expect(top.map((r) => r.pitcher_name)).toEqual(['B', 'A']);
@@ -62,10 +62,10 @@ describe('buildDiscoverySections', () => {
   it('omits empty groups', () => {
     const sections = buildDiscoverySections(
       {
-        points: [{ player_name: 'A', edge: -1 }],
+        points: [{ player_name: 'A', edge: -1, recommendation: 'OVER' }],
         assists: [
-          { player_name: 'B', edge: 2.0 },
-          { player_name: 'C', edge: 1.0 },
+          { player_name: 'B', edge: 2.0, recommendation: 'OVER' },
+          { player_name: 'C', edge: 1.0, recommendation: 'OVER' },
         ],
       },
       [
@@ -86,5 +86,31 @@ describe('buildDiscoverySections', () => {
     expect(sections).toHaveLength(1);
     expect(sections[0].title).toBe('Assists');
     expect(sections[0].rows).toHaveLength(2);
+  });
+});
+
+describe('selectTopPositiveEdge: explicit picks only', () => {
+  it('excludes positive-edge rows with no pick or with pick_withheld', () => {
+    const rows = [
+      { player_name: 'NoPick', edge: 9, recommendation: null },
+      { player_name: 'NoPlay', edge: 8, recommendation: 'NO_PLAY' },
+      { player_name: 'Withheld', edge: 7, recommendation: 'OVER', pick_withheld: 'unproven_record' },
+      { player_name: 'Real', edge: 1, recommendation: 'UNDER' },
+    ];
+    expect(selectTopPositiveEdge(rows).map((r) => r.player_name)).toEqual(['Real']);
+  });
+
+  it('ranks by edge, null-edge rows never ahead of rows with an edge', () => {
+    const rows = [
+      { player_name: 'Null', edge: null, recommendation: 'OVER' },
+      { player_name: 'Low', edge: 0.5, recommendation: 'OVER' },
+      { player_name: 'High', edge: 2, recommendation: 'OVER' },
+    ];
+    expect(selectTopPositiveEdge(rows).map((r) => r.player_name)).toEqual(['High', 'Low']);
+  });
+
+  it('honours a custom pickKey (MLB yetai_pick)', () => {
+    const rows = [{ pitcher_name: 'X', k_edge: 1, yetai_pick: null, recommendation: 'OVER' }];
+    expect(selectTopPositiveEdge(rows, 'k_edge', 3, 'yetai_pick')).toEqual([]);
   });
 });

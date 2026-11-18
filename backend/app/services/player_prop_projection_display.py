@@ -77,12 +77,6 @@ def _normalize_pick(value: Any) -> str | None:
     return upper
 
 
-def _recommendation_from_edge(edge: float, threshold: float) -> str:
-    if abs(edge) < threshold:
-        return "NO_PLAY"
-    return "OVER" if edge > 0 else "UNDER"
-
-
 def prop_confidence_pct(abs_edge: float, stat: str) -> float:
     """Map edge magnitude to 0–100 confidence."""
     full = FULL_CONFIDENCE_EDGE.get(stat, 2.0)
@@ -149,11 +143,13 @@ def enrich_projection_vs_line(
     if pick is None:
         pick = _normalize_pick(out.get(recommendation_key))
     if pick is None:
-        rec = _recommendation_from_edge(edge, threshold)
-        out[recommendation_key] = rec
-        pick = _normalize_pick(rec)
-    else:
-        out[recommendation_key] = pick
+        # No stored side (or a stored PASS / NO_PLAY): the board shows no pick. A side is
+        # never rebuilt from projection vs line; only the writer's (gated) side is shown.
+        out[recommendation_key] = "NO_PLAY"
+        out.setdefault(confidence_key, None)
+        out["value_tier"] = None
+        return out
+    out[recommendation_key] = pick
 
     conf = _as_float(out.get(confidence_key))
     if conf is None or conf <= 1.0:

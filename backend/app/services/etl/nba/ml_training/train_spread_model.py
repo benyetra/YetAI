@@ -160,17 +160,24 @@ def run(
 
 if __name__ == "__main__":
     import argparse
+    import json
+    import sys
+
+    from app.services.ml import promote_gate
 
     parser = argparse.ArgumentParser(description="Train NBA spread ML model")
     parser.add_argument("--start", required=True, help="YYYY-MM-DD")
     parser.add_argument("--end", required=True, help="YYYY-MM-DD")
     parser.add_argument("--upload", action="store_true")
     args = parser.parse_args()
-    out = run(
-        season_start=date.fromisoformat(args.start),
-        season_end=date.fromisoformat(args.end),
-        upload=args.upload,
-    )
-    print(out)
-    if out.get("status") != "ok":
+    try:
+        out = run(
+            season_start=date.fromisoformat(args.start),
+            season_end=date.fromisoformat(args.end),
+            upload=args.upload,
+        )
+    except Exception as exc:  # one JSON error line for the workflow summary
+        print(json.dumps({"status": "error", "error": str(exc)}), file=sys.stderr)
         raise SystemExit(1)
+    print(json.dumps(out, indent=2, default=str))
+    raise SystemExit(promote_gate.exit_code(out.get("status")))

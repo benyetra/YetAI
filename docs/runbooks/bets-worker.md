@@ -8,7 +8,7 @@ stuck behind an hour-long ETL task on the concurrency-1 `celery-worker`:
 | Task | Schedule (ET) | Queue |
 |------|---------------|-------|
 | `yetai_bets.settle` | every 15 min, expires 600 s | `yetai_bets` |
-| `auto_pick.yetai_bets` | 11:00 and 17:30, expires 3 h | `yetai_bets` |
+| `auto_pick.yetai_bets` | 13:30 and 18:00, expires 3 h | `yetai_bets` |
 | `auto_pick.expire_pending` | every 5 min, expires 240 s | `yetai_bets` |
 | `yetai_bets.settlement_alert` | hourly at :15, expires 1800 s | `yetai_bets` |
 | `app.tasks.etl_pipeline.nba.close_capture` | every 10 min 11:00-23:50, expires 540 s | `yetai_bets` |
@@ -112,7 +112,7 @@ railway logs -s celery-worker | grep -A3 '\[queues\]'      # only .> celery
 railway logs -s celery-worker | grep -c 'yetai_bets.settle.*received'   # 0 from now on
 railway logs -s bets-worker   | grep "yetai_bets.settle.*succeeded.*'success': True" | tail -3
 ```
-and the next day: `auto_pick_runs.run_at` within a minute of 11:00 / 17:30 ET.
+and the next day: `auto_pick_runs.run_at` within a minute of 13:30 / 18:00 ET.
 
 Rollback: delete `CELERY_ROLE` on `celery-worker` (back to both queues). Do this before
 removing `bets-worker`, never after: in between, nothing would consume `yetai_bets`.
@@ -139,7 +139,7 @@ messages for all queues from one global index, so a bets worker with a short tim
 re-queue a still-running hour-long ETL task and run it twice. Instead every bets beat entry
 has an `expires` well under 24 h, so a late redelivered copy is discarded, and beat itself
 covers the gap: settle, expire-pending, close capture and the alert re-run within 5-60
-minutes; a killed 11:00 auto-pick is covered by the 17:30 run, which fills the day to the cap.
+minutes; a killed 13:30 auto-pick is covered by the 18:00 run, which fills the day to the cap.
 Bets tasks take seconds, so a kill mid-run needs a deploy in that window.
 
 ## Cost

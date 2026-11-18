@@ -19,6 +19,24 @@ NBA_STAT_MARKET = {
 }
 
 
+def fair_prob_clv(
+    side: str, line: float, taken_rows: Iterable, close_rows: Iterable, market: str
+) -> Optional[float]:
+    """No-vig close vs no-vig at pick time: the consensus fair probability of ``side`` at the
+    taken ``line`` from the close rows minus the same figure from the pick-time rows (+ = the
+    market moved our way). Both come from the same books-wide consensus, so the vig is removed
+    identically and a market that did not move scores exactly 0. None without a two-way quote
+    on either side."""
+    sd = odds_math.MARKET_SD.get(market, odds_math.DEFAULT_SD)
+    close = odds_math.consensus_center(to_quotes(close_rows), sd)
+    taken = odds_math.consensus_center(to_quotes(taken_rows), sd)
+    if close is None or taken is None:
+        return None
+    return odds_math.prob_side(side, line, close, sd) - odds_math.prob_side(
+        side, line, taken, sd
+    )
+
+
 def clv_vs_close(
     side: str,
     line: float,
@@ -54,6 +72,8 @@ def clv_vs_close(
         "line": float(row.line),
         "price": row.over_price if side == "o" else row.under_price,
         "line_clv": odds_math.line_clv(side, line, row.line),
+        # Close fair probability minus the taken price's vigged implied probability: an EV
+        # figure, biased by the vig (about -0.024 at -110), not a like-for-like CLV.
         "prob_clv": (
             odds_math.prob_clv(side, line, price, to_quotes(rows), sd)
             if price

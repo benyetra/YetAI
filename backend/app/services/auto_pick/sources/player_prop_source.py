@@ -1,8 +1,8 @@
 """NBA player prop source (points, steals, assists, rebounds, threes, PRA).
 
 The stat tables store a FanDuel line, an 'o'/'u' flag and the American price of
-that side (``fanduel_price``); rows without a price are skipped. They have no created_at, so ``generated_at`` is
-None. Teams, event id and start time come from pred_nba_game_lines.
+that side (``fanduel_price``); rows without a price are skipped. They carry ``projected_at`` (last
+generator write), which becomes ``generated_at``. Teams, event id and start time come from pred_nba_game_lines.
 """
 
 from sqlalchemy.orm import Session
@@ -21,12 +21,12 @@ from app.services.auto_pick.sources._basketball import prop_rows
 
 _L = "fanduel_line"
 _NBA_STAT_SPECS = [
-    (PointsProjections, "points", "projected_points", _L, None),
-    (StealsProjections, "steals", "projected_steals", _L, None),
-    (AssistsProjections, "assists", "projected_assists", _L, None),
-    (ReboundsProjections, "rebounds", "projected_rebounds", _L, None),
-    (ThreePointProjections, "threes", "projected_three_pt_made", _L, None),
-    (PRAProjections, "pra", "projected_pra", _L, None),
+    (PointsProjections, "points", "projected_points", _L, "projected_at"),
+    (StealsProjections, "steals", "projected_steals", _L, "projected_at"),
+    (AssistsProjections, "assists", "projected_assists", _L, "projected_at"),
+    (ReboundsProjections, "rebounds", "projected_rebounds", _L, "projected_at"),
+    (ThreePointProjections, "threes", "projected_three_pt_made", _L, "projected_at"),
+    (PRAProjections, "pra", "projected_pra", _L, "projected_at"),
 ]
 # BlocksProjections has no fanduel_line column.
 

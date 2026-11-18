@@ -122,7 +122,19 @@ export default function BestEdgesDiscovery({
     );
   }
 
-  if (sections.length === 0) return null;
+  if (sections.length === 0) {
+    return (
+      <section className="card predictions-discovery" aria-label="Best edges for parlay discovery">
+        <header className="predictions-discovery-head">
+          <Sparkles size={16} aria-hidden />
+          <h2>Best edges</h2>
+        </header>
+        <p className="dim" style={{ margin: 0, fontSize: 13 }}>
+          No picks today: no market on this board has proved itself against the line yet
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="card predictions-discovery" aria-label="Best edges for parlay discovery">

@@ -25,8 +25,9 @@ from app.services.etl.nba._stale_rows import (
     mark_projection_out,
 )
 from app.services.etl.nba import _last10
+from app.services.etl.nba._samples import current_season_games
 from app.services.etl.nba._feature_engineering import build_features
-from app.services.etl.nba._ml_predict import predict
+from app.services.etl.nba._ml_predict import features_version, predict
 from app.services.ml_model_version import resolve_nba_prop_model_version
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,7 @@ def run() -> dict:
                         skipped_insufficient += 1
                         continue
                     projected = round(avg, 2)
+                    low_sample = current_season_games(db, player.player_id, today) < 5
                 else:
                     features = build_features(
                         db=db,
@@ -103,12 +105,14 @@ def run() -> dict:
                         game_date=today,
                         opponent_team_id=player.opponent_team_id,
                         stat_col=STAT,
+                        version=features_version(STAT),
                     )
                     if features is None:
                         skipped_insufficient += 1
                         continue
 
                     prediction = predict(STAT, features)
+                    low_sample = bool(features.get("low_sample"))
                     projected = max(0.0, round(prediction, 2))
 
                 existing = (
@@ -137,6 +141,7 @@ def run() -> dict:
                     )
                     db.add(row)
                     created += 1
+                row.low_sample = low_sample
                 if apply_fanduel_to_projection(
                     row,
                     team_name=player.team_name,

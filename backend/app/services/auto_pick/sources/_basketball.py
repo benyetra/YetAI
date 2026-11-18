@@ -216,6 +216,10 @@ def prop_rows(db, specs, lines_model, league, date_range, side_of) -> list[dict]
             log.exception("%s prop source: query failed for %s", league, stat)
             continue
         for r in rows:
+            # A projection from under five current-season games (last season filled in)
+            # is not a candidate; the gate's shadow record skips it too.
+            if getattr(r, "low_sample", None) is True:
+                continue
             proj, line = getattr(r, proj_attr, None), getattr(r, line_attr, None)
             side = side_of(r)
             hit = by_team.get(getattr(r, "opponent_team_name", None))
@@ -223,7 +227,8 @@ def prop_rows(db, specs, lines_model, league, date_range, side_of) -> list[dict]
             book = "fanduel" if price is not None else None
             # NBA rows carry the best quote across books; it is the line we publish.
             best = [getattr(r, f"best_{k}", None) for k in ("book", "line", "price")]
-            if None not in best:
+            used_best = None not in best
+            if used_best:
                 book, line, price = best
             if (
                 proj is None
@@ -255,6 +260,10 @@ def prop_rows(db, specs, lines_model, league, date_range, side_of) -> list[dict]
                     "opponent_team_name": r.opponent_team_name,
                     "sample_size": None,
                     "generated_at": getattr(r, gen_attr) if gen_attr else None,
+                    # Consensus probability only for the best quote it was computed for.
+                    "fair_prob": (
+                        getattr(r, "best_fair_prob", None) if used_best else None
+                    ),
                     "model_confidence": (
                         conf / 100.0
                         if (conf := getattr(r, "confidence_score", None)) is not None
@@ -263,4 +272,11 @@ def prop_rows(db, specs, lines_model, league, date_range, side_of) -> list[dict]
                     "injury_flag": False,
                 }
             )
+            # Key only when the table has the column, so WNBA stays outside the freshness gate.
+            # The line and price are as old as their quote, not as the projection.
+            if hasattr(r, "projected_at"):
+                out[-1]["projected_at"] = r.projected_at
+                out[-1]["quoted_at"] = (
+                    getattr(r, "best_quoted_at", None) if used_best else None
+                )
     return out

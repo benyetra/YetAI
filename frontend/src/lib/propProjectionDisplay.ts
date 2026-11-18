@@ -1,4 +1,5 @@
 import { createElement } from 'react';
+import { isPickWithheld, pickCell } from '@/lib/pickWithheld';
 import {
   formatNumber,
   formatString,
@@ -24,6 +25,7 @@ export function formatPickConfidence(value: unknown): string {
 }
 
 export function propValueTier(row: Record<string, unknown>): PropValueTier | null {
+  if (isPickWithheld(row)) return null;
   const tier = row.value_tier;
   if (tier === 'strong' || tier === 'lean') return tier;
   return null;
@@ -145,7 +147,7 @@ export function buildBasketballPropColumns({
     {
       key: pickKey,
       label: 'Pick',
-      format: (v, row) => formatString(v ?? row.fanduel_over_under),
+      format: (v, row) => pickCell(row, v, row.fanduel_over_under),
       className: 'prop-pick-cell',
     },
     {
@@ -234,7 +236,7 @@ export const NHL_GOALIE_COLUMNS: ColumnDef[] = [
   {
     key: 'recommendation',
     label: 'Pick',
-    format: (v, row) => formatString(v ?? row.betting_recommendation),
+    format: (v, row) => pickCell(row, v, row.betting_recommendation),
     className: 'prop-pick-cell',
   },
   {
@@ -277,7 +279,7 @@ export const NHL_SHOTS_COLUMNS: ColumnDef[] = [
   {
     key: 'recommendation',
     label: 'Pick',
-    format: (v, row) => formatString(v ?? row.betting_recommendation),
+    format: (v, row) => pickCell(row, v, row.betting_recommendation),
     className: 'prop-pick-cell',
   },
   {
@@ -328,7 +330,7 @@ export const MLB_STRIKEOUT_COLUMNS_BASE = [
     key: 'yetai_pick',
     label: 'YetAI Pick',
     format: (v: unknown, row: Record<string, unknown>) =>
-      formatString(v ?? row.fanduel_over_under),
+      pickCell(row, v, row.fanduel_over_under),
     className: 'prop-pick-cell',
   },
   {
@@ -372,7 +374,7 @@ export const NFL_RECV_YDS_COLUMNS: ColumnDef[] = [
   {
     key: 'recommendation',
     label: 'Pick',
-    format: (v, row) => formatString(v ?? row.betting_recommendation),
+    format: (v, row) => pickCell(row, v, row.betting_recommendation),
     className: 'prop-pick-cell',
   },
   {
@@ -415,7 +417,7 @@ export const NFL_QB_COLUMNS: ColumnDef[] = [
   {
     key: 'recommendation',
     label: 'Pick',
-    format: (v, row) => formatString(v ?? row.betting_recommendation),
+    format: (v, row) => pickCell(row, v, row.betting_recommendation),
     className: 'prop-pick-cell',
   },
   {

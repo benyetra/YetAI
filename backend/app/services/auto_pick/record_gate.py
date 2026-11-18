@@ -1,28 +1,35 @@
 """
-Record gate: withhold (league, market, stat) keys whose recent record is measurably losing.
+Record gate: withhold (league, market, stat) keys whose record at real prices is losing,
+and keep unproven keys out until they have a record.
 
-A key's record blends two sources, both over the last WINDOW_DAYS:
-- bet record: graded AUTO YetAIBet rows, units at the stored odds;
-- projection record: the model's published over/under calls graded vs the line they
-  were published with (high volume prior), valued at the price stored with each call
-  where the row has one (NBA props: fanduel_price) and at -110 otherwise.
-  Only calls the scorer could publish count: where the stored call is made at any edge
-  (NBA props) rows below the fill-floor edge (``fill_floor_edge``) are left out.
-The blend is shrunk toward breakeven (zero ROI; 52.38% at -110), so a thin sample never
-withholds a key. A key is withheld only when its shrunk ROI is below MIN_ROI, a small
-negative dead band under breakeven: the gate keeps no state, and re-deriving "was withheld
-yesterday" from yesterday's ROI gives no memory beyond a day (a key parked inside the band
-would flip daily), so the plain dead band is the simplest rule that does not flip.
+A key's record blends two sources, both over the last WINDOW_DAYS and both valued only at
+real stored prices (nothing is ever valued at an assumed -110):
+- projection record: the SHADOW record of the selector. For NBA props it is every stored
+  row of the current model version that is priced (best line, best price, consensus fair
+  probability) and that the selector's own EV rule (``ev.prop_ev`` / ``ev.gate_reason``)
+  would have considered, graded at that best line and price. Withheld candidates that pass
+  the hard gates are exactly these rows, graded by the normal actuals ETL; nothing is
+  written anywhere for them, so nothing can reach a user. Loaders whose rows carry no
+  stored price (NFL, NHL shots, NBA totals and spread) cannot be valued: their graded calls
+  are kept as ``unpriced_n`` for display and count toward nothing. NHL saves and totals
+  are valued at the stored odds of the picked side where the row has them.
+- bet record: graded AUTO YetAIBet rows of the current ``ev.SELECTION_VERSION`` (a new
+  selection version starts a new record), units at the stored odds. Added only for keys
+  with no projection loader result: where a shadow record exists the bets are a subset of
+  it and adding them would count them twice.
 
+The sum is shrunk toward zero ROI by SHRINK_PICKS pseudo-picks, so a thin sample reads
+near breakeven. A key is withheld as losing when it has at least MIN_PICKS (30) effective
+calls and its shrunk ROI is below ``losing_threshold``: MIN_ROI (-2%, a dead band so a key
+parked at breakeven does not flip daily) below LARGE_SAMPLE (300) calls, plain 0 from there.
 Records are recomputed every run from data that keeps being graded while a key is
 withheld, so re-admission is automatic.
 
-Prove-in keys (AUTO_PICK_PROVE_IN_KEYS, default every NHL key plus NBA steals and
-blocks, which only recently got lines and so have no graded record) must earn their way in
-whatever AUTO_PICK_REQUIRE_PROVEN_RECORD says: until the record has min_picks effective
-graded calls at or above breakeven the key is withheld as ``unproven_record`` and runs
-in shadow (its ETL keeps writing projections and lines, so the record builds). The
-board applies the same rule to its pick labels (``withheld_keys``).
+Proving in: a key must show PROVE_IN_MIN_PICKS (100) effective priced calls over at least
+PROVE_IN_MIN_DATES (10) slate dates at or above breakeven before it opens when AUTO_PICK_REQUIRE_PROVEN_RECORD is on (the default) or the
+key is a prove-in key (AUTO_PICK_PROVE_IN_KEYS). Until then it is withheld as
+``unproven_record`` and runs in shadow (its ETL keeps writing projections, so the record
+builds). The board applies the same rule to its pick labels (``withheld_keys``).
 """
 
 import logging
@@ -40,8 +47,11 @@ from app.services.accuracy_shared import (
     edge_play_graded_counts,
     ou_call_graded_counts,
     ou_call_graded_record,
+    ou_row_result,
 )
+from app.services.auto_pick import ev
 from app.services.auto_pick.candidate import BetCandidate, MarketType, utc_to_eastern
+from app.services.mlb_strikeout_pick import signed_edge_for_side
 from app.services.auto_pick.context_builder import (
     _normalize_market_type,
     _normalize_sport,
@@ -52,15 +62,27 @@ log = logging.getLogger(__name__)
 # (league, market, stat): stat is None for game markets.
 RecordKey = tuple[str, str, Optional[str]]
 
-BREAKEVEN_ODDS = -110
-
 DEFAULT_MIN_PICKS = 30
 DEFAULT_WINDOW_DAYS = 90
 DEFAULT_MIN_ROI = -0.02
-DEFAULT_PRIOR_MAX_PICKS = 60
 DEFAULT_SHRINK_PICKS = 20
-# Key labels (or label prefixes) that must prove in; "" turns prove-in off.
-DEFAULT_PROVE_IN_KEYS = "NHL,NBA/player_prop/steals,NBA/player_prop/blocks"
+# 30 = the smallest sample a key can be judged losing on.
+# 100 = the sample a key needs to open: at 30 calls a no-edge market at real prices shows
+# ROI >= 0 about 40% of the time (one 1u bet at -125 has sd ~0.95, so the standard error of
+# ROI at n=30 is ~17 points); at 100 it is about a third. Proving in is a floor, not proof.
+PROVE_IN_MIN_PICKS = 100
+# Rows of one night share games, pace and blowouts, so the 100 calls must also span this
+# many slate dates before a key opens.
+PROVE_IN_MIN_DATES = 10
+# 300 = the sample the review's F8 and the fair-price shadow decision use: from here a
+# key is withheld on any negative ROI, with no dead band.
+LARGE_SAMPLE = 300
+# Key labels (or label prefixes) that must prove in; "" turns prove-in off. NBA moneyline,
+# MLB and WNBA have no projection record at all, NBA PRA has never been measured.
+DEFAULT_PROVE_IN_KEYS = (
+    "NHL,NBA/player_prop/steals,NBA/player_prop/blocks,NBA/player_prop/pra,"
+    "NBA/moneyline,MLB,WNBA"
+)
 # historical_sub_score: 50 at breakeven ROI, +/-25 points per 10% ROI.
 ROI_SCORE_SLOPE = 250.0
 
@@ -81,9 +103,9 @@ def gate_enabled() -> bool:
 
 
 def require_proven_record() -> bool:
-    """Opt-in: a key with fewer than min_picks effective graded calls is withheld too."""
+    """On by default: a key without PROVE_IN_MIN_PICKS priced calls at breakeven is withheld."""
     return (
-        os.getenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false").strip().lower() == "true"
+        os.getenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "true").strip().lower() == "true"
     )
 
 
@@ -110,8 +132,9 @@ def min_roi() -> float:
     return _env_number("AUTO_PICK_RECORD_MIN_ROI", DEFAULT_MIN_ROI, float)
 
 
-def prior_max_picks() -> int:
-    return _env_number("AUTO_PICK_RECORD_PRIOR_MAX_PICKS", DEFAULT_PRIOR_MAX_PICKS, int)
+def losing_threshold(n_eff: float) -> float:
+    """Shrunk ROI below which a key is losing: the dead band, then plain 0 at scale."""
+    return min_roi() if n_eff < LARGE_SAMPLE else 0.0
 
 
 def shrink_picks() -> int:
@@ -125,10 +148,14 @@ class KeyRecord:
     bet_units: float
     proj_n: int
     proj_hits: int
-    proj_units: Optional[float]  # None: assumed -110
-    n_eff: float
+    proj_units: float  # at stored prices; priced calls only
+    n_eff: float  # priced calls: proj_n + bet_n
     shrunk_roi: float
     withheld: bool
+    unpriced_n: int = 0  # graded calls with no stored price: display only
+    version: Optional[str] = None  # model version the projection record used
+    bet_hits: int = 0
+    dates: int = 0  # distinct slate dates with a graded priced call
 
 
 def record_key(c: BetCandidate) -> RecordKey:
@@ -152,12 +179,14 @@ def drop_reason(
         return "losing_record"
     if not gate_enabled():
         return None
-    if require_proven_record() and (rec is None or rec.n_eff < min_picks()):
-        return "unproven_record"
     key = rec.key if rec is not None else key
-    if key is not None and prove_in_required(key):
-        # Enough graded calls, at or above breakeven.
-        if rec is None or rec.n_eff < min_picks() or rec.shrunk_roi < 0:
+    if require_proven_record() or (key is not None and prove_in_required(key)):
+        if (
+            rec is None
+            or rec.n_eff < PROVE_IN_MIN_PICKS
+            or rec.dates < PROVE_IN_MIN_DATES
+            or rec.shrunk_roi < 0
+        ):
             return "unproven_record"
     return None
 
@@ -174,39 +203,51 @@ def combine(
     *,
     bet_n: int = 0,
     bet_units: float = 0.0,
+    bet_hits: int = 0,
     proj_n: int = 0,
     proj_hits: int = 0,
     proj_units: Optional[float] = None,
+    unpriced_n: int = 0,
+    version: Optional[str] = None,
+    dates: int = 0,
 ) -> KeyRecord:
-    """Blend bet + projection records and shrink toward breakeven, zero ROI (pure).
+    """Sum the priced bet + projection records and shrink toward zero ROI (pure).
 
-    ``proj_units``: the projection record's units at stored prices; None = at -110.
+    ``proj_n`` / ``proj_units`` are priced calls only; there is no cap on the projection
+    record, a large sample counts in full.
     """
-    scale = min(1.0, prior_max_picks() / proj_n) if proj_n else 1.0
-    units = proj_units
-    if units is None:
-        # Units at -110, in integers until the one division so breakeven is exactly 0.
-        units = (proj_hits * 100 - (proj_n - proj_hits) * 110) / 110
-    n_eff = proj_n * scale + bet_n
-    shrunk_roi = (units * scale + bet_units) / (n_eff + shrink_picks())
+    units = proj_units or 0.0
+    n_eff = proj_n + bet_n
+    shrunk_roi = (units + bet_units) / (n_eff + shrink_picks())
     return KeyRecord(
         key=key,
         bet_n=bet_n,
         bet_units=bet_units,
         proj_n=proj_n,
         proj_hits=proj_hits,
-        proj_units=proj_units,
+        proj_units=units,
         n_eff=n_eff,
         shrunk_roi=shrunk_roi,
-        withheld=gate_enabled() and n_eff >= min_picks() and shrunk_roi < min_roi(),
+        withheld=(
+            gate_enabled()
+            and n_eff >= min_picks()
+            and shrunk_roi < losing_threshold(n_eff)
+        ),
+        unpriced_n=unpriced_n,
+        version=version,
+        bet_hits=bet_hits,
+        dates=dates,
     )
 
 
 # ---------- loaders ----------
 
 
-def load_bet_records(db: Session, now: datetime) -> dict[RecordKey, tuple[int, float]]:
-    """{key: (graded bets, units)} for AUTO straight bets settled in [now - window, now)."""
+def load_bet_records(
+    db: Session, now: datetime
+) -> dict[RecordKey, tuple[int, float, int, int]]:
+    """{key: (graded bets, units, wins, distinct settle dates)} for AUTO straight bets of the
+    current selection version settled in [now - window, now)."""
     rows = (
         db.query(YetAIBet)
         .filter(
@@ -218,9 +259,11 @@ def load_bet_records(db: Session, now: datetime) -> dict[RecordKey, tuple[int, f
         )
         .all()
     )
-    out: dict[RecordKey, list] = defaultdict(lambda: [0, 0.0])
+    out: dict[RecordKey, list] = defaultdict(lambda: [0, 0.0, 0, set()])
     for b in rows:
         pf = b.prediction_factors if isinstance(b.prediction_factors, dict) else {}
+        if pf.get("selection_version") != ev.SELECTION_VERSION:
+            continue
         g = pf.get("grading") or {}
         md = pf.get("projection_metadata") or {}
         bt = b.bet_type.value if hasattr(b.bet_type, "value") else str(b.bet_type)
@@ -230,19 +273,26 @@ def load_bet_records(db: Session, now: datetime) -> dict[RecordKey, tuple[int, f
         acc = out[(league, market, stat)]
         acc[0] += 1
         acc[1] += stake_units(b.odds, b.status == "won")
-    return {k: (n, u) for k, (n, u) in out.items()}
+        acc[2] += b.status == "won"
+        acc[3].add(utc_to_eastern(b.settled_at).date())
+    return {k: (n, u, w, len(d)) for k, (n, u, w, d) in out.items()}
 
 
-# Which stored rows each prior grades (publishable calls only):
-# - NBA props: the stored call is made at any edge, so rows are cut at fill_floor_edge.
+# Which stored rows each projection record grades:
+# - NBA props: the shadow record of the selector (see the module docstring), priced.
 # - NBA total and spread: the would-be calls of the CURRENT model version (the anchored
 #   projectors' own version_pick_record), graded against the stored line, not the stored
-#   recommendation, which is NO_PLAY while the version's record is unproven.
-# - NFL spread, NFL total, NFL passing/receiving, NHL saves/total: rows are the
-#   stored recommendation/pick (NO_PLAY and pushes excluded); their edge thresholds
-#   live in each sport's ETL and were not compared with the fill-floor edge here.
-# Projection loaders: name -> fn(db, start, end) -> {key: (hits, graded[, units])}; dates
-# inclusive. Units (at stored prices) are optional: without them the key is valued at -110.
+#   recommendation, which is NO_PLAY while the version's record is unproven. No stored
+#   price: unpriced.
+# - NFL spread, NFL total, NFL passing/receiving, NHL saves/shots/total: rows are the
+#   stored recommendation/pick (NO_PLAY and pushes excluded), current model version only.
+#   NFL rows and NHL shots carry no price: unpriced. NHL saves and totals rows carry the
+#   stored over/under odds of the picked side (``pick_price``): those calls are priced,
+#   the ones without odds are unpriced. NHL still cannot be picked (no consensus price).
+# Projection loaders: name -> fn(db, start, end) -> {key: (hits, graded, units, version)};
+# dates inclusive. ``units`` (at stored prices) is None when the rows carry no price: those
+# calls are unpriced and count toward nothing. Optional 5th/6th elements: distinct graded
+# slate dates and graded calls left unpriced. A bare (hits, graded) is also accepted.
 ProjectionLoader = Callable[[Session, date, date], dict[RecordKey, tuple]]
 
 # part -> (stat, actual field, projected field)
@@ -252,65 +302,75 @@ _NBA_PROP_STATS = {
     "steals_ou": ("steals", "actual_steals", "projected_steals"),
     "assists_ou": ("assists", "actual_assists", "projected_assists"),
     "rebounds_ou": ("rebounds", "actual_rebounds", "projected_rebounds"),
+    "pra_ou": ("pra", "actual_pra", "projected_pra"),
 }
 
 
-def fill_floor_edge(stat: str) -> float:
-    """Smallest raw edge at which a ``stat`` prop reaches the fill floor (pure).
+def _field(row, name):
+    return row.get(name) if isinstance(row, dict) else getattr(row, name, None)
 
-    The other sub-scores are neutral: the scorer's own functions on a no-metadata
-    candidate (no record, no movement, -110, fresh). Edge scores linearly in
-    edge / edge_normalizer, so solve the weighted total for the edge sub-score.
-    """
-    from app.services.auto_pick.scoring_context import ScoringContext, ScoringWeights
+
+def _as_date(v) -> date:
+    if isinstance(v, datetime):
+        return v.date()
+    return v if isinstance(v, date) else date.min
+
+
+def current_version_rows(rows, date_field: str):
+    """(version, rows of that version): the model_version most rows on the latest
+    ``date_field`` carry (ties: the version of the newest row by ``projected_at``, then
+    ``id``), so one stray backfilled row cannot switch the record. None is a version too:
+    the unversioned legacy model. Rows are dicts or objects."""
+    rows = list(rows)
+    if not rows:
+        return None, []
+    last = max(_as_date(_field(r, date_field)) for r in rows)
+    latest = [r for r in rows if _as_date(_field(r, date_field)) == last]
+    counts: dict = defaultdict(int)
+    for r in latest:
+        counts[_field(r, "model_version")] += 1
+
+    def rank(r):
+        return (
+            counts[_field(r, "model_version")],
+            _field(r, "projected_at") or datetime.min,
+            _field(r, "id") or 0,
+        )
+
+    version = _field(max(latest, key=rank), "model_version")
+    return version, [r for r in rows if _field(r, "model_version") == version]
+
+
+def _priced_shadow_rows(stat: str, proj_field: str, rows):
+    """Rows the selector would have considered: priced, not low-sample, with a side, a
+    positive edge at the best line, inside the default odds bounds, passing the EV gates.
+    Not applied: one pick per game, the daily caps and freshness (the row is its last
+    write of the day)."""
     from app.services.auto_pick.selector import SelectorConfig
-    from app.services.auto_pick.sub_scores import (
-        edge_normalizer,
-        freshness_sub_score,
-        historical_sub_score,
-        line_movement_sub_score,
-        model_confidence_sub_score,
-        odds_sanity_sub_score,
-    )
 
-    c = BetCandidate(
-        market_type=MarketType.PLAYER_PROP,
-        league="NBA",
-        event_id="neutral",
-        selection="neutral",
-        market_line=10.0,
-        market_odds=BREAKEVEN_ODDS,
-        our_projection=10.0,
-        projection_metadata={"stat": stat},
-    )
-    w = ScoringWeights()
-    ctx = ScoringContext(weights=w, score_threshold=SelectorConfig().threshold)
-    rest = (
-        historical_sub_score(c, ctx) * w.historical
-        + freshness_sub_score(c, ctx) * w.freshness
-        + line_movement_sub_score(c, ctx) * w.line_movement
-        + odds_sanity_sub_score(c, ctx) * w.odds_sanity
-        + model_confidence_sub_score(c) * w.model_conf
-    )
-    edge_score = (SelectorConfig().min_score - rest) / w.edge
-    return edge_score / 100.0 * edge_normalizer(c)
-
-
-_NBA_STATS = {v[0] for v in _NBA_PROP_STATS.values()}
-
-
-def _prop_qualifies(row, projected_field: str, min_edge: float) -> bool:
-    """Could this stored call reach the fill floor as a pick?
-
-    The flag on these rows is just the side of projection vs line at any edge; the
-    source has no edge threshold, so the score decides: the projection must clear the
-    line on the called side by ``min_edge`` (``fill_floor_edge``).
-    """
-    proj, line = row.get(projected_field), row.get("fanduel_line")
-    if proj is None or line is None:
-        return False
-    over = str(row.get("fanduel_over_under") or "").strip().lower() in ("o", "over")
-    return (proj - line if over else line - proj) >= min_edge
+    bounds = SelectorConfig()
+    out = []
+    for r in rows:
+        if r.get("low_sample") is True:  # prop_rows never offers these as candidates
+            continue
+        line, price, fair = (
+            r.get("best_line"),
+            r.get("best_price"),
+            r.get("best_fair_prob"),
+        )
+        proj = r.get(proj_field)
+        side = str(r.get("fanduel_over_under") or "").strip().lower()[:1]
+        if None in (line, price, fair, proj) or side not in ("o", "u"):
+            continue
+        if not bounds.odds_min <= price <= bounds.odds_max:
+            continue
+        # hard_gate_reason's non_positive_edge, at the shopped line we would publish
+        if signed_edge_for_side(proj, line, "over" if side == "o" else "under") <= 0:
+            continue
+        e = ev.prop_ev(stat, side, proj, line, price, fair)
+        if ev.gate_reason(e) is None:
+            out.append(r)
+    return out
 
 
 def _nba_props(db, start, end):
@@ -321,36 +381,43 @@ def _nba_props(db, start, end):
         if part not in _NBA_PROP_STATS:
             continue
         stat, actual_field, proj_field = _NBA_PROP_STATS[part]
-        min_edge = fill_floor_edge(stat)
-        rows = [r for r in rows if _prop_qualifies(r, proj_field, min_edge)]
-        hits, n, units, _priced = ou_call_graded_record(
-            rows,
-            line_field="fanduel_line",
+        version, rows = current_version_rows(rows, "date")
+        shadow = _priced_shadow_rows(stat, proj_field, rows)
+        fields = dict(
+            line_field="best_line",
             pick_field="fanduel_over_under",
             actual_field=actual_field,
-            price_field="fanduel_price",
         )
-        out[("NBA", "player_prop", stat)] = (hits, n, units)
+        hits, n, units, _priced = ou_call_graded_record(
+            shadow, price_field="best_price", **fields
+        )
+        dates = {
+            r.get("date")
+            for r in shadow
+            if ou_row_result(
+                line=r.get("best_line"),
+                pick=(r.get("fanduel_over_under") or "").strip().lower(),
+                actual=r.get(actual_field),
+            )
+            in ("hit", "miss")
+        }
+        out[("NBA", "player_prop", stat)] = (hits, n, units, version, len(dates))
     return out
 
 
 def _nba_totals(db, start, end):
     from app.services.etl.nba import totals_projector
 
-    return {
-        ("NBA", "total", None): totals_projector.version_pick_record(
-            db, start, end + timedelta(days=1)
-        )
-    }
+    hits, n = totals_projector.version_pick_record(db, start, end + timedelta(days=1))
+    return {("NBA", "total", None): (hits, n, None, totals_projector.MODEL_VERSION)}
 
 
 def _nba_spread(db, start, end):
     from app.services.etl.nba import spread_projector
 
+    hits, n = spread_projector.version_pick_record(db, start, end + timedelta(days=1))
     return {
-        ("NBA", "spread", None): spread_projector.version_pick_record(
-            db, start, end + timedelta(days=1)
-        )
+        ("NBA", "spread", None): (hits, n, None, spread_projector.SPREAD_MODEL_VERSION)
     }
 
 
@@ -360,32 +427,74 @@ def _nba_spread(db, start, end):
 NHL_PRE_REPAIR_MODEL_VERSIONS = (None, "", "heuristic-v1")
 
 
+def _unpriced(rows, version, **fields):
+    hits, n = ou_call_graded_counts(rows, **fields)
+    return (hits, n, None, version)
+
+
+def _graded_dates(rows, *, date_field, line_field, pick_field, actual_field) -> int:
+    return len(
+        {
+            r.get(date_field)
+            for r in rows
+            if ou_row_result(
+                line=r.get(line_field),
+                pick=(r.get(pick_field) or "").strip().lower(),
+                actual=r.get(actual_field),
+            )
+            in ("hit", "miss")
+        }
+    )
+
+
+def _priced_calls(rows, version, *, price_field, date_field, **fields):
+    """Record of the rows with a stored price for their side, valued at that price; the
+    rest are counted as unpriced (6th element) and never valued at an assumed price."""
+    # 0 / None is no price (a stored 0 would be valued at -110 downstream).
+    priced = [r for r in rows if r.get(price_field)]
+    if not priced:
+        return _unpriced(rows, version, **fields)
+    hits, n, units, _ = ou_call_graded_record(priced, price_field=price_field, **fields)
+    _, unpriced_n = ou_call_graded_counts(
+        [r for r in rows if not r.get(price_field)], **fields
+    )
+    dates = _graded_dates(priced, date_field=date_field, **fields)
+    return (hits, n, units, version, dates, unpriced_n)
+
+
 def _nhl(db, start, end):
     from app.services.nhl_accuracy_service import _nhl_rows
 
-    sets = {
-        part: [
+    sets, versions = {}, {}
+    for part, rows in _nhl_rows(db, start=start, end=end).items():
+        rows = [
             r
             for r in rows
             if r.get("model_version") not in NHL_PRE_REPAIR_MODEL_VERSIONS
         ]
-        for part, rows in _nhl_rows(db, start=start, end=end).items()
-    }
+        versions[part], sets[part] = current_version_rows(rows, "game_date")
     return {
-        ("NHL", "player_prop", "saves"): ou_call_graded_counts(
+        ("NHL", "player_prop", "saves"): _priced_calls(
             sets["goalie"],
+            versions["goalie"],
+            price_field="pick_price",
+            date_field="game_date",
             line_field="saves_line",
             pick_field="betting_pick",
             actual_field="actual_saves",
         ),
-        ("NHL", "player_prop", "shots"): ou_call_graded_counts(
+        ("NHL", "player_prop", "shots"): _unpriced(
             sets["player_shots"],
+            versions["player_shots"],
             line_field="shots_line",
             pick_field="betting_pick",
             actual_field="actual_shots",
         ),
-        ("NHL", "total", None): ou_call_graded_counts(
+        ("NHL", "total", None): _priced_calls(
             sets["team_totals"],
+            versions["team_totals"],
+            price_field="pick_price",
+            date_field="game_date",
             line_field="draftkings_ou_line",
             pick_field="betting_pick",
             actual_field="actual_total_goals",
@@ -419,10 +528,12 @@ def _nfl(db, start, end):
             .all()
         )
 
-    qb_rows = _merge_actuals_qb_range(q(QBPredictions), q(QBActuals))
+    qb_version, qb_preds = current_version_rows(q(QBPredictions), "game_date")
+    qb_rows = _merge_actuals_qb_range(qb_preds, q(QBActuals))
     recv_act = {(a.player_id, a.game_date): a for a in q(RecvYdsActuals)}
+    recv_version, recv_preds = current_version_rows(q(RecvYdsPredictions), "game_date")
     recv_rows = []
-    for p in q(RecvYdsPredictions):
+    for p in recv_preds:
         a = recv_act.get((p.player_id, p.game_date))
         recv_rows.append(
             {
@@ -431,26 +542,36 @@ def _nfl(db, start, end):
                 "actual_receiving_yards": a.actual_receiving_yards if a else None,
             }
         )
-    spread_rows = _merge_actuals_spread(q(NFLSpreadProjections), q(NFLSpreadActuals))
-    totals_rows = _merge_actuals_totals(q(NFLTotalsProjections), q(NFLTotalsActuals))
+    spread_version, spread_preds = current_version_rows(
+        q(NFLSpreadProjections), "game_date"
+    )
+    spread_rows = _merge_actuals_spread(spread_preds, q(NFLSpreadActuals))
+    totals_version, totals_preds = current_version_rows(
+        q(NFLTotalsProjections), "game_date"
+    )
+    totals_rows = _merge_actuals_totals(totals_preds, q(NFLTotalsActuals))
+    spread_hits, spread_n = edge_play_graded_counts(
+        spread_rows, pick_field="recommendation", correct_field="spread_correct"
+    )
     return {
-        ("NFL", "player_prop", "passing_yards"): ou_call_graded_counts(
+        ("NFL", "player_prop", "passing_yards"): _unpriced(
             qb_rows,
+            qb_version,
             line_field="ou_line",
             pick_field="betting_recommendation",
             actual_field="actual_passing_yards",
         ),
-        ("NFL", "player_prop", "receiving_yards"): ou_call_graded_counts(
+        ("NFL", "player_prop", "receiving_yards"): _unpriced(
             recv_rows,
+            recv_version,
             line_field="ou_line",
             pick_field="betting_recommendation",
             actual_field="actual_receiving_yards",
         ),
-        ("NFL", "spread", None): edge_play_graded_counts(
-            spread_rows, pick_field="recommendation", correct_field="spread_correct"
-        ),
-        ("NFL", "total", None): ou_call_graded_counts(
+        ("NFL", "spread", None): (spread_hits, spread_n, None, spread_version),
+        ("NFL", "total", None): _unpriced(
             totals_rows,
+            totals_version,
             line_field="market_total",
             pick_field="recommendation",
             actual_field="actual_total",
@@ -458,8 +579,8 @@ def _nfl(db, start, end):
     }
 
 
-# Keys without a projection record (bet record only): NBA moneyline / pra props,
-# WNBA and MLB (off-season), and any key a new source adds.
+# Keys without a projection record (bet record only): NBA moneyline, WNBA and MLB, and
+# any key a new source adds.
 PROJECTION_LOADERS: dict[str, ProjectionLoader] = {
     "nba_props": _nba_props,
     "nba_totals": _nba_totals,
@@ -506,7 +627,7 @@ def emitted_keys() -> dict[str, set[RecordKey]]:
 def load_projection_records(
     db: Session, now: datetime, loaders: Optional[tuple[str, ...]] = None
 ) -> dict[RecordKey, tuple]:
-    """{key: (hits, graded[, units])} over [today - window, today): today's results never leak in.
+    """{key: (hits, graded[, units[, version]])} over [today - window, today): today's results never leak in.
 
     ``loaders`` limits the run to those PROJECTION_LOADERS names (default all).
     """
@@ -531,15 +652,23 @@ def load_records(
     bets = load_bet_records(db, now)
     projs = load_projection_records(db, now, loaders)
     out = {}
-    for key in set(bets) | set(projs):
-        hits, n, *units = projs.get(key, (0, 0))
+    for key, (hits, n, *rest) in projs.items():
+        units, version, dates, more_unpriced = (*rest, *(None, None, 0, 0)[len(rest) :])
+        priced = units is not None
         out[key] = combine(
             key,
-            bet_n=bets.get(key, (0, 0.0))[0],
-            bet_units=bets.get(key, (0, 0.0))[1],
-            proj_hits=hits,
-            proj_n=n,
-            proj_units=units[0] if units else None,
+            proj_hits=hits if priced else 0,
+            proj_n=n if priced else 0,
+            proj_units=units,
+            unpriced_n=more_unpriced if priced else n,
+            version=version,
+            dates=dates if priced else 0,
+        )
+    # Bets only for keys with no projection record: otherwise they are a subset of it.
+    for key in set(bets) - set(projs):
+        bet_n, bet_units, bet_hits, bet_dates = bets[key]
+        out[key] = combine(
+            key, bet_n=bet_n, bet_units=bet_units, bet_hits=bet_hits, dates=bet_dates
         )
     return out
 
@@ -557,50 +686,42 @@ def withheld_keys(
     return {k: r for k, r in reasons.items() if r}
 
 
-def gate_report(db: Session, now: datetime) -> list[dict]:
-    """Per-key gate decision for the dry-run CLI (read-only: only the loaders run)."""
-    rows = []
+def all_key_rows(db: Session, now: datetime) -> list[dict]:
+    """One row per key the gate knows (every emitted key plus every key a loader or the bet
+    record returned), sorted by label. Read-only: only the loaders run."""
     records = load_records(db, now)
     for keys in emitted_keys().values():
         for key in keys:
             records.setdefault(key, combine(key))
+    rows = []
     for key, r in sorted(records.items(), key=lambda kv: key_label(kv[0])):
+        reason = drop_reason(r)
         rows.append(
             {
                 "key": key_label(key),
-                "bet_n": r.bet_n,
-                "bet_units": round(r.bet_units, 2),
-                "proj_n": r.proj_n,
-                "proj_hits": r.proj_hits,
-                "proj_units": (
-                    None if r.proj_units is None else round(r.proj_units, 2)
-                ),
-                "prior_hit_rate": r.proj_hits / r.proj_n if r.proj_n else None,
+                "n": r.proj_n + r.bet_n,
+                "hits": r.proj_hits + r.bet_hits,
+                "units": round(r.proj_units + r.bet_units, 2),
                 "n_eff": round(r.n_eff, 1),
                 "shrunk_roi": round(r.shrunk_roi, 4),
-                "withheld": r.withheld,
+                "version": r.version,
+                "selection_version": ev.SELECTION_VERSION,
+                "unpriced_n": r.unpriced_n,
+                "bet_n": r.bet_n,
+                "dates": r.dates,
                 "state": (
-                    "WITHHELD losing"
-                    if r.withheld
+                    "open"
+                    if reason is None
                     else (
-                        (
-                            "WITHHELD unproven (prove-in key)"
-                            if prove_in_required(key)
-                            else "WITHHELD unproven"
-                        )
-                        if drop_reason(r) == "unproven_record"
-                        else (
-                            "unproven (would be withheld with AUTO_PICK_REQUIRE_PROVEN_RECORD)"
-                            if r.n_eff < min_picks()
-                            else "open"
-                        )
+                        "withheld-losing"
+                        if reason == "losing_record"
+                        else "withheld-unproven"
                     )
                 ),
-                "qualifying_edge": (
-                    round(fill_floor_edge(key[2]), 3)
-                    if key[:2] == ("NBA", "player_prop") and key[2] in _NBA_STATS
-                    else None
-                ),
+                "reason": reason,
             }
         )
     return rows
+
+
+gate_report = all_key_rows  # the CLI's old name

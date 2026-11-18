@@ -12,12 +12,15 @@ import nfl_data_py as nfl
 import pandas as pd
 
 from app.models.predictions_models import QBPredictions
+from app.services.etl._game_start import has_started
 from app.services.etl.nfl._db import db_session
 from app.services.etl.nfl.nfl_common import (
+    EASTERN,
     _first_regular_season_thursday,
     get_current_nfl_week,
     get_nfl_season,
     has_kicked_off,
+    now_eastern_naive,
 )
 from app.services.etl.nfl.qb_passing_yards_ml import enrich_qb_prediction_for_write
 from app.services.etl.nfl.qb_tiers import predict_qb_passing_yards
@@ -666,9 +669,26 @@ def _run_qb_dynamic_core():
             # A game that has kicked off is history: re-projecting it would
             # overwrite the pre-game numbers (and, in qb_betting, the closing
             # line) that the row is graded on.
-            if has_kicked_off(get_game_kickoff(team_abbr, season, week)):
+            kickoff = get_game_kickoff(team_abbr, season, week)
+            if has_kicked_off(kickoff):
                 frozen_predictions += 1
                 continue
+            if kickoff is None:
+                # Kickoff lookup failed: freeze from the day after the stored
+                # game date at the latest, instead of never.
+                stored = (
+                    db_session.query(QBPredictions)
+                    .filter_by(qb_player_id=player_id, season=season, week=week)
+                    .first()
+                )
+                if stored is not None and has_started(
+                    None,
+                    game_date=stored.game_date,
+                    now=now_eastern_naive(),
+                    naive_tz=EASTERN,
+                ):
+                    frozen_predictions += 1
+                    continue
 
             # Get opponent team and scheduled kickoff
             opponent_abbr = get_team_opponent(team_abbr, season, week)
@@ -783,9 +803,24 @@ def _run_qb_dynamic_core():
                 )
             else:
                 # Update existing prediction
+                old_yards = existing_prediction.predicted_passing_yards
                 existing_prediction.predicted_passing_yards = write_kwargs[
                     "predicted_passing_yards"
                 ]
+                if (
+                    old_yards is None
+                    or abs(
+                        float(old_yards)
+                        - float(write_kwargs["predicted_passing_yards"])
+                    )
+                    > 1e-6
+                ):
+                    # The stored call was made on different yards: drop it;
+                    # qb_betting writes a fresh one on the new number.
+                    existing_prediction.betting_recommendation = None
+                    existing_prediction.bet_size = None
+                    existing_prediction.edge_percentage = None
+                    existing_prediction.recommendation_reason = None
                 existing_prediction.model_confidence = write_kwargs["model_confidence"]
                 existing_prediction.prediction_method = write_kwargs[
                     "prediction_method"

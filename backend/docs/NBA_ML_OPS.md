@@ -92,6 +92,28 @@ weekly retrain and keep their inherited models.
   injury also deletes his row for today (`_stale_rows`); otherwise the 3:30 ET
   projection, line and pick stay on the board after he is declared out.
 
+## Availability features (v4)
+
+Feature version 4 adds team availability and role to the prop features: the
+minutes and usage shares of teammates who are out or doubtful, each player's
+rotation share, a return-from-absence flag and a `low_sample` flag (fewer than
+5 current-season games).
+
+- **Training vs serving.** Training rebuilds them from box-score history (who
+  actually played). Serving uses today's `PlayerInjuryStatus` and
+  `TodayActivePlayers`, so a late scratch changes a teammate's projection.
+- **Nothing changes until a model is retrained on v4 and passes the promote
+  gate.** Generators build the feature version the loaded model declares in its
+  metadata (`features_version`, 3 when absent), so v3 champions keep serving the
+  v3 features and no multiplier or post-model adjustment is applied.
+- **Late refresh.** `nba-pregame-refresh-late` re-runs the pregame refresh at
+  18:30 ET (lineups are due 30 minutes before a 19:00 tip). Games that have
+  started are skipped; it obeys `NBA_PREGAME_REFRESH_ENABLED` and spends Odds API
+  credits like the other refreshes.
+- **`low_sample`.** Written on every row of the points, rebounds, assists, threes
+  and steals projection tables (null on older rows). It flags projections built
+  on a thin current-season sample; it does not change the number.
+
 ## Season rollover (each October)
 
 1. Add the new opening night to `REGULAR_SEASON_START` in
@@ -195,6 +217,56 @@ else his last 10 across seasons): each static S3 model lost to it on correctly d
   Odds API credits).
 - **Scorecard.** `NBA Daily Scorecard` (9:30 ET) posts the totals backtest and
   the prop audit to its run summary. `NBA Weekly Retrain` (Mon 11:00 UTC)
-  retrains spread and points/rebounds/assists; a model that fails its gate is
-  a warning and the live model stays.
+  retrains spread and points/rebounds/assists (plus the residual models); a
+  model that fails its gate leaves the live model in place. See "Promote gate".
 - Read-only checks: Season Ops `backtest-totals`, `audit-props`, `debug-totals`.
+
+## Promote gate (`promote-gate-v1`)
+
+Every prop trainer (NBA points/rebounds/assists and residual models, WNBA props,
+NHL shots and saves, the NFL QB promote check) decides promotion with one function,
+`app/services/ml/promote_gate.promote_gate`. A candidate goes live only if, on the
+holdout rows that have a real stored line:
+
+1. **Line evidence**: at least 150 lined rows on at least 10 game dates. Otherwise
+   `no_line_evidence`: not promoted, never a silent pass.
+2. **No worse than the line**: candidate MAE <= line MAE x 1.005 (`rejected_by_line_gate`,
+   reason `worse_than_line`). Residual models must also show a predictive edge
+   (slope t >= 1.645, reason `edge_not_predictive`).
+3. **Better than the live model by more than noise**, on the same lined rows:
+   gain >= max(0.5% of the champion's MAE, 1.645 x the bootstrap SE of the gain,
+   resampling whole game dates). Otherwise `rejected_by_champion` (`gain_below_noise`).
+   A live model that cannot be scored on 50+ of those rows is not beaten
+   (`champion_not_comparable`); only the residual models, whose champion saw most of the
+   holdout, fall back to the line gate there. A live model whose metadata is missing is
+   an error (red), not a pass.
+   Rebounds on 2026-11-16 (+0.00016 MAE, 2.034 vs line 1.959) now fails on step 2.
+
+Lines come from `etl/nba/residual/dataset.load_lines` for points, rebounds, assists,
+threes, steals and blocks (closing odds snapshot when present, else the projection
+row's FanDuel line); before this, points had no lines and the comparison was empty.
+Each run logs one line per stat, e.g.
+`NBA rebounds gate: n_lined=1339 dates=25 model_mae=2.034 line_mae=1.959 side_hit=0.502 ... -> rejected_by_line_gate (worse_than_line)`.
+
+**When nothing passes** the live model keeps serving (nothing is deleted or replaced),
+and the outcome is written next to it, e.g. `s3://yetibets/nba/ml_models/xgb_rebounds_gate.json`
+(`promote_gate.read_outcome(model_key)`). `champion_below_line: true` there means the
+model that is serving is itself worse than the line on the latest holdout; the record
+gate and the review should treat that market as "model below line".
+
+The champion is scored on the candidate's holdout. For the direct prop models that
+holdout overlaps the champion's own training window by a few days, which flatters the
+champion: the gate errs towards keeping the live model.
+
+**Workflow status.** The trainer CLIs exit 0 for a healthy run and for an honest gate
+outcome (`rejected_by_champion`, `rejected_by_line_gate`, `no_line_evidence`,
+`gate_failed`, spread `below_baseline`) and 1 for crashes, `insufficient_data` and
+upload failures (`promote_gate.exit_code`). `scripts/retrain_step.sh` runs a trainer
+without letting `bash -e` cut off the summary. NBA Weekly Retrain is green with a notice
+on a gate outcome, red on a failure, and its last job prints one table: model, outcome
+(promoted / rejected-by-champion / rejected-by-line / no-line-evidence / gate-failed /
+error), lined rows, model MAE, line MAE, side hit rate, champion MAE, gain vs needed.
+A job that died before writing its row shows as `error (no summary)`.
+
+Tests: `tests/test_promote_gate.py`, `test_nba_promote_flow.py`, `test_retrain_summary.py`,
+`test_wnba_nhl_line_gate.py`, `test_nfl_prod_qb_eval.py`.

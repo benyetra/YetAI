@@ -193,3 +193,13 @@ def test_find_goalie_line_initial_fallback():
     assert dp.find_goalie_line(lines, "Leevi Meriläinen", "x") == {"line": 24.5}
     assert dp.find_goalie_line(lines, None, "K. Merilainen") == {}
     assert dp.find_goalie_line({}, "A B", "A. B") == {}
+
+
+def test_two_writes_same_team_and_date_leave_one_live_row(run):
+    run(_slot())
+    n, rows = run(_slot())
+    assert len(rows) == 1 and n == 1
+    # Starter flips there and back: still exactly one live row for the team/date.
+    run(_slot(goalie_id=8480947, name="K. Lankinen"))
+    _, rows = run(_slot())
+    assert [r.was_scratch for r in rows].count(False) == 1

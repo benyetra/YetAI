@@ -145,6 +145,29 @@ def get_holdout_mae(stat: str) -> float | None:
     return None
 
 
+# A feature only version 4 builds: a model listing it needs the v4 vector even
+# if an upload path dropped `features_version` from its metadata.
+_V4_MARKER = "team_out_min_share"
+
+
+def features_version(stat: str) -> int:
+    """Feature version the model was trained on: metadata `features_version`,
+    else 4 when its feature list has a v4-only feature, else 3."""
+    try:
+        meta = get_metadata(stat)
+    except RuntimeError:
+        # No model loaded: predict() raises for this stat anyway, so the version is moot.
+        return 3
+    try:
+        return int(meta["features_version"])
+    except (KeyError, TypeError, ValueError):
+        pass
+    if _V4_MARKER in (meta.get("feature_names") or meta.get("features") or []):
+        logger.warning("NBA %s model metadata lacks features_version; using 4", stat)
+        return 4
+    return 3
+
+
 def get_model_version(stat: str) -> str | None:
     """Manifest version (written by the gated upload), else metadata JSON's."""
     _, meta = _ensure_loaded(stat)
@@ -165,17 +188,22 @@ def predict(stat: str, features: dict) -> float:
     extractor are filled with zeros before model.predict).
     """
     model, metadata = _ensure_loaded(stat)
+    # Version 4 models were trained with NaN for unknown inputs (no stored line):
+    # keep NaN for them. Older champions were trained on 0 fills and keep them.
+    keep_nan = features_version(stat) >= 4
+    missing = float("nan") if keep_nan else 0
 
     feature_names = _feature_order(metadata)
-    row = {name: features.get(name, 0) for name in feature_names}
+    row = {name: features.get(name, missing) for name in feature_names}
     X = pd.DataFrame([row], columns=feature_names)
 
-    # Coerce object dtypes to numeric, then nuke inf/NaN — same defensive
-    # cleanup the original predictor did.
     for col in X.columns:
         if X[col].dtype == "object":
             X[col] = pd.to_numeric(X[col], errors="coerce")
-    X = X.replace([np.inf, -np.inf], 0).fillna(0)
+    if keep_nan:
+        X = X.replace([np.inf, -np.inf], np.nan)
+    else:
+        X = X.replace([np.inf, -np.inf], 0).fillna(0)
 
     prediction = float(model.predict(X)[0])
     return prediction

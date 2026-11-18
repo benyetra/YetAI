@@ -120,6 +120,14 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=[12, 17], minute=0),  # ET (celery tz)
         "options": {"expires": 7200},
     },
+    # Lineups are due 30 minutes before a 19:00 ET tip, so this re-run picks up late
+    # scratches. Games that have started are skipped by active_players_not_started.
+    # Respects NBA_PREGAME_REFRESH_ENABLED; spends Odds API credits like the others.
+    "nba-pregame-refresh-late": {
+        "task": "app.tasks.etl_pipeline.run_nba_pregame_refresh",
+        "schedule": crontab(hour=18, minute=30),  # ET (celery tz)
+        "options": {"expires": 3600},
+    },
     # Closing prop lines: one call per NBA event in the ~25 min before tip-off. Runs that
     # find no event in the window cost nothing (the events list is free), so the window
     # also covers weekend afternoon tips.
@@ -153,10 +161,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute="*/10"),
         "options": {"expires": 540},
     },
-    # Before the 17:30 auto-pick: refreshed NHL starters + saves lines (goalies only).
+    # NHL pregame refresh (starters, saves/shots/totals lines) every 2 hours at :45, ET.
+    # Each run refreshes only unstarted games starting within 3h15m (PREGAME_WINDOW), so
+    # matinees get a 10:45 run and 19:00+ games still get 16:45 before the 18:00 auto pick.
     "nhl-pregame-refresh": {
         "task": "app.tasks.etl_pipeline.run_nhl_pregame_refresh",
-        "schedule": crontab(hour=16, minute=45),  # ET (celery tz)
+        "schedule": crontab(hour="10,12,14,16,18,20", minute=45),  # ET (celery tz)
         "options": {"expires": 3600},
     },
     "nba-spreads-accuracy-morning": {
@@ -171,7 +181,8 @@ celery_app.conf.beat_schedule = {
     },
     # Gameday late availability — refresh QB/kicker boards as Q→Out locks in,
     # then reprice spreads/totals (QB-out ±3.5). Horizon matches game lines (14d).
-    # Sun 10:00 / 12:30 / 15:30 ET; Mon 18:00 MNF; Thu 10:00 / 19:00 TNF; Sat 12:30.
+    # Sun 10:00 / 12:30 / 15:30 ET; Mon 17:00 / 18:15 MNF; Thu 10:00 / 17:00 / 19:00 TNF;
+    # Sat 12:30.
     "nfl-gameday-availability-sun-am": {
         "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
         "schedule": crontab(hour=10, minute=0, day_of_week="0"),
@@ -187,9 +198,18 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=15, minute=30, day_of_week="0"),
         "options": {"expires": 7200},
     },
+    # Mon/Thu 17:00 ET: the runs that matter for MNF/TNF, before the last auto-pick
+    # run (18:00) so those picks see the refreshed availability.
+    "nfl-gameday-availability-mon-pre-pick": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=17, minute=0, day_of_week="1"),
+        "options": {"expires": 1800},
+    },
+    # Informational only (board, after the last pick run at 18:00): no pick sees it.
+    # 18:15, not 18:00, so it never runs alongside the 18:00 pick run.
     "nfl-gameday-availability-mon": {
         "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
-        "schedule": crontab(hour=18, minute=0, day_of_week="1"),
+        "schedule": crontab(hour=18, minute=15, day_of_week="1"),
         "options": {"expires": 7200},
     },
     "nfl-gameday-availability-thu-am": {
@@ -197,6 +217,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=10, minute=0, day_of_week="4"),
         "options": {"expires": 7200},
     },
+    "nfl-gameday-availability-thu-pre-pick": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=17, minute=0, day_of_week="4"),
+        "options": {"expires": 1800},
+    },
+    # Informational only (board, after the last pick run at 18:00): no pick sees it.
     "nfl-gameday-availability-thu-pm": {
         "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
         "schedule": crontab(hour=19, minute=0, day_of_week="4"),
@@ -321,7 +347,10 @@ if os.getenv("MLB_JOBS_ENABLED", "false").lower() == "true":
     celery_app.conf.beat_schedule.update(_MLB_BEAT_SCHEDULE)
 
 
-from app.services.auto_pick.candidate import EVENING_RUN_ET  # noqa: E402
+from app.services.auto_pick.candidate import (  # noqa: E402
+    EVENING_RUN_ET,
+    MORNING_RUN_ET,
+)
 
 
 def auto_picks_enabled() -> bool:
@@ -348,12 +377,12 @@ celery_app.conf.beat_schedule["odds_credits_runout_alert"] = {
 }
 
 if auto_picks_enabled():
-    # Celery timezone is America/New_York: these are ET wall times. The 11:00 run
-    # leaves one slot (and the fill-to-2 floor) for the 17:30 run, which sees the
-    # pregame refreshes and fills the day to the cap.
+    # Celery timezone is America/New_York: these are ET wall times. Each run follows an NBA
+    # refresh (12:00 and 17:00) by enough time for it to finish, so picks use fresh prices.
+    # The morning run leaves one slot for the evening run, which fills the day to the cap.
     celery_app.conf.beat_schedule["auto_pick_yetai_bets_daily"] = {
         "task": "auto_pick.yetai_bets",
-        "schedule": crontab(hour=11, minute=0),
+        "schedule": crontab(hour=MORNING_RUN_ET.hour, minute=MORNING_RUN_ET.minute),
         "kwargs": {"reserve_slots": 1},
         # Drops a copy redelivered ~24h later (visibility_timeout) after a worker
         # was killed mid-run, while still allowing a run that starts a little late.
@@ -369,3 +398,19 @@ if auto_picks_enabled():
         "schedule": crontab(minute="*/5"),
         "options": {"expires": 240},
     }
+
+
+# Every beat entry gets an `expires`: with task_acks_late and a 24 h visibility_timeout,
+# a message left unacked by a killed worker is redelivered ~24 h later and would run a
+# day late. 6 h is longer than any slot's tolerable lateness (the longest explicit
+# expiry in this file is 6 h, MLB profile rebuild); entries that set their own keep it.
+DEFAULT_BEAT_EXPIRES_S = 21600
+
+
+def apply_default_expires(schedule: dict) -> None:
+    for entry in schedule.values():
+        entry.setdefault("options", {}).setdefault("expires", DEFAULT_BEAT_EXPIRES_S)
+
+
+# Last, after every conditional entry (WNBA/MLB/auto-pick) is registered.
+apply_default_expires(celery_app.conf.beat_schedule)

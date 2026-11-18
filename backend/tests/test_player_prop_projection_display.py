@@ -121,3 +121,28 @@ def test_attach_mlb_batter_team_opponent_joins_hitter():
     )
     assert rows[0]["team_name"] == "NYY"
     assert rows[0]["opponent_team_name"] == "BOS"
+
+
+def test_no_stored_side_means_no_pick_even_with_a_big_edge():
+    # The board shows a pick only where the writer stored one (and the gate allows it);
+    # projection vs line alone never makes a side.
+    row = enrich_nba_prop_row(
+        {"projected_points": 31.0, "fanduel_line": 25.5, "fanduel_over_under": None},
+        "points",
+    )
+    assert row["edge"] == 5.5
+    assert row["recommendation"] == "NO_PLAY"
+    assert row["value_tier"] is None and row["pick_confidence"] is None
+
+
+def test_stored_pass_is_not_rebuilt_into_a_side():
+    from app.services.player_prop_projection_display import enrich_nfl_recv_yds_row
+
+    row = enrich_nfl_recv_yds_row(
+        {
+            "predicted_receiving_yards": 90.0,
+            "ou_line": 60.5,
+            "betting_recommendation": "PASS",
+        }
+    )
+    assert row["recommendation"] == "NO_PLAY" and row["value_tier"] is None

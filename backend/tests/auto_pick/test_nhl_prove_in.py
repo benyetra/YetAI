@@ -1,6 +1,9 @@
 """NHL keys must prove in: no auto pick and no board pick label without a qualifying
-record (min_picks graded calls at or above breakeven), with the global
-AUTO_PICK_REQUIRE_PROVEN_RECORD switch left off."""
+record (100 priced calls at or above breakeven), with the global
+AUTO_PICK_REQUIRE_PROVEN_RECORD switch off. NHL saves and totals rows are valued at the
+stored over/under odds of the picked side; rows without odds (and every shots row) are
+``unpriced_n`` only. NHL candidates carry no consensus price, so even an open NHL key is
+never auto-picked."""
 
 from datetime import date, datetime, timedelta
 
@@ -30,30 +33,35 @@ def _env(monkeypatch):
         "AUTO_PICK_RECORD_MIN_PICKS",
         "AUTO_PICK_RECORD_WINDOW_DAYS",
         "AUTO_PICK_RECORD_MIN_ROI",
-        "AUTO_PICK_RECORD_PRIOR_MAX_PICKS",
         "AUTO_PICK_RECORD_SHRINK_PICKS",
     ):
         monkeypatch.delenv(k, raising=False)
 
 
-def test_nhl_keys_need_a_qualifying_record_with_global_switch_off():
+def test_nhl_keys_need_a_qualifying_record_with_global_switch_off(monkeypatch):
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
     assert not rg.require_proven_record()
     assert rg.drop_reason(None, SAVES) == "unproven_record"
     assert rg.drop_reason(None, TOTAL) == "unproven_record"
+
+    def rec(key, n, hits, units):
+        return combine(key, proj_n=n, proj_hits=hits, proj_units=units, dates=10)
+
     # Thin record.
-    assert rg.drop_reason(combine(SAVES, proj_n=10, proj_hits=8)) == "unproven_record"
+    assert rg.drop_reason(rec(SAVES, 10, 8, 5.0)) == "unproven_record"
     # Enough calls but below breakeven (inside the losing dead band).
-    assert rg.drop_reason(combine(SAVES, proj_n=60, proj_hits=31)) == "unproven_record"
+    assert rg.drop_reason(rec(SAVES, 100, 52, -2.0)) == "unproven_record"
     # Losing record keeps its own reason.
-    assert rg.drop_reason(combine(TOTAL, proj_n=60, proj_hits=20)) == "losing_record"
-    # Enough calls at or above breakeven.
-    assert rg.drop_reason(combine(SAVES, proj_n=60, proj_hits=34)) is None
-    # Other leagues are unchanged: no data stays open.
+    assert rg.drop_reason(rec(TOTAL, 60, 20, -25.0)) == "losing_record"
+    # 100 priced calls at or above breakeven.
+    assert rg.drop_reason(rec(SAVES, 100, 58, 8.0)) is None
+    # Other leagues are unchanged: no data stays open with the switch off.
     assert rg.drop_reason(None, POINTS) is None
-    assert rg.drop_reason(combine(POINTS, proj_n=10, proj_hits=6)) is None
+    assert rg.drop_reason(rec(POINTS, 10, 6, 1.0)) is None
 
 
 def test_prove_in_keys_switch(monkeypatch):
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
     monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")
     assert rg.drop_reason(None, SAVES) is None
     monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "NHL/total, NBA/player_prop/points")
@@ -86,13 +94,16 @@ def test_orchestrator_drops_nhl_candidate_and_reports_shadow(sqlite_db):
 
 def test_gate_report_marks_nhl_as_prove_in(sqlite_db):
     rows = {r["key"]: r for r in rg.gate_report(sqlite_db, NOW)}
-    assert rows["NHL/player_prop/saves"]["state"] == "WITHHELD unproven (prove-in key)"
-    assert rows["NBA/moneyline"]["state"].startswith("unproven (would be")
+    assert rows["NHL/player_prop/saves"]["state"] == "withheld-unproven"
+    assert rows["NHL/player_prop/saves"]["reason"] == "unproven_record"
+    assert rows["NBA/moneyline"]["state"] == "withheld-unproven"
 
 
-def _seed_totals(db, n, hits, day, model_version="heuristic-v2"):
+def _seed_totals(
+    db, n, hits, day, model_version="heuristic-v2", over_odds=None, base=0
+):
     """n graded NHL totals OVER 5.5 calls on ``day``; ``hits`` of them go over."""
-    for i in range(n):
+    for i in range(base, base + n):
         db.add(
             NHLTeamTotalsPredictions(
                 game_date=day,
@@ -108,9 +119,11 @@ def _seed_totals(db, n, hits, day, model_version="heuristic-v2"):
                 edge=1.0,
                 betting_recommendation="OVER 5.5",
                 model_version=model_version,
+                over_odds=over_odds,
+                under_odds=-130 if over_odds is not None else None,
             )
         )
-        goals = 7 if i < hits else 4
+        goals = 7 if i - base < hits else 4
         db.add(
             NHLTeamTotalsActuals(
                 game_id=2026020000 + i,
@@ -139,26 +152,30 @@ def _board_payload():
 
 def test_board_strips_pick_labels_for_markets_without_record(sqlite_db):
     out = api._withhold_unproven_picks(
-        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
+        _board_payload(), sqlite_db, api._BOARD_MARKETS["nhl"]
     )
     for group in ("goalie_predictions", "player_shots", "team_totals"):
         (row,) = out[group]
-        assert row["betting_recommendation"] is None
+        assert row.get("betting_recommendation") is None
         assert row["recommendation"] is None
-        assert row["value_tier"] is None
-        assert row["pick_withheld"] == "unproven_record"
+        assert row.get("value_tier") is None
+        # Shots have no gate key at all: withheld as never measured.
+        want = "no_record_check" if group == "player_shots" else "unproven_record"
+        assert row["pick_withheld"] == want
         assert row["id"]  # the projection row itself stays
 
 
-def test_board_keeps_pick_labels_once_the_record_qualifies(sqlite_db):
+def test_nhl_winning_record_is_unpriced_so_labels_stay_stripped(sqlite_db):
+    # 60 winning NHL totals calls: counted for display only, no stored price to value them.
     yesterday = (datetime.utcnow() - timedelta(days=2)).date()
     _seed_totals(sqlite_db, 60, 36, yesterday)
+    rec = rg.load_records(sqlite_db, datetime.utcnow())[TOTAL]
+    assert (rec.unpriced_n, rec.n_eff, rec.version) == (60, 0, "heuristic-v2")
     out = api._withhold_unproven_picks(
-        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
+        _board_payload(), sqlite_db, api._BOARD_MARKETS["nhl"]
     )
-    assert out["team_totals"][0]["betting_recommendation"] == "OVER 5.5"
-    assert "pick_withheld" not in out["team_totals"][0]
-    assert out["goalie_predictions"][0]["value_tier"] is None
+    assert out["team_totals"][0]["betting_recommendation"] is None
+    assert out["team_totals"][0]["pick_withheld"] == "unproven_record"
 
 
 def test_pre_repair_rows_do_not_count_toward_the_record(sqlite_db):
@@ -170,19 +187,11 @@ def test_pre_repair_rows_do_not_count_toward_the_record(sqlite_db):
         (datetime.utcnow() - timedelta(days=2)).date(),
         "heuristic-v1",
     )
+    assert rg.load_records(sqlite_db, NOW)[TOTAL].unpriced_n == 0
     out = api._withhold_unproven_picks(
-        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
+        _board_payload(), sqlite_db, api._BOARD_MARKETS["nhl"]
     )
     assert out["team_totals"][0]["pick_withheld"] == "unproven_record"
-
-
-def test_board_strips_when_the_record_is_losing(sqlite_db):
-    _seed_totals(sqlite_db, 60, 20, (datetime.utcnow() - timedelta(days=2)).date())
-    out = api._withhold_unproven_picks(
-        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
-    )
-    assert out["team_totals"][0]["betting_recommendation"] is None
-    assert out["team_totals"][0]["pick_withheld"] == "losing_record"
 
 
 def test_board_withholds_every_label_when_the_record_cannot_load(
@@ -193,7 +202,7 @@ def test_board_withholds_every_label_when_the_record_cannot_load(
 
     monkeypatch.setattr(rg, "load_records", boom)
     out = api._withhold_unproven_picks(
-        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
+        _board_payload(), sqlite_db, api._BOARD_MARKETS["nhl"]
     )
     assert out["team_totals"][0]["pick_withheld"] == "record_unavailable"
     assert out["team_totals"][0]["betting_recommendation"] is None
@@ -220,30 +229,69 @@ def test_live_board_endpoint_withholds_and_past_slate_does_not(sqlite_db, monkey
     kw = dict(tz="UTC", limit=50, _user={}, db=sqlite_db)
     live = api.nhl_predictions(target_date=today, **kw)
     assert live["team_totals"][0]["betting_recommendation"] is None
-    called = []
-    monkeypatch.setattr(
-        api, "_withhold_unproven_picks", lambda *a, **k: called.append(1) or a[0]
-    )
+    # A past slate keeps the graded call of a past game...
     monkeypatch.setattr(api, "_merge_past_results", lambda p, *a: p)
-    api.nhl_predictions(target_date=date(2026, 1, 1), **kw)
-    assert called == []
+    monkeypatch.setattr(api, "eastern_today", lambda: today + timedelta(days=1))
+    past = api.nhl_predictions(target_date=today, **kw)
+    assert past["team_totals"][0]["betting_recommendation"] == "OVER 5.5"
 
 
-def test_nba_board_strips_labels_for_new_steals_and_blocks_lines(sqlite_db):
+def test_nba_board_strips_labels_for_new_steals_and_blocks_lines(
+    sqlite_db, monkeypatch
+):
+    # Prove-in keys only (require-proven off), so points shows the prove-in list's reach.
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
     payload = {
         "steals": [{"id": 1, "recommendation": "OVER", "fanduel_over_under": "o"}],
         "blocks": [{"id": 2, "recommendation": "UNDER", "fanduel_over_under": "u"}],
         "points": [{"id": 3, "recommendation": "OVER", "fanduel_over_under": "o"}],
     }
     out = api._withhold_unproven_picks(
-        payload,
-        sqlite_db,
-        api._NBA_NEW_MARKET_KEYS,
-        loaders=("nba_props",),
-        no_pick=api._NBA_NO_PICK,
+        payload, sqlite_db, api._BOARD_MARKETS["nba"], loaders=("nba_props",)
     )
-    for group in ("steals", "blocks"):
+    for group, why in (("steals", "unproven_record"), ("blocks", "no_record_check")):
         row = out[group][0]
         assert row["recommendation"] is None and row["fanduel_over_under"] is None
-        assert row["pick_withheld"] == "unproven_record"
+        assert row["pick_withheld"] == why
     assert out["points"][0]["recommendation"] == "OVER"  # not a new market: untouched
+    # The merged default (require-proven on) withholds points too until it proves in.
+    monkeypatch.delenv("AUTO_PICK_REQUIRE_PROVEN_RECORD")
+    out = api._withhold_unproven_picks(
+        payload, sqlite_db, api._BOARD_MARKETS["nba"], loaders=("nba_props",)
+    )
+    assert out["points"][0]["pick_withheld"] == "unproven_record"
+
+
+def test_nhl_totals_with_stored_odds_build_a_priced_record(sqlite_db):
+    # 12 slate dates x 10 calls at +100, 6 of 10 over each night: 120 priced calls, +24u.
+    today = datetime.utcnow()
+    for d in range(12):
+        _seed_totals(
+            sqlite_db,
+            10,
+            6,
+            (today - timedelta(days=2 + d)).date(),
+            over_odds=100,
+            base=100 * d,
+        )
+    _seed_totals(sqlite_db, 5, 5, (today - timedelta(days=2)).date(), base=5000)
+    rec = rg.load_records(sqlite_db, today, ("nhl",))[TOTAL]
+    assert (rec.proj_n, rec.proj_hits, rec.dates) == (120, 72, 12)
+    assert rec.proj_units == pytest.approx(24.0)  # at +100, never at an assumed -110
+    assert rec.unpriced_n == 5  # rows without odds are counted, never valued
+    assert rg.drop_reason(rec) is None  # proved in
+    # ...and an NHL candidate still has no consensus price, so it is never picked.
+    from app.services.auto_pick import ev
+
+    c = _cand(1, league="NHL")
+    c.projection_metadata.pop("fair_prob")
+    assert ev.candidate_ev(c) == (None, "no_consensus_price")
+
+
+def test_nhl_pick_price_is_the_picked_side(sqlite_db):
+    from app.services.nhl_accuracy_service import _nhl_rows
+
+    day = (datetime.utcnow() - timedelta(days=2)).date()
+    _seed_totals(sqlite_db, 1, 1, day, over_odds=105)
+    (row,) = _nhl_rows(sqlite_db, start=day, end=day)["team_totals"]
+    assert (row["betting_pick"], row["pick_price"]) == ("over", 105)
