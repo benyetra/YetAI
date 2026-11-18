@@ -195,6 +195,52 @@ else his last 10 across seasons): each static S3 model lost to it on correctly d
   Odds API credits).
 - **Scorecard.** `NBA Daily Scorecard` (9:30 ET) posts the totals backtest and
   the prop audit to its run summary. `NBA Weekly Retrain` (Mon 11:00 UTC)
-  retrains spread and points/rebounds/assists; a model that fails its gate is
-  a warning and the live model stays.
+  retrains spread and points/rebounds/assists (plus the residual models); a
+  model that fails its gate leaves the live model in place. See "Promote gate".
 - Read-only checks: Season Ops `backtest-totals`, `audit-props`, `debug-totals`.
+
+## Promote gate (`promote-gate-v1`)
+
+Every prop trainer (NBA points/rebounds/assists and residual models, WNBA props,
+NHL shots and saves, the NFL QB promote check) decides promotion with one function,
+`app/services/ml/promote_gate.promote_gate`. A candidate goes live only if, on the
+holdout rows that have a real stored line:
+
+1. **Line evidence**: at least 150 lined rows on at least 10 game dates. Otherwise
+   `no_line_evidence`: not promoted, never a silent pass.
+2. **No worse than the line**: candidate MAE <= line MAE x 1.005 (`rejected_by_line_gate`,
+   reason `worse_than_line`). Residual models must also show a predictive edge
+   (slope t >= 1.645, reason `edge_not_predictive`).
+3. **Better than the live model by more than noise**, on the same lined rows:
+   gain >= max(0.5% of the champion's MAE, 1.645 x the bootstrap SE of the gain,
+   resampling whole game dates). Otherwise `rejected_by_champion` (`gain_below_noise`).
+   Rebounds on 2026-11-16 (+0.00016 MAE, 2.034 vs line 1.959) now fails on step 2.
+
+Lines come from `etl/nba/residual/dataset.load_lines` for points, rebounds, assists,
+threes, steals and blocks (closing odds snapshot when present, else the projection
+row's FanDuel line); before this, points had no lines and the comparison was empty.
+Each run logs one line per stat, e.g.
+`NBA rebounds gate: n_lined=1339 dates=25 model_mae=2.034 line_mae=1.959 side_hit=0.502 ... -> rejected_by_line_gate (worse_than_line)`.
+
+**When nothing passes** the live model keeps serving (nothing is deleted or replaced),
+and the outcome is written next to it, e.g. `s3://yetibets/nba/ml_models/xgb_rebounds_gate.json`
+(`promote_gate.read_outcome(model_key)`). `champion_below_line: true` there means the
+model that is serving is itself worse than the line on the latest holdout; the record
+gate and the review should treat that market as "model below line".
+
+The champion is scored on the candidate's holdout. For the direct prop models that
+holdout overlaps the champion's own training window by a few days, which flatters the
+champion: the gate errs towards keeping the live model.
+
+**Workflow status.** The trainer CLIs exit 0 for a healthy run and for an honest gate
+outcome (`rejected_by_champion`, `rejected_by_line_gate`, `no_line_evidence`,
+`gate_failed`, spread `below_baseline`) and 1 for crashes, `insufficient_data` and
+upload failures (`promote_gate.exit_code`). `scripts/retrain_step.sh` runs a trainer
+without letting `bash -e` cut off the summary. NBA Weekly Retrain is green with a notice
+on a gate outcome, red on a failure, and its last job prints one table: model, outcome
+(promoted / rejected-by-champion / rejected-by-line / no-line-evidence / gate-failed /
+error), lined rows, model MAE, line MAE, side hit rate, champion MAE, gain vs needed.
+A job that died before writing its row shows as `error (no summary)`.
+
+Tests: `tests/test_promote_gate.py`, `test_nba_promote_flow.py`, `test_retrain_summary.py`,
+`test_wnba_nhl_line_gate.py`, `test_nfl_prod_qb_eval.py`.
