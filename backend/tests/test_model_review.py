@@ -112,7 +112,10 @@ def test_review_text_has_every_section_and_fixture_numbers(review_db):
     assert "voids (30d): 1" in text and "postponed" in text
     # NBA points: 10/40 calls; proj 30 vs mean actual 13.75 -> bias +16.25; line 20.5 MAE 9.00
     assert "NBA/player_prop/points: 10/40 calls 25.0% (below breakeven)" in text
-    assert "bias +16.25, MAE 16.25, line MAE 9.00 (n=40)" in text
+    assert (
+        "bias +16.25, MAE 16.25 vs line MAE 9.00 on 40 lined rows; "
+        "all-rows projection MAE 16.25 (n=40)"
+    ) in text
     assert "NHL/player_prop/saves" in text and "NFL/player_prop/passing_yards" in text
     # withheld key named with why
     assert "WITHHELD NBA/player_prop/points" in text and "shrunk ROI" in text

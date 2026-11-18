@@ -66,8 +66,13 @@ def _norm(v: Any) -> str:
 
 
 def _row(proj, line, actual, pick, ident, label, correct=None, **extra) -> dict:
-    """``extra``: NBA props add ``price`` (stored fanduel price) and ``best`` quote."""
+    """``extra``: every loader adds ``version`` (model version or None) and ``at``
+    (projection write time, naive UTC, or None); NBA props add ``price`` (stored
+    fanduel price) and ``best`` quote; NHL and NFL TD rows add ``over_price`` /
+    ``under_price``."""
     return {
+        "version": None,
+        "at": None,
         **extra,
         "proj": proj,
         "line": line,
@@ -127,21 +132,46 @@ def _nba_props(db, start, end) -> Loaded:
         stat, pf, af, cls = stats[part]
         out[("NBA", "player_prop", stat)] = (
             "ou",
-            [
-                _row(
-                    r.get(pf),
-                    r.get("fanduel_line"),
-                    r.get(af),
-                    r.get("fanduel_over_under"),
-                    (cls.__tablename__, r["date"], r["player_id"]),
-                    r.get("player_name") or f"player {r['player_id']}",
-                    price=r.get("fanduel_price"),
-                    best=_best_quote(r),
-                )
-                for r in rows
-            ],
+            [_nba_prop_row(r, cls, pf, af) for r in rows],
         )
     return out
+
+
+def _nba_prop_row(r: dict, cls, pf: str, af: str) -> dict:
+    return _row(
+        r.get(pf),
+        r.get("fanduel_line"),
+        r.get(af),
+        r.get("fanduel_over_under"),
+        (cls.__tablename__, r["date"], r["player_id"]),
+        r.get("player_name") or f"player {r['player_id']}",
+        price=r.get("fanduel_price"),
+        best=_best_quote(r),
+        version=r.get("model_version"),
+        at=r.get("projected_at"),
+    )
+
+
+def _nba_pra(db, start, end) -> Loaded:
+    from app.models.predictions_models import PRAActuals, PRAProjections
+    from app.services.nba_accuracy_service import _merge_actuals_range
+
+    P, A = PRAProjections, PRAActuals
+    proj = db.query(P).filter(P.date >= start, P.date <= end).all()
+    act = db.query(A).filter(A.date >= start, A.date <= end).all()
+    rows, _ = _merge_actuals_range(
+        proj,
+        act,
+        pid_attr="player_id",
+        actual_attr="actual_pra",
+        actual_key="actual_pra",
+    )
+    return {
+        ("NBA", "player_prop", "pra"): (
+            "ou",
+            [_nba_prop_row(r, P, "projected_pra", "actual_pra") for r in rows],
+        )
+    }
 
 
 def _version_key(kind: str, version) -> tuple:
@@ -186,6 +216,7 @@ def _nba_totals(db, start, end) -> Loaded:
                 pick,
                 (table, r.game_date, r.home_team_name, r.away_team_name),
                 f"{r.away_team_name} @ {r.home_team_name}",
+                version=version,
             )
         )
     return out
@@ -201,6 +232,7 @@ def _spread_rows(projs, merged) -> list[dict]:
             (p.__table__.name, p.game_date, p.home_team_name, p.away_team_name),
             f"{p.away_team_name} @ {p.home_team_name}",
             correct=m["spread_correct"],
+            version=p.model_version,
         )
         for p, m in zip(projs, merged)
     ]
@@ -230,10 +262,16 @@ def _nhl(db, start, end) -> Loaded:
     from app.models.predictions_models import (
         NHLGoalieActuals,
         NHLGoaliePredictions,
+        NHLPlayerShotsActuals,
+        NHLPlayerShotsPredictions,
         NHLTeamTotalsActuals,
         NHLTeamTotalsPredictions,
     )
-    from app.services.nhl_accuracy_service import _parse_pick
+    from app.services.nhl_accuracy_service import (
+        _latest_by_key,
+        _parse_pick,
+        _preseason,
+    )
 
     def q(model):
         return (
@@ -248,6 +286,8 @@ def _nhl(db, start, end) -> Loaded:
         if p.was_scratch:  # superseded starter: kept for history, not a call
             continue
         a = goalie_act.get((p.goalie_id, p.game_date))
+        if _preseason(p, a):
+            continue
         goalies.append(
             _row(
                 p.predicted_saves,
@@ -256,6 +296,30 @@ def _nhl(db, start, end) -> Loaded:
                 _parse_pick(p.betting_recommendation),
                 (p.__table__.name, p.game_date, p.goalie_id),
                 p.goalie_name,
+                version=p.model_version,
+                at=p.prediction_date,
+                over_price=p.over_odds,
+                under_price=p.under_odds,
+            )
+        )
+    shot_act = {(a.player_id, a.game_date): a for a in q(NHLPlayerShotsActuals)}
+    shots = []
+    for p in _latest_by_key(
+        q(NHLPlayerShotsPredictions), lambda p: (p.player_id, p.game_date)
+    ):
+        a = shot_act.get((p.player_id, p.game_date))
+        if _preseason(a):
+            continue
+        shots.append(
+            _row(
+                p.predicted_shots,
+                p.shots_line,
+                a.actual_shots if a else None,
+                _parse_pick(p.betting_recommendation),
+                (p.__table__.name, p.game_date, p.player_id),
+                p.player_name,
+                version=p.model_version,
+                at=p.prediction_date,
             )
         )
     tot_act = {
@@ -265,6 +329,8 @@ def _nhl(db, start, end) -> Loaded:
     totals = []
     for p in q(NHLTeamTotalsPredictions):
         a = tot_act.get((p.home_team_name, p.away_team_name, p.game_date))
+        if _preseason(p, a):
+            continue
         totals.append(
             _row(
                 p.predicted_total_goals,
@@ -273,10 +339,15 @@ def _nhl(db, start, end) -> Loaded:
                 _parse_pick(p.betting_recommendation),
                 (p.__table__.name, p.game_date, p.home_team_id, p.away_team_id),
                 f"{p.away_team_name} @ {p.home_team_name}",
+                version=p.model_version,
+                at=p.prediction_date,
+                over_price=p.over_odds,
+                under_price=p.under_odds,
             )
         )
     return {
         ("NHL", "player_prop", "saves"): ("ou", goalies),
+        ("NHL", "player_prop", "shots"): ("ou", shots),
         ("NHL", "total", None): ("ou", totals),
     }
 
@@ -287,11 +358,14 @@ def _nfl(db, start, end) -> Loaded:
         NFLSpreadProjections,
         NFLTotalsActuals,
         NFLTotalsProjections,
+        NFLAnytimeTDActuals,
+        NFLAnytimeTDPredictions,
         QBActuals,
         QBPredictions,
         RecvYdsActuals,
         RecvYdsPredictions,
     )
+    from app.services.nhl_accuracy_service import _latest_by_key
     from app.services.nfl_accuracy_service import (
         _game_date_only,
         _merge_actuals_qb_range,
@@ -317,6 +391,7 @@ def _nfl(db, start, end) -> Loaded:
             m["betting_recommendation"],
             (p.__table__.name, _game_date_only(p.game_date), p.qb_player_id),
             f"QB {p.qb_player_id}",
+            version=p.model_version,
         )
         for p, m in zip(qb_p, _merge_actuals_qb_range(qb_p, q(QBActuals)))
     ]
@@ -332,6 +407,7 @@ def _nfl(db, start, end) -> Loaded:
                 p.betting_recommendation,
                 (p.__table__.name, p.game_date, p.player_id),
                 p.player_name,
+                version=p.model_version,
             )
         )
     sp_p = q(NFLSpreadProjections)
@@ -345,19 +421,44 @@ def _nfl(db, start, end) -> Loaded:
             m["recommendation"],
             (p.__table__.name, p.game_date, p.home_team_name, p.away_team_name),
             f"{p.away_team_name} @ {p.home_team_name}",
+            version=p.model_version,
         )
         for p, m in zip(tot_p, _merge_actuals_totals(tot_p, q(NFLTotalsActuals)))
     ]
+    # Anytime TD as an "ou" row: projection = TD probability, line = the market's
+    # implied probability, actual 1/0, so (actual > line) == "scored" grades it.
+    td_act = {(a.player_id, a.game_date): a for a in q(NFLAnytimeTDActuals)}
+    td = []
+    for p in _latest_by_key(
+        q(NFLAnytimeTDPredictions), lambda p: (p.player_id, p.game_date)
+    ):
+        a = td_act.get((p.player_id, p.game_date))
+        td.append(
+            _row(
+                p.td_probability,
+                p.market_implied_prob,
+                None if a is None else float(bool(a.scored_anytime_td)),
+                p.recommendation,
+                (p.__table__.name, p.game_date, p.player_id),
+                p.player_name,
+                version=p.model_version,
+                at=p.prediction_date or p.created_at,
+                over_price=p.market_odds,  # the "yes" price; no "no" price is stored
+                under_price=None,
+            )
+        )
     return {
         ("NFL", "player_prop", "passing_yards"): ("ou", qb),
         ("NFL", "player_prop", "receiving_yards"): ("ou", recv),
         ("NFL", "spread", None): ("edge", spread),
         ("NFL", "total", None): ("ou", totals),
+        ("NFL", "player_prop", "anytime_td"): ("ou", td),
     }
 
 
 LOADERS: tuple[Callable[..., Loaded], ...] = (
     _nba_props,
+    _nba_pra,
     _nba_totals,
     _nba_spread,
     _nhl,
@@ -405,6 +506,27 @@ def row_grade(kind: str, row: dict) -> Optional[bool]:
     return (float(row["actual"]) > float(row["line"])) == over
 
 
+def _mae_block(rows: list[dict]) -> dict:
+    """Error maths on one row set. ``mae``/``bias``/``line_mae`` use only rows that
+    have projection, actual AND line, so they compare the model with the line on the
+    same rows; ``all_mae`` covers every row with a projection and an actual."""
+    scored = [r for r in rows if r["proj"] is not None and r["actual"] is not None]
+    lined = [r for r in scored if r["line"] is not None]
+    errs = [float(r["proj"]) - float(r["actual"]) for r in lined]
+    return {
+        "n": len(lined),
+        "bias": _r(_mean(errs)),
+        "mae": _r(_mean([abs(e) for e in errs])),
+        "line_mae": _r(
+            _mean([abs(float(r["line"]) - float(r["actual"])) for r in lined])
+        ),
+        "all_n": len(scored),
+        "all_mae": _r(
+            _mean([abs(float(r["proj"]) - float(r["actual"])) for r in scored])
+        ),
+    }
+
+
 def stats(kind: str, rows: list[dict]) -> dict:
     if kind == "edge":
         hits, graded = edge_play_graded_counts(
@@ -414,21 +536,11 @@ def stats(kind: str, rows: list[dict]) -> dict:
         hits, graded = ou_call_graded_counts(
             rows, line_field="line", pick_field="pick", actual_field="actual"
         )
-    scored = [r for r in rows if r["proj"] is not None and r["actual"] is not None]
-    errs = [float(r["proj"]) - float(r["actual"]) for r in scored]
-    line_errs = [
-        abs(float(r["line"]) - float(r["actual"]))
-        for r in scored
-        if r["line"] is not None
-    ]
     out = {
         "graded": graded,
         "hits": hits,
         "hit_rate": _r(hits / graded, 4) if graded else None,
-        "n": len(errs),
-        "bias": _r(_mean(errs)),
-        "mae": _r(_mean([abs(e) for e in errs])),
-        "line_mae": _r(_mean(line_errs)),
+        **_mae_block(rows),
     }
     if kind == "ou" and any("price" in r for r in rows):
         _, _, units, priced = ou_call_graded_record(
@@ -542,12 +654,83 @@ def _bets_section(db: Session, today: date) -> dict:
     }
 
 
+def _side(r: dict) -> Optional[str]:
+    """The projection's own call vs the stored line (None = equal or no line)."""
+    if r["proj"] is None or r["line"] is None or r["proj"] == r["line"]:
+        return None
+    return "over" if r["proj"] > r["line"] else "under"
+
+
+def _quote(r: dict, side: str) -> Optional[tuple]:
+    """(line, American price) really available for ``side``, or None. No -110 guess."""
+    if "over_price" in r or "under_price" in r:
+        price = r.get(f"{side}_price")
+        return (r["line"], price) if price else None
+    stored = (r.get("pick") or "").strip().lower()
+    if {"o": "over", "u": "under"}.get(stored, stored) != side:
+        return None  # only the stored side's price was kept
+    best = r.get("best")
+    if best:
+        return best[1], best[2]  # graded at the best quote's own line
+    return (r["line"], r["price"]) if r.get("price") else None
+
+
+def _current_record(kind: str, rows: list[dict]) -> Optional[dict]:
+    """Record of the model version on the latest game date, over its rows only.
+
+    "ou" rows are graded on the projection's side vs the stored line (stored sides
+    are unreliable before 2026-11-10) and valued only at real prices."""
+    if not rows:
+        return None
+    ver = lambda r: r.get("version") or "none"  # noqa: E731
+    latest = max(r["ident"][1] for r in rows)
+    on_latest = [ver(r) for r in rows if r["ident"][1] == latest]
+    version = max(set(on_latest), key=on_latest.count)
+    vrows = [r for r in rows if ver(r) == version]
+    out = {
+        "version": version,
+        "first_date": min(r["ident"][1] for r in vrows),
+        **_mae_block(vrows),
+    }
+    if kind == "edge":
+        hits, calls = edge_play_graded_counts(
+            vrows, pick_field="pick", correct_field="correct"
+        )
+        units = priced = None
+    else:
+        hits = calls = priced = 0
+        units = 0.0
+        for r in vrows:
+            side = _side(r)
+            res = ou_row_result(line=r["line"], pick=side, actual=r["actual"])
+            if res not in ("hit", "miss"):
+                continue
+            calls += 1
+            hits += res == "hit"
+            quote = _quote(r, side)
+            if quote:
+                priced += 1
+                units += units_for_result(
+                    ou_row_result(line=quote[0], pick=side, actual=r["actual"]),
+                    quote[1],
+                )
+        units = _r(units)
+    return {
+        **out,
+        "calls": calls,
+        "hits": hits,
+        "hit_rate": _r(hits / calls, 4) if calls else None,
+        "units": units,
+        "priced": priced,
+    }
+
+
 def _projection_section(cur: Loaded, prior: Loaded) -> list[dict]:
     out = []
     for key in sorted(cur, key=lambda k: tuple(p or "" for p in k)):
         kind, rows = cur[key]
         s = stats(kind, rows)
-        if not s["n"]:
+        if not s["all_n"]:
             continue
         p = stats(kind, prior.get(key, (kind, []))[1])
         out.append(
@@ -557,6 +740,7 @@ def _projection_section(cur: Loaded, prior: Loaded) -> list[dict]:
                 **s,
                 "breakeven": BREAKEVEN,
                 "prior": p,
+                "current": _current_record(kind, rows),
                 "hit_rate_trend": (
                     _r(s["hit_rate"] - p["hit_rate"], 4)
                     if s["hit_rate"] is not None and p["hit_rate"] is not None
@@ -570,6 +754,104 @@ def _projection_section(cur: Loaded, prior: Loaded) -> list[dict]:
             }
         )
     return out
+
+
+BOARD_SPORT_KEYS = {
+    "NBA": "basketball_nba",
+    "NHL": "icehockey_nhl",
+    "NFL": "americanfootball_nfl",
+}
+BOARD_HISTORY_SLATES = 14
+BOARD_THIN_SHARE = 0.5
+
+
+def _board_tables() -> dict:
+    """Every loader key (versions folded) -> (projection class, game date column)."""
+    from app.models import predictions_models as pm
+
+    return {
+        ("NBA", "player_prop", "points"): (pm.PointsProjections, "date"),
+        ("NBA", "player_prop", "threes"): (pm.ThreePointProjections, "date"),
+        ("NBA", "player_prop", "steals"): (pm.StealsProjections, "date"),
+        ("NBA", "player_prop", "assists"): (pm.AssistsProjections, "date"),
+        ("NBA", "player_prop", "rebounds"): (pm.ReboundsProjections, "date"),
+        ("NBA", "player_prop", "pra"): (pm.PRAProjections, "date"),
+        ("NBA", "total", None): (pm.NBATotalsProjections, "game_date"),
+        ("NBA", "spread", None): (pm.NBASpreadProjections, "game_date"),
+        ("NHL", "player_prop", "saves"): (pm.NHLGoaliePredictions, "game_date"),
+        ("NHL", "player_prop", "shots"): (pm.NHLPlayerShotsPredictions, "game_date"),
+        ("NHL", "total", None): (pm.NHLTeamTotalsPredictions, "game_date"),
+        ("NFL", "player_prop", "passing_yards"): (pm.QBPredictions, "game_date"),
+        ("NFL", "player_prop", "receiving_yards"): (
+            pm.RecvYdsPredictions,
+            "game_date",
+        ),
+        ("NFL", "player_prop", "anytime_td"): (pm.NFLAnytimeTDPredictions, "game_date"),
+        ("NFL", "spread", None): (pm.NFLSpreadProjections, "game_date"),
+        ("NFL", "total", None): (pm.NFLTotalsProjections, "game_date"),
+    }
+
+
+def _games_by_et_date(db: Session, sport_key: str, lo: date, hi: date) -> dict:
+    from app.models.database_models import Game
+
+    out: dict[date, int] = defaultdict(int)
+    for (ct,) in db.query(Game.commence_time).filter(
+        Game.sport_key == sport_key,
+        Game.commence_time >= _day_start_utc(lo),
+        Game.commence_time < _day_start_utc(hi + timedelta(days=1)),
+    ):
+        out[ct.replace(tzinfo=timezone.utc).astimezone(EASTERN).date()] += 1
+    return out
+
+
+def _board_counts_section(db: Session, today: date) -> dict:
+    """Projection rows written per key for the last two slates vs what the schedule
+    and the key's own recent rows-per-game say to expect (flags: empty / thin)."""
+    lo = today - timedelta(days=BOARD_HISTORY_SLATES + 1)
+    games = {
+        sp: _games_by_et_date(db, sk, lo, today) for sp, sk in BOARD_SPORT_KEYS.items()
+    }
+    slates = [today - timedelta(days=1), today]
+    keys, flagged = [], []
+    for key, (cls, col) in _board_tables().items():
+        dcol = func.date(getattr(cls, col))
+        rows_by_day = {
+            _norm(d): n
+            for d, n in db.query(dcol, func.count())
+            .filter(dcol >= lo, dcol <= today)
+            .group_by(dcol)
+            .all()
+        }
+        g = games[key[0]]
+        for slate in slates:
+            rows, n_games = rows_by_day.get(str(slate), 0), g.get(slate, 0)
+            per_game = [
+                rows_by_day[str(d)] / g[d]
+                for d in (slate - timedelta(days=i) for i in range(1, 15))
+                if g.get(d) and rows_by_day.get(str(d))
+            ]
+            expected = n_games * median(per_game) if per_game else None
+            if not n_games:
+                flag = "no schedule"
+            elif not rows:
+                flag = "empty"
+            elif expected is not None and rows < BOARD_THIN_SHARE * expected:
+                flag = "thin"
+            else:
+                flag = None
+            row = {
+                "date": slate.isoformat(),
+                "key": record_gate.key_label(key),
+                "rows": rows,
+                "expected": None if expected is None else _r(expected, 1),
+                "games": n_games,
+                "flag": flag,
+            }
+            keys.append(row)
+            if flag in ("empty", "thin"):
+                flagged.append(row)
+    return {"keys": keys, "flagged": flagged}
 
 
 def _totals_history(tp, db: Session, today: date):
@@ -668,7 +950,8 @@ def _misses_section(db: Session, today: date, cur: Loaded) -> dict:
     day = today - timedelta(days=1)
     rows = []
     for key, (kind, rs) in load_rows(db, day, day).items():
-        mae = stats(kind, cur.get(key, (kind, []))[1])["mae"]
+        st = stats(kind, cur.get(key, (kind, []))[1])
+        mae = st["mae"] or st["all_mae"]
         for r in rs:
             if r["proj"] is None or r["actual"] is None:
                 continue
@@ -1114,6 +1397,7 @@ def build_review(db: Session, today: date) -> dict:
         "date": today.isoformat(),
         "bets": _safe(db, _bets_section, db, today),
         "projections": _safe(db, _projection_section, cur, prior),
+        "board_counts": _safe(db, _board_counts_section, db, today),
         "gate": _safe(db, _gate_section, db, today),
         "misses": _safe(db, _misses_section, db, today, cur),
         "disagreements": _safe(db, _disagreements_section, db, today, cur),
@@ -1243,8 +1527,36 @@ def render_text(review: dict) -> str:
             )
             L.append(
                 f"  {p['key']}: {p['hits']}/{p['graded']} calls {_pct(p['hit_rate'])}{vs}{priced}; "
-                f"bias {_num(p['bias'], True)}, MAE {_num(p['mae'])}, "
-                f"line MAE {_num(p['line_mae'])} (n={p['n']}){trend}{mt}"
+                f"bias {_num(p['bias'], True)}, MAE {_num(p['mae'])} vs line MAE "
+                f"{_num(p['line_mae'])} on {p['n']} lined rows; all-rows projection "
+                f"MAE {_num(p['all_mae'])} (n={p['all_n']}){trend}{mt}"
+            )
+            c = p.get("current")
+            if c:
+                u = (
+                    "units n/a"
+                    if c["units"] is None
+                    else f"units {c['units']:+.1f} (priced {c['priced']}/{c['calls']})"
+                )
+                L.append(
+                    f"    current {c['version']} since {c['first_date']}: "
+                    f"{c['hits']}/{c['calls']} calls {_pct(c['hit_rate'])}, {u}, "
+                    f"MAE {_num(c['mae'])} vs line MAE {_num(c['line_mae'])} "
+                    f"on {c['n']} lined rows"
+                )
+    L.append("")
+
+    L.append("== Board row counts ==")
+    bc = review.get("board_counts", {"unavailable": "not built"})
+    if _unavailable(bc):
+        L.append(_unavailable(bc))
+    else:
+        for k in bc["keys"]:
+            exp = "n/a" if k["expected"] is None else f"{k['expected']:g}"
+            flag = f"  <-- {k['flag'].upper()}" if k["flag"] else ""
+            L.append(
+                f"  {k['date']} {k['key']}: rows {k['rows']} / expected {exp} "
+                f"(games {k['games']}){flag}"
             )
     L.append("")
 
