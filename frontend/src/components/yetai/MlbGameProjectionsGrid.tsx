@@ -205,7 +205,7 @@ function verdictClass(valueRating: string, hasPick: boolean): string {
 function verdictLabel(valueRating: string, hasPick: boolean): string {
   if (valueRating === 'Strong') return 'Strong value';
   if (hasPick || valueRating === 'Lean') return 'Model lean';
-  return 'No edge';
+  return 'No pick';
 }
 
 export default function GameProjectionsGrid({
@@ -244,9 +244,9 @@ export default function GameProjectionsGrid({
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         <StatChip label="Games" value={String(rows.length)} />
         <StatChip
-          label="Strong value"
+          label="Strong picks"
           value={String(strong)}
-          sub={strong === 0 ? 'no high-edge plays' : `${strong} ${strong === 1 ? 'pick' : 'picks'} with edge`}
+          sub={strong === 0 ? 'no picks today' : `${strong} ${strong === 1 ? 'pick' : 'picks'} with edge`}
           muted={strong === 0}
         />
       </div>

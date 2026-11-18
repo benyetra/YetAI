@@ -1137,6 +1137,7 @@ input { font: inherit; }
   background: color-mix(in oklab, var(--win-soft) 70%, var(--surface-2));
 }
 .data-table td.prop-edge-cell { color: var(--win); }
+.data-table td.prop-edge-cell.cell-empty { color: var(--text-3); }
 .data-table td.prop-conf-cell { color: var(--text-2); }
 .data-table tr.is-strong-play td.prop-pick-cell,
 .data-table tr.is-strong-play td.prop-conf-cell { color: var(--win); font-weight: 500; }

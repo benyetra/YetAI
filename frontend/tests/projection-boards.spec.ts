@@ -17,6 +17,8 @@ function authToken(): string {
 }
 
 async function mockBoard(page: Page, sport: BoardSport, state: BoardState) {
+  // The app opens ws://localhost:8000/ws/<user>; with no backend it logs a refused-connection error (the dev overlay's "1 Issue"). Accept it silently.
+  await page.routeWebSocket(/\/ws\//, () => {});
   const user = { id: 1, email: 'boards@test.com', username: 'testuser', is_verified: true, is_premium: true };
   await page.addInitScript(
     ({ token, u }) => {
@@ -40,6 +42,7 @@ async function mockBoard(page: Page, sport: BoardSport, state: BoardState) {
 async function load(page: Page, sport: BoardSport, state: BoardState) {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => m.type() === 'error' && errors.push(`console: ${m.text()}`));
   await mockBoard(page, sport, state);
   await page.goto(`/predictions/${sport}`);
   await expect(page.getByRole('heading', { name: `${sport.toUpperCase()} Stat Projections`, exact: false })).toBeVisible();
