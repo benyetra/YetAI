@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from app.models.predictions_models import KickerPredictions, Kickers
 from app.services.etl.nfl import kickers
+from app.services.etl.nfl.nfl_common import now_eastern_naive
 
 
 def _run_with_next_game(monkeypatch, kickoff_utc: datetime):
@@ -61,7 +62,7 @@ def test_started_game_is_never_rewritten(monkeypatch):
         {
             "player_id": 1,
             "name": "K",
-            "game_time": datetime.now() - timedelta(hours=2),
+            "game_time": now_eastern_naive() - timedelta(hours=2),  # naive = Eastern
         }
     )
     assert called == []
