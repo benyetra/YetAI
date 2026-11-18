@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -67,6 +67,8 @@ def _save_payload(**overrides):
 
 
 def test_rerun_updates_the_games_row_instead_of_keeping_the_first(monkeypatch):
+    # Kickoff must be ahead of now: started games are frozen (see offseason test).
+    kickoff = datetime.now().replace(microsecond=0) + timedelta(days=2)
     existing = SimpleNamespace(predicted_fg_made=1.2, game_date=None)
     added = []
     session = MagicMock()
@@ -75,10 +77,12 @@ def test_rerun_updates_the_games_row_instead_of_keeping_the_first(monkeypatch):
     session.add.side_effect = added.append
     monkeypatch.setattr(kickers, "db_session", session)
 
-    kickers.save_kicker_data(_save_payload(projected_field_goals=2.1))
+    kickers.save_kicker_data(
+        _save_payload(projected_field_goals=2.1, game_time=kickoff)
+    )
 
     assert existing.predicted_fg_made == 2.1
-    assert existing.game_date == datetime(2026, 11, 15, 13, 0)
+    assert existing.game_date == kickoff
     assert existing.roof_type == "dome"
     assert not [o for o in added if o.__class__.__name__ == "KickerPredictions"]
 
