@@ -36,7 +36,6 @@ export function quoteNote(q: Pick<PickQuote, 'price' | 'book'>): string {
 export function pickQuoteOf(row: Record<string, unknown> | undefined, prefix: 'spread' | 'total'): PickQuote | null {
   const line = Number(row?.[`${prefix}_best_line`]);
   if (!row || row[`${prefix}_best_line`] == null || !Number.isFinite(line)) return null;
-  const price = Number(row[`${prefix}_best_price`]);
   const opt = (k: string): number | null => {
     const v = row[`${prefix}_${k}`];
     return v == null || !Number.isFinite(Number(v)) ? null : Number(v);
