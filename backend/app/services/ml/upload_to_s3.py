@@ -85,6 +85,58 @@ def score_live_mae(
     )
 
 
+def _predict_with(
+    live_body: bytes, meta_key: str, X_hold: pd.DataFrame, fill: float, s3
+) -> np.ndarray:
+    """Predictions of a pickled model on ``X_hold`` using the feature list in its
+    stored metadata (features the holdout lacks are filled with ``fill``)."""
+    raw = model_store.get_bytes(s3, S3_BUCKET, meta_key)
+    if raw is None:
+        raise ValueError(f"live metadata {meta_key} missing")
+    meta = json.loads(raw)
+    feats = meta.get("feature_names") or meta.get("features")
+    if not feats:
+        raise ValueError("live metadata has no feature list")
+    X = pd.DataFrame(
+        {f: X_hold[f] if f in X_hold.columns else fill for f in feats},
+        index=X_hold.index,
+    ).apply(pd.to_numeric, errors="coerce")
+    X = X.replace([np.inf, -np.inf], np.nan)
+    if not np.isnan(fill):
+        X = X.fillna(fill)
+    live = pickle.loads(live_body)  # nosec B301 - our own private bucket
+    return np.asarray(live.predict(X), dtype=float)
+
+
+def live_predictions(
+    model_key: str,
+    meta_key: str,
+    X_hold: pd.DataFrame,
+    *,
+    fill: float = 0.0,
+    s3=None,
+) -> np.ndarray | None:
+    """The live model's predictions on the candidate's holdout, or None when no
+    live model exists. Raises ValueError if its metadata or feature list is missing."""
+    s3 = s3 or boto3.client("s3")
+    body = model_store.get_bytes(s3, S3_BUCKET, model_key)
+    if body is None:
+        return None
+    return _predict_with(body, meta_key, X_hold, fill, s3)
+
+
+def live_prop_predictions(
+    config: LeagueMLConfig, stat_col: str, X_hold: pd.DataFrame, *, fill: float = 0.0
+) -> np.ndarray | None:
+    """``live_predictions`` for the live ``xgb_<stat>.pkl``."""
+    return live_predictions(
+        f"{config.s3_prefix}/xgb_{stat_col}.pkl",
+        f"{config.s3_prefix}/xgb_{stat_col}_metadata.json",
+        X_hold,
+        fill=fill,
+    )
+
+
 def score_live_pickle(
     meta_key: str,
     X_hold: pd.DataFrame,
@@ -98,22 +150,7 @@ def score_live_pickle(
     is the residual target minus the residual prediction."""
 
     def score(live_body: bytes) -> float:
-        raw = model_store.get_bytes(boto3.client("s3"), S3_BUCKET, meta_key)
-        if raw is None:
-            raise ValueError(f"live metadata {meta_key} missing")
-        meta = json.loads(raw)
-        feats = meta.get("feature_names") or meta.get("features")
-        if not feats:
-            raise ValueError("live metadata has no feature list")
-        X = pd.DataFrame(
-            {f: X_hold[f] if f in X_hold.columns else fill for f in feats},
-            index=X_hold.index,
-        ).apply(pd.to_numeric, errors="coerce")
-        X = X.replace([np.inf, -np.inf], np.nan)
-        if not np.isnan(fill):
-            X = X.fillna(fill)
-        live = pickle.loads(live_body)  # nosec B301 - our own private bucket
-        pred = np.asarray(live.predict(X), dtype=float)
+        pred = _predict_with(live_body, meta_key, X_hold, fill, boto3.client("s3"))
         return float(np.mean(np.abs(pred - np.asarray(y_hold, dtype=float))))
 
     return score

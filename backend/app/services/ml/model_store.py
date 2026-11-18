@@ -208,7 +208,7 @@ def gated_upload(
     ``champion_metric=None`` and a reason. ``extra_files`` maps basename ->
     bytes written next to the model (e.g. the metadata JSON).
 
-    ``line_gate`` (a ``beats_line_gate`` result) is a hard pre-check: when it does
+    ``line_gate`` (any ``promote_gate`` result) is a hard pre-check: when it does
     not pass, nothing is read or written on S3. When it passes it goes in the
     manifest. None (default) leaves behaviour unchanged.
     """
@@ -220,7 +220,9 @@ def gated_upload(
         )
         return {
             "status": "rejected_by_line_gate",
-            "reason": ",".join(line_gate.get("failed") or []),
+            "reason": ",".join(
+                line_gate.get("failed") or [line_gate.get("reason") or ""]
+            ),
             "metric_name": metric_name,
             "candidate_metric": candidate_metric,
             "line_gate": line_gate,
