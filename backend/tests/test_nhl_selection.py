@@ -317,7 +317,8 @@ def test_refresh_writes_three_markets_from_one_payload_per_event(monkeypatch, se
     ):
         now.return_value.date.return_value = D
         out = dp.run_goalie_refresh()
-    assert fetches == [gdp._NHL_EVENT_ODDS_MARKETS]  # one call, all three markets
+    # one moneyline capture, then one event call with all three markets
+    assert fetches == ["h2h", gdp._NHL_EVENT_ODDS_MARKETS]
     assert out["player_predictions"] == 1 and out["team_totals_predictions"] == 1
     shot = session.query(NHLPlayerShotsPredictions).one()
     assert shot.shots_line == 2.5

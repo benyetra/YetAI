@@ -6,6 +6,7 @@ Generates goalie save predictions for today's games with Fanatics lines integrat
 import sys
 import os
 
+from app.services.etl.nba._fanduel_lines import PROP_BOOKS
 from app.services.etl.nhl._db import db_session
 from app.models.predictions_models import (
     NHLGoaliePredictions,
@@ -39,6 +40,34 @@ def clear_nhl_event_odds_cache() -> None:
     _nhl_event_odds_cache.clear()
 
 
+def capture_nhl_moneylines() -> bool:
+    """One bulk h2h call per NHL run (1 credit) so the snapshot hook records every
+    book's moneyline. Nothing is attached: no NHL moneyline model exists. Never raises.
+    """
+    if not ODDS_API_KEY:
+        return False
+    try:
+        from app.services.odds_api_sync import sync_odds_get
+
+        resp = sync_odds_get(
+            f"{ODDS_API_BASE}/sports/{SPORT}/odds",
+            params={
+                "apiKey": ODDS_API_KEY,
+                "regions": "us",
+                "markets": "h2h",
+                "oddsFormat": "american",
+                "bookmakers": PROP_BOOKS,
+            },
+            caller="etl.nhl.moneylines",
+            timeout=10,
+            raise_for_status=False,
+        )
+        return resp is not None and resp.status_code == 200
+    except Exception:
+        logging.exception("NHL moneyline capture failed")
+        return False
+
+
 def _fetch_nhl_event_odds_payload(
     event_id: str, markets: str = _NHL_EVENT_ODDS_MARKETS
 ) -> dict:
@@ -61,7 +90,9 @@ def _fetch_nhl_event_odds_payload(
         "apiKey": ODDS_API_KEY,
         "regions": "us",
         "markets": markets,
-        "bookmakers": "draftkings",
+        # 10 books = 1 region = same credits. Parsers below still read only
+        # draftkings (by key); the others feed the consensus snapshots.
+        "bookmakers": PROP_BOOKS,
         "oddsFormat": "american",
     }
     resp = sync_odds_get(

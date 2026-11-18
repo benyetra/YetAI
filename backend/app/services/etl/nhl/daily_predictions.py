@@ -39,9 +39,11 @@ from app.services.etl.nhl.generate_daily_predictions import (
     get_player_shots_odds_for_event,
     get_team_totals_odds_for_event,
     get_odds_api_team_name,
+    capture_nhl_moneylines,
     clear_nhl_event_odds_cache,
 )
 from datetime import datetime, date, timedelta, timezone
+from app.services.etl._consensus_attach import line_fields
 from app.services.etl._game_start import EASTERN, keep_known, not_started
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nhl._config import get_nhl_season
@@ -331,10 +333,22 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
                     features_used=write["features_used"],
                     prediction_date=datetime.utcnow(),
                 )
+                # best_* are overwritten (None too) on every write: keep_known would
+                # keep an old price when this run's capture was refused.
+                best = line_fields(
+                    db_session,
+                    event_id=event_id,
+                    market="player_total_saves",
+                    projection=values["predicted_saves"],
+                    line=saves_line,
+                    player=slot.full_name or goalie_name,
+                )
                 if existing:
                     keep_known(existing, values)
+                    for key, value in best.items():
+                        setattr(existing, key, value)
                 else:
-                    db_session.add(NHLGoaliePredictions(**values))
+                    db_session.add(NHLGoaliePredictions(**values, **best))
                 predictions_generated += 1
                 logging.info(
                     "✅ %s: %.1f saves predicted (%s)",
@@ -646,6 +660,13 @@ def generate_team_totals_predictions(games, odds_events):
                     betting_recommendation=totals_edge.recommendation,
                     model_version=write["model_version"],
                     features_used=write["features_used"],
+                    **line_fields(
+                        db_session,
+                        event_id=event["id"] if event else None,
+                        market="totals",
+                        projection=write["predicted_total_goals"],
+                        line=draftkings_ou_line,
+                    ),
                 )
                 db_session.add(db_pred)
                 predictions_generated += 1
@@ -715,6 +736,7 @@ def _run_daily_core() -> dict:
 
     logging.info("Fetching betting odds from The Odds API...")
     odds_events = get_nhl_events_from_odds_api()
+    capture_nhl_moneylines()
     logging.info(f"📊 Found {len(odds_events)} events in odds feed\n")
 
     stats_updated = update_nhl_stats()
@@ -806,6 +828,7 @@ def run_goalie_refresh() -> dict:
             }
         clear_nhl_event_odds_cache()
         odds_events = get_nhl_events_from_odds_api()
+        capture_nhl_moneylines()
         goalie_count = generate_goalie_predictions(games, odds_events)
         player_count = generate_player_predictions(games, odds_events)
         team_count = generate_team_totals_predictions(games, odds_events)
