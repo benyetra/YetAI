@@ -1263,6 +1263,7 @@ class PointsProjections(Base):
     best_book = Column(String(64), nullable=True)
     best_line = Column(Float, nullable=True)
     best_price = Column(Integer, nullable=True)
+    low_sample = Column(Boolean, nullable=True)  # < 5 current-season games
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1297,6 +1298,7 @@ class ThreePointProjections(Base):
     best_book = Column(String(64), nullable=True)
     best_line = Column(Float, nullable=True)
     best_price = Column(Integer, nullable=True)
+    low_sample = Column(Boolean, nullable=True)  # < 5 current-season games
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1439,6 +1441,7 @@ class StealsProjections(Base):
     best_book = Column(String(64), nullable=True)
     best_line = Column(Float, nullable=True)
     best_price = Column(Integer, nullable=True)
+    low_sample = Column(Boolean, nullable=True)  # < 5 current-season games
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1509,6 +1512,7 @@ class AssistsProjections(Base):
     best_book = Column(String(64), nullable=True)
     best_line = Column(Float, nullable=True)
     best_price = Column(Integer, nullable=True)
+    low_sample = Column(Boolean, nullable=True)  # < 5 current-season games
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1546,6 +1550,7 @@ class ReboundsProjections(Base):
     best_book = Column(String(64), nullable=True)
     best_line = Column(Float, nullable=True)
     best_price = Column(Integer, nullable=True)
+    low_sample = Column(Boolean, nullable=True)  # < 5 current-season games
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator

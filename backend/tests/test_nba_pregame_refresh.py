@@ -36,3 +36,11 @@ def test_pregame_refresh_is_scheduled_and_can_be_disabled(monkeypatch):
     assert entry["task"] == ep.run_nba_pregame_refresh.name
     monkeypatch.setenv("NBA_PREGAME_REFRESH_ENABLED", "0")
     assert ep.run_nba_pregame_refresh.run() == {"status": "disabled"}
+
+
+def test_late_refresh_runs_the_same_task_at_1830_and_expires_in_an_hour():
+    late = celery_app.conf.beat_schedule["nba-pregame-refresh-late"]
+    early = celery_app.conf.beat_schedule["nba-pregame-refresh"]
+    assert late["task"] == early["task"] == ep.run_nba_pregame_refresh.name
+    assert late["schedule"]._orig_hour == 18 and late["schedule"]._orig_minute == 30
+    assert late["options"] == {"expires": 3600}

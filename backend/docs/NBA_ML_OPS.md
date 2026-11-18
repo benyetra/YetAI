@@ -92,6 +92,28 @@ weekly retrain and keep their inherited models.
   injury also deletes his row for today (`_stale_rows`); otherwise the 3:30 ET
   projection, line and pick stay on the board after he is declared out.
 
+## Availability features (v4)
+
+Feature version 4 adds team availability and role to the prop features: the
+minutes and usage shares of teammates who are out or doubtful, each player's
+rotation share, a return-from-absence flag and a `low_sample` flag (fewer than
+5 current-season games).
+
+- **Training vs serving.** Training rebuilds them from box-score history (who
+  actually played). Serving uses today's `PlayerInjuryStatus` and
+  `TodayActivePlayers`, so a late scratch changes a teammate's projection.
+- **Nothing changes until a model is retrained on v4 and passes the promote
+  gate.** Generators build the feature version the loaded model declares in its
+  metadata (`features_version`, 3 when absent), so v3 champions keep serving the
+  v3 features and no multiplier or post-model adjustment is applied.
+- **Late refresh.** `nba-pregame-refresh-late` re-runs the pregame refresh at
+  18:30 ET (lineups are due 30 minutes before a 19:00 tip). Games that have
+  started are skipped; it obeys `NBA_PREGAME_REFRESH_ENABLED` and spends Odds API
+  credits like the other refreshes.
+- **`low_sample`.** Written on every row of the points, rebounds, assists, threes
+  and steals projection tables (null on older rows). It flags projections built
+  on a thin current-season sample; it does not change the number.
+
 ## Season rollover (each October)
 
 1. Add the new opening night to `REGULAR_SEASON_START` in

@@ -25,7 +25,7 @@ from app.services.etl.nba._fanduel_lines import (
     line_diagnostics,
 )
 from app.services.etl.nba.prop_calibration import maybe_attach_p_over
-from app.services.etl.nba._ml_predict import predict
+from app.services.etl.nba._ml_predict import features_version, predict
 from app.services.ml_model_version import (
     attach_model_version,
     resolve_nba_prop_model_version,
@@ -103,12 +103,14 @@ def run() -> dict:
                     game_date=today,
                     opponent_team_id=player.opponent_team_id,
                     stat_col=STAT,
+                    version=features_version(STAT),
                 )
                 if features is None:
                     skipped_insufficient += 1
                     continue
 
                 prediction = predict(STAT, features)
+                low_sample = bool(features.get("low_sample"))
                 projected = max(0.0, round(prediction, 2))
 
                 existing = (
@@ -136,6 +138,7 @@ def run() -> dict:
                     db.add(row)
                     created += 1
                 attach_model_version(row, model_version)
+                row.low_sample = low_sample
                 if apply_fanduel_to_projection(
                     row,
                     team_name=player.team_name,
