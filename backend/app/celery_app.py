@@ -187,6 +187,14 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=15, minute=30, day_of_week="0"),
         "options": {"expires": 7200},
     },
+    # Mon/Thu 17:00 ET: the runs that matter for MNF/TNF, before the last auto-pick
+    # run (17:30) so those picks see the refreshed availability.
+    "nfl-gameday-availability-mon-pre-pick": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=17, minute=0, day_of_week="1"),
+        "options": {"expires": 1800},
+    },
+    # Informational only (board, after the last pick run at 17:30): no pick sees it.
     "nfl-gameday-availability-mon": {
         "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
         "schedule": crontab(hour=18, minute=0, day_of_week="1"),
@@ -197,6 +205,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=10, minute=0, day_of_week="4"),
         "options": {"expires": 7200},
     },
+    "nfl-gameday-availability-thu-pre-pick": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=17, minute=0, day_of_week="4"),
+        "options": {"expires": 1800},
+    },
+    # Informational only (board, after the last pick run at 17:30): no pick sees it.
     "nfl-gameday-availability-thu-pm": {
         "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
         "schedule": crontab(hour=19, minute=0, day_of_week="4"),
@@ -369,3 +383,19 @@ if auto_picks_enabled():
         "schedule": crontab(minute="*/5"),
         "options": {"expires": 240},
     }
+
+
+# Every beat entry gets an `expires`: with task_acks_late and a 24 h visibility_timeout,
+# a message left unacked by a killed worker is redelivered ~24 h later and would run a
+# day late. 6 h is longer than any slot's tolerable lateness (the longest explicit
+# expiry in this file is 6 h, MLB profile rebuild); entries that set their own keep it.
+DEFAULT_BEAT_EXPIRES_S = 21600
+
+
+def apply_default_expires(schedule: dict) -> None:
+    for entry in schedule.values():
+        entry.setdefault("options", {}).setdefault("expires", DEFAULT_BEAT_EXPIRES_S)
+
+
+# Last, after every conditional entry (WNBA/MLB/auto-pick) is registered.
+apply_default_expires(celery_app.conf.beat_schedule)
