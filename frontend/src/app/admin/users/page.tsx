@@ -601,7 +601,7 @@ export default function AdminUsersPage() {
               </div>
 
               <p className="text-sm muted mb-4">
-                The user's password has been reset. Share this temporary password with them:
+                The user&apos;s password has been reset. Share this temporary password with them:
               </p>
 
               <div className="bg-gray-100 rounded-lg p-4 font-mono text-center text-lg">

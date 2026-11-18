@@ -105,7 +105,7 @@ export default function ChatPage() {
                       <span className="text-xs text-gray-500">just now</span>
                     </div>
                     <p className="text-sm text-gray-700">
-                      Welcome to the YetAI community! I'm here to help with betting insights and answer questions.
+                      Welcome to the YetAI community! I&apos;m here to help with betting insights and answer questions.
                     </p>
                   </div>
                 </div>

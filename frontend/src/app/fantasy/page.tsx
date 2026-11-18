@@ -2659,7 +2659,7 @@ needLevel === 'critical' ? 'bg-red-100 text-red-800' :
                                     }
                                     
                                     const aiContext = leagueRules.ai_context;
-                                    let contextMatches = [];
+                                    const contextMatches = [];
                                     
                                     if (aiContext.prioritize_volume && ['WR', 'TE'].includes(player.position)) {
                                       const targetShare = (player.analytics?.target_share || 0) * 100;
@@ -3277,7 +3277,7 @@ isMax ? 'bg-green-500' :
               
               <div className="mb-6 text-center">
                 <p className="muted mb-2">
-                  Are you sure you want to disconnect <strong>"{leagueToDisconnect.name}"</strong>?
+                  Are you sure you want to disconnect <strong>&quot;{leagueToDisconnect.name}&quot;</strong>?
                 </p>
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-4">
                   <div className="flex items-center gap-2 mb-2">
