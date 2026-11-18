@@ -17,6 +17,7 @@ from app.services import odds_math
 from app.services.fair_price import backtest, shadow
 
 DECISION_N = 300
+DECISION_DATES = 30  # fp-shadow-v2: the sample also needs this many game dates
 ROI_N = 3000
 H2_EXCLUDED_BOOK = "espnbet"
 STALE_HOURS = 36
@@ -77,19 +78,35 @@ def _roi_stage(fs: list[dict]) -> str:
     return "not distinguishable from break-even"
 
 
+def _decision_size(fs: list[dict]) -> int | None:
+    """Length of the decision sample: the shortest prefix with DECISION_N flags on
+    DECISION_DATES game dates. None while it is still open."""
+    dates: set = set()
+    for i, f in enumerate(fs, 1):
+        dates.add(f["game_date"])
+        if i >= DECISION_N and len(dates) >= DECISION_DATES:
+            return i
+    return None
+
+
 def _sample(fs: list[dict]) -> dict:
     n = len(fs)
+    n_dates = len({f["game_date"] for f in fs})
+    size = _decision_size(fs)
     out = {
         "n": n,
-        "progress": f"{min(n, DECISION_N)}/{DECISION_N}",
+        "progress": (
+            f"{min(n, DECISION_N)}/{DECISION_N} flags, "
+            f"{min(n_dates, DECISION_DATES)}/{DECISION_DATES} game dates"
+        ),
         "progress_roi": f"{min(n, ROI_N)}/{ROI_N}",
         "all": backtest.score_row(_views(fs)),
         "roi_stage": _roi_stage(fs),
     }
-    if n < DECISION_N:
-        out["verdict"] = f"pending ({n}/{DECISION_N})"
+    if size is None:
+        out["verdict"] = f"pending ({out['progress']})"
         return out
-    first = fs[:DECISION_N]
+    first = fs[:size]
     blk = backtest._verdict_block(first, backtest.Params())
     out.update(
         verdict=blk["verdict"],
@@ -265,7 +282,7 @@ def _sample_lines(name: str, s: dict) -> list[str]:
     L.append(_row_line("    graded so far", s["all"]))
     L.append(f"    verdict: {s['verdict']}")
     if "decision" in s:
-        L.append(_row_line("    first 300", s["decision"]))
+        L.append(_row_line("    decision sample", s["decision"]))
         L.append(_row_line("    random baseline", s["random"]))
         d = s["paired_clv_diff"]
         if d["mean"] is not None:

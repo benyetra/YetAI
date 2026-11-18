@@ -1,4 +1,4 @@
-# Fair-price shadow: the decision rule (fixed 2026-11-15, before any live flag was graded)
+# Fair-price shadow: the decision rule (fixed 2026-11-15; amended to `fp-shadow-v2` on 2026-11-17)
 
 Companion to docs/edge-engine-design.md (Phase 1a) and docs/edge-engine-backtest-2025-26.md
 (verdict INCONCLUSIVE, case (a): "build the live flags in shadow, publish nothing, decide after 300
@@ -7,6 +7,31 @@ is, what is measured, and what each outcome means. It is committed on its own, b
 that adds grading, so the history shows the rule came first. Changing anything below after
 grading starts requires a new rule version and a fresh sample; the old sample is then reported
 as it stands, never merged into the new one.
+
+## Amendment, 2026-11-17: rule version `fp-shadow-v2`
+
+Made by the owner's decision after the 2026-11-17 review (docs/projection-review-2026-11-17.md,
+item B1), under this file's own terms: a change after grading starts means a new rule version and
+a fresh sample.
+
+- **Why.** The 300-flag sample was filling in days, not weeks (about 350 flags a slate), so the
+  verdict would have rested on about five game dates. Intervals are clustered by game date; with
+  so few dates the normal interval is far too narrow. The 11-17 review printed CLV -1.1 points
+  [-1.2, -1.0] from two dates, where the honest half-width is about 1.1 points. Simulated with no
+  true CLV, NO GO fired 6 to 7% of the time on four or five dates against the intended 2.5%.
+- **What changed.** (1) The decision sample is the first graded primary flags, in the same order,
+  up to the point where there are **at least 300 flags on at least 30 game dates** (so it is
+  larger than 300 when 300 arrives early). (2) Intervals clustered by game date use Student's t
+  on (dates - 1) degrees of freedom instead of 1.96. (3) H2 follows the same two changes.
+- **What did not change.** The flag rule, the books, the weights, the metrics, the verdict
+  thresholds and the 3,000-flag ROI stage. "300" below now reads "300 flags on 30 game dates".
+- **The `fp-shadow-v1` sample, as it stood** (2026-11-17 review, not merged into v2): 85 graded
+  primary flags on 2 game dates, CLV -1.1 points, hit 54.1% (46/85), -4.7u, ROI -5.5%; H2 69
+  flags, CLV -1.0 points, ROI -3.7%. Too few dates to read either way. v1 flags stay in the table
+  and are no longer flagged, counted or reported.
+- **When to expect the verdict.** About 30 NBA game dates from the deploy, so late December 2026.
+- The power table below was computed for date counts in the hundreds; under v2 the 30-date floor
+  is what makes its 300-flag row roughly apply.
 
 ## In plain language
 - Every 10 minutes the shadow flagger looks at the odds we already store and writes down every

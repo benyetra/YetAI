@@ -17,6 +17,8 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from typing import Iterable
 
+from scipy.stats import t as student_t
+
 from app.services import odds_math
 from app.services.fair_price import consensus, flags as fp, lines
 
@@ -177,7 +179,10 @@ def wilson(hits: int, n: int) -> tuple[float, float] | tuple[None, None]:
 
 
 def clustered_mean(xs: list[float], groups: list) -> dict:
-    """Mean with cluster-robust se = sqrt(G/(G-1) * sum_g (sum_{i in g}(x_i - mean))^2) / n."""
+    """Mean with cluster-robust se = sqrt(G/(G-1) * sum_g (sum_{i in g}(x_i - mean))^2) / n.
+
+    The interval uses Student's t on G-1 degrees of freedom: with few clusters a normal
+    interval is far too narrow (2 game dates: 12.7 se, not 1.96)."""
     n = len(xs)
     if n == 0:
         return {"n": 0, "mean": None, "se": None, "lo": None, "hi": None}
@@ -189,7 +194,8 @@ def clustered_mean(xs: list[float], groups: list) -> dict:
     if G < 2:
         return {"n": n, "mean": m, "se": None, "lo": None, "hi": None}
     se = math.sqrt(G / (G - 1) * sum(v * v for v in sums.values())) / n
-    return {"n": n, "mean": m, "se": se, "lo": m - Z * se, "hi": m + Z * se}
+    crit = float(student_t.ppf(0.975, G - 1))
+    return {"n": n, "mean": m, "se": se, "lo": m - crit * se, "hi": m + crit * se}
 
 
 def _view(f: dict, prefix: str = "") -> dict:

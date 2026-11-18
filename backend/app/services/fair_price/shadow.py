@@ -25,7 +25,7 @@ from app.services.fair_price import flags as fp
 
 log = logging.getLogger(__name__)
 
-RULE_VERSION = "fp-shadow-v1"
+RULE_VERSION = "fp-shadow-v2"
 ENGINE_VERSION = "fair_price-2026.11.15"
 PRIMARY = {("basketball_nba", "player_rebounds"), ("basketball_nba", "player_assists")}
 RECENT_HOURS = 36
