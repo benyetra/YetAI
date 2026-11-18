@@ -166,6 +166,9 @@ def engine():
             "CREATE TABLE pred_assists_projections (id integer primary key, date date, player_id int, "
             "player_name varchar, projected_assists float, fanduel_line float, fanduel_price int, "
             "fanduel_over_under varchar)",
+            "CREATE TABLE pred_points_projections (id integer primary key, date date, player_id int, "
+            "player_name varchar, projected_points float, fanduel_line float, fanduel_price int, "
+            "fanduel_over_under varchar)",
             "CREATE TABLE pred_team_offense_stats (team_id int, team_name varchar)",
             "CREATE TABLE pred_nba_spread_actuals (game_date date, home_team_name varchar, "
             "away_team_name varchar, home_score int, away_score int)",
@@ -204,6 +207,15 @@ def engine():
                 "(2,'2026-01-05',7,'Pat Seven',9.0,7.5,-120,'Over'),"
                 "(3,'2026-01-05',7,'Pat Seven',9.0,8.5,110,'o'),"
                 "(4,'2026-01-05',8,'Eli Eight',6.0,5.5,-105,'Under')"
+            )
+        )
+    with eng.begin() as c:
+        c.execute(
+            text(
+                "INSERT INTO pred_points_projections (id, date, player_id, player_name, "
+                "projected_points, fanduel_line, fanduel_price, fanduel_over_under) VALUES "
+                "(1,'2026-01-05',7,'Pat Seven',21.0,19.5,-115,'Over'),"
+                "(2,'2026-01-06',7,'Pat Seven',20.0,18.5,-110,'u')"
             )
         )
     return eng
@@ -305,3 +317,49 @@ def test_feature_families_prefixed():
     for prefix, cols in FEATURE_FAMILIES.items():
         assert all(c.startswith(prefix) for c in cols)
     assert len(feature_columns()) == len(set(feature_columns()))
+
+
+def test_load_lines_reads_points_and_matches_load_inputs_for_modelled_stats(engine):
+    with engine.connect() as c:
+        pts = ds.load_lines(c, "points", "2026-01-05", "2026-01-05")
+        assert pts[["player_id", "line", "proj", "line_source"]].values.tolist() == [
+            [7, 19.5, 21.0, "fanduel_projection"]
+        ]  # date window respected: the 01-06 row is out
+        assert set(pts["stat"]) == {"points"}
+        for stat in ("rebounds",):
+            from_inputs = load_inputs(c, "2026-01-05", "2026-01-05")["lines"]
+            from_inputs = from_inputs[from_inputs.stat == stat]
+            got = ds.load_lines(c, stat, "2026-01-05", "2026-01-05")
+            pd.testing.assert_frame_equal(
+                got.sort_values("player_id").reset_index(drop=True),
+                from_inputs.sort_values("player_id").reset_index(drop=True),
+                check_dtype=False,
+            )
+
+
+def test_load_lines_prefers_points_snapshot_close(engine):
+    with engine.begin() as c:
+        c.execute(
+            text(
+                f"CREATE TABLE {ds.ODDS_SNAPSHOT_TABLE} (game_date date, market varchar, "
+                "player_key varchar, book varchar, line float, over_price int, "
+                "under_price int, first_seen_at timestamp, commence_time timestamp)"
+            )
+        )
+        c.execute(
+            text(
+                f"INSERT INTO {ds.ODDS_SNAPSHOT_TABLE} VALUES ('2026-01-05',"
+                "'player_points','pat seven','fanduel',20.5,-110,-110,"
+                "'2026-01-05 19:00','2026-01-05 20:00')"
+            )
+        )
+    with engine.connect() as c:
+        r = ds.load_lines(c, "points", "2026-01-05", "2026-01-05").iloc[0]
+    assert r.line_source == "snapshot_close" and r.line == 20.5 and r.proj == 21.0
+
+
+def test_load_inputs_still_models_only_rebounds_and_assists(engine):
+    with engine.connect() as c:
+        lines = load_inputs(c, "2026-01-05", "2026-01-05")["lines"]
+    assert set(lines.stat) <= set(ds.STAT_COLUMN) == {"rebounds", "assists"}
+    assert "points" not in set(lines.stat)

@@ -2,10 +2,14 @@ name: NBA Weekly Retrain
 
 # Keeps the NBA models learning from new games. Each model retrains on the last
 # two seasons plus the current one and uploads only if it passes its own gate
-# (props: MAE limit; spread: must beat Elo on the same holdout) and is not worse
-# than the live model on that holdout (rejected_by_champion). The live model is
+# (props and residual models: the shared promote gate, i.e. line evidence, no worse
+# than the stored line, and better than the live model beyond noise; spread: must
+# beat Elo and the market line on the same holdout). The live model is
 # archived before any replacement; roll back with scripts/ml_model_rollback.py.
-# A model that fails a gate is reported as a warning and the live model stays.
+# A gate outcome (rejected_by_champion, rejected_by_line_gate, no_line_evidence,
+# gate_failed, below_baseline) is a green run with a notice; the live model stays.
+# Crashes, missing data (insufficient_data) and upload failures are red.
+# Each job writes a summary row; the last job lists every model in one table.
 # Requires the same secrets as nba-train-props.yml (RAILWAY_TOKEN, AWS_*).
 
 on:
@@ -59,18 +63,45 @@ jobs:
           START="$((season - 1))-10-01"; END="$(date -u +%F)"
           echo "window $START .. $END"
           if [ "$MODEL" = "spread" ]; then
-            python3 -m app.services.etl.nba.ml_training.train_spread_model \
-              --start "$START" --end "$END" --upload | tee train.log
+            scripts/retrain_step.sh "$MODEL" python3 -m app.services.etl.nba.ml_training.train_spread_model \
+              --start "$START" --end "$END" --upload
           elif [ "${MODEL#residual_}" != "$MODEL" ]; then
-            python3 -m app.services.etl.nba.residual train --stat "${MODEL#residual_}" \
-              --start "$START" --end "$END" --upload | tee train.log
+            scripts/retrain_step.sh "$MODEL" python3 -m app.services.etl.nba.residual train --stat "${MODEL#residual_}" \
+              --start "$START" --end "$END" --upload
           else
-            python3 -m app.services.etl.nba.ml_training \
-              --stat "$MODEL" --start "$START" --end "$END" --upload | tee train.log
+            scripts/retrain_step.sh "$MODEL" python3 -m app.services.etl.nba.ml_training \
+              --stat "$MODEL" --start "$START" --end "$END" --upload
           fi
-          # Gate outcomes are not failures: the live model is simply kept.
-          if grep -Eq "below_baseline|gate_failed|insufficient_data|rejected_by_champion|rejected_by_line_gate" train.log; then
-            echo "::warning::$MODEL did not pass its gate; kept the live model"
-            exit 0
-          fi
-          grep -Eq "\"status\": \"ok\"|'status': 'ok'" train.log
+
+      - name: Upload summary row
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrain-summary-${{ matrix.model }}
+          path: backend/summary-${{ matrix.model }}.json
+          if-no-files-found: ignore
+
+  summary:
+    name: Summary table
+    needs: retrain
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: retrain-summary-*
+          merge-multiple: true
+          path: summaries
+
+      - name: Write summary table
+        run: |
+          shopt -s nullglob
+          python3 backend/scripts/retrain_summary.py table \
+            --expect spread,points,rebounds,assists,residual_rebounds,residual_assists \
+            summaries/*.json >> "$GITHUB_STEP_SUMMARY"

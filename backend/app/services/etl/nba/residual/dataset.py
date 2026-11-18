@@ -16,19 +16,31 @@ from app.services.etl.nba._api_sports import normalize_player_name
 
 LOOKBACK_DAYS = 120
 STAT_COLUMN = {"rebounds": "rebounds", "assists": "assists"}
-PROJECTION_TABLE = {
-    "rebounds": "pred_rebounds_projections",
-    "assists": "pred_assists_projections",
+# Every stat with stored lines: (projection table, projection column, odds snapshot
+# market). Only STAT_COLUMN stats are modelled here; the rest only need their lines
+# (the prop retrain's beat-the-line gate).
+LINE_STATS = {
+    "points": ("pred_points_projections", "projected_points", "player_points"),
+    "rebounds": ("pred_rebounds_projections", "projected_rebounds", "player_rebounds"),
+    "assists": ("pred_assists_projections", "projected_assists", "player_assists"),
+    "three_pt_made": (
+        "pred_three_point_projections",
+        "projected_three_pt_made",
+        "player_threes",
+    ),
+    "steals": ("pred_steals_projections", "projected_steals", "player_steals"),
+    "blocks": ("pred_blocks_projections", "projected_blocks", "player_blocks"),
 }
+PROJECTION_TABLE = {k: v[0] for k, v in LINE_STATS.items()}
+PROJECTION_COLUMN = {k: v[1] for k, v in LINE_STATS.items()}
 
 # Odds snapshot table (edge-odds-capture): append-only observations, one row per
 # (event, market, player_key, book, line/price set); `first_seen_at` is when the
 # values first appeared, so the closing observation is the greatest first_seen_at
 # before commence_time.
 ODDS_SNAPSHOT_TABLE = "odds_line_snapshots"
-SNAPSHOT_MARKET = {"rebounds": "player_rebounds", "assists": "player_assists"}
+SNAPSHOT_MARKET = {k: v[2] for k, v in LINE_STATS.items()}
 SNAPSHOT_BOOK = "fanduel"
-PROJECTION_COLUMN = {"rebounds": "projected_rebounds", "assists": "projected_assists"}
 
 FEATURE_FAMILIES = {
     "proj_": ["proj_edge"],
@@ -88,8 +100,8 @@ def _read(conn, sql: str, **params) -> pd.DataFrame:
     return pd.read_sql(text(sql), conn, params=params)
 
 
-def _snapshot_query(conn, start: str, end: str) -> pd.DataFrame | None:
-    """Pre-game observations of the two markets, or None if the table is absent."""
+def _snapshot_query(conn, start: str, end: str, stats) -> pd.DataFrame | None:
+    """Pre-game observations of the markets of ``stats``, or None if the table is absent."""
     if not inspect(conn).has_table(ODDS_SNAPSHOT_TABLE):
         return None
     return _read(
@@ -98,7 +110,7 @@ def _snapshot_query(conn, start: str, end: str) -> pd.DataFrame | None:
         f"first_seen_at, commence_time FROM {ODDS_SNAPSHOT_TABLE} "
         "WHERE game_date >= :s AND game_date <= :e AND market IN :m AND line > 0 "
         "AND first_seen_at < commence_time".replace(
-            "IN :m", "IN (" + ",".join(f"'{m}'" for m in SNAPSHOT_MARKET.values()) + ")"
+            "IN :m", "IN (" + ",".join(f"'{SNAPSHOT_MARKET[st]}'" for st in stats) + ")"
         ),
         s=start,
         e=end,
@@ -191,6 +203,34 @@ def _projection_lines(conn, stat: str, start: str, end: str) -> pd.DataFrame:
     return out
 
 
+def _stat_lines(conn, stats, start: str, end: str) -> pd.DataFrame:
+    """Lines of record for ``stats`` in [start, end]: per player-date the snapshot
+    close when the snapshot table has one, else the projection row's line."""
+    lines = []
+    snap = _snapshot_query(conn, start, end, stats)
+    projs = {stat: _projection_lines(conn, stat, start, end) for stat in stats}
+    names = pd.concat(projs.values())[["player_id", "player_name"]].drop_duplicates()
+    key_to_player = {
+        normalize_player_name(n): int(p)
+        for p, n in zip(names.player_id, names.player_name)
+    }
+    snap_lines = _snapshot_lines(snap, key_to_player)
+    for stat, proj in projs.items():
+        if len(snap_lines):
+            sl = snap_lines[snap_lines["stat"] == stat]
+            sl = sl.merge(
+                proj[["player_id", "date", "proj"]],
+                on=["player_id", "date"],
+                how="left",
+                suffixes=("_x", ""),
+            ).drop(columns="proj_x")
+            have = sl[["player_id", "date"]].assign(_s=1)
+            proj = proj.merge(have, on=["player_id", "date"], how="left")
+            proj = pd.concat([proj[proj["_s"].isna()].drop(columns="_s"), sl])
+        lines.append(proj.drop(columns="player_name", errors="ignore"))
+    return pd.concat(lines, ignore_index=True)
+
+
 def load_inputs(conn, start, end) -> dict[str, pd.DataFrame]:
     """Tables for [start - LOOKBACK_DAYS, end]; every frame has a normalised `date`."""
     lo = (pd.Timestamp(start) - pd.Timedelta(days=LOOKBACK_DAYS)).date().isoformat()
@@ -234,31 +274,10 @@ def load_inputs(conn, start, end) -> dict[str, pd.DataFrame]:
         )
         ids = pd.to_numeric(game_lines[f"{side}_team_id"], errors="coerce")
         game_lines[f"{side}_id"] = ids.where(ids.notna(), pd.to_numeric(by_name))
-    lines = []
-    snap = _snapshot_query(conn, lo, e)
-    projs = {stat: _projection_lines(conn, stat, lo, e) for stat in STAT_COLUMN}
-    names = pd.concat(projs.values())[["player_id", "player_name"]].drop_duplicates()
-    key_to_player = {
-        normalize_player_name(n): int(p)
-        for p, n in zip(names.player_id, names.player_name)
-    }
-    snap_lines = _snapshot_lines(snap, key_to_player)
-    for stat, proj in projs.items():
-        if len(snap_lines):
-            sl = snap_lines[snap_lines["stat"] == stat]
-            sl = sl.merge(
-                proj[["player_id", "date", "proj"]],
-                on=["player_id", "date"],
-                how="left",
-                suffixes=("_x", ""),
-            ).drop(columns="proj_x")
-            have = sl[["player_id", "date"]].assign(_s=1)
-            proj = proj.merge(have, on=["player_id", "date"], how="left")
-            proj = pd.concat([proj[proj["_s"].isna()].drop(columns="_s"), sl])
-        lines.append(proj.drop(columns="player_name", errors="ignore"))
+    lines = _stat_lines(conn, STAT_COLUMN, lo, e)
     return {
         "box": box,
-        "lines": pd.concat(lines, ignore_index=True),
+        "lines": lines,
         "finals": finals,
         "game_lines": game_lines,
         "team_map": teams,
@@ -267,10 +286,11 @@ def load_inputs(conn, start, end) -> dict[str, pd.DataFrame]:
 
 def load_lines(conn, stat: str, start, end) -> pd.DataFrame:
     """Lines of record for ``stat`` (player_id, date, line, prices, line_source) in
-    [start, end]: the snapshot table when present, else the projection row's line."""
-    ln = load_inputs(conn, start, end)["lines"]
-    ln = ln[(ln["stat"] == stat) & (ln["date"] >= pd.Timestamp(start))]
-    return ln[ln["date"] <= pd.Timestamp(end)].reset_index(drop=True)
+    [start, end]: the snapshot table when present, else the projection row's line.
+    Works for every stat in LINE_STATS; reads only that stat's line tables."""
+    s, e = pd.Timestamp(start), pd.Timestamp(end)
+    ln = _stat_lines(conn, [stat], s.date().isoformat(), e.date().isoformat())
+    return ln[(ln["date"] >= s) & (ln["date"] <= e)].reset_index(drop=True)
 
 
 # ---------------------------------------------------------------- context
