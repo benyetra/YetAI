@@ -172,10 +172,25 @@ describe('gamblyLegFromDiscoveryRow', () => {
     ).toBe('Jalen Brunson Over 26.5 points');
   });
 
-  it('infers the side from projection vs line when no recommendation', () => {
+  it('never infers a side from projection vs line when the pick is null', () => {
     expect(
       gamblyLegFromDiscoveryRow({ player_name: 'A', projected_points: 20, fanduel_line: 22.5 }, points),
-    ).toBe('A Under 22.5 points');
+    ).toBeNull();
+    expect(
+      gamblyLegFromDiscoveryRow(
+        { player_name: 'A', projected_points: 20, fanduel_line: 22.5, recommendation: null },
+        points,
+      ),
+    ).toBeNull();
+  });
+
+  it('makes no leg for a withheld row even with a stored side', () => {
+    expect(
+      gamblyLegFromDiscoveryRow(
+        { player_name: 'A', fanduel_line: 22.5, recommendation: 'OVER', pick_withheld: 'losing_record' },
+        points,
+      ),
+    ).toBeNull();
   });
 
   it('returns null without a line', () => {

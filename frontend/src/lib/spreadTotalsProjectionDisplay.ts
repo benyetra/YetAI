@@ -130,11 +130,7 @@ export function displaySpreadMargin(
   };
 }
 
+/** Stored backend spread edge only; never recomputed from projected margin vs market. */
 export function spreadMarketEdge(proj: Row): number | null {
-  const edge = num(proj.spread_edge);
-  if (edge != null) return edge;
-  const margin = spreadHomeMargin(proj);
-  const marketSpread = num(proj.market_spread);
-  if (margin == null || marketSpread == null) return null;
-  return margin - -marketSpread;
+  return num(proj.spread_edge);
 }

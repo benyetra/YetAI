@@ -1,5 +1,7 @@
 /** Merge spread + totals API rows into unified game projection cards (NBA, WNBA). */
 
+import { isPickWithheld } from '@/lib/pickWithheld';
+
 type Row = Record<string, unknown>;
 
 function gameKey(row: Row): string {
@@ -48,10 +50,12 @@ function mergeRow(spread?: Row, total?: Row): Row {
   const home = String(spread?.home_team_name ?? total?.home_team_name ?? '');
   const away = String(spread?.away_team_name ?? total?.away_team_name ?? '');
   const homeWp = num(spread?.home_win_prob) ?? 0.5;
-  const spreadRec = String(spread?.recommendation ?? 'NO_PLAY').toUpperCase();
-  const totalRec = String(total?.recommendation ?? 'NO_PLAY').toUpperCase();
-  const spreadEdge = num(spread?.edge);
-  const totalEdge = num(total?.edge);
+  const spreadWithheld = isPickWithheld(spread);
+  const totalWithheld = isPickWithheld(total);
+  const spreadRec = spreadWithheld ? 'NO_PLAY' : String(spread?.recommendation ?? 'NO_PLAY').toUpperCase();
+  const totalRec = totalWithheld ? 'NO_PLAY' : String(total?.recommendation ?? 'NO_PLAY').toUpperCase();
+  const spreadEdge = spreadWithheld ? null : num(spread?.edge);
+  const totalEdge = totalWithheld ? null : num(total?.edge);
   const spreadSide =
     spreadRec === 'HOME' || spreadRec === 'AWAY' ? spreadRec : null;
 
@@ -75,7 +79,10 @@ function mergeRow(spread?: Row, total?: Row): Row {
     total_recommendation:
       totalRec === 'OVER' || totalRec === 'UNDER' ? totalRec : 'NO_PLAY',
     model_confidence: num(spread?.confidence_score) ?? num(total?.confidence_score),
+    // A value rating only exists alongside an explicit, non-withheld pick.
     value_rating: deriveValueRating(spreadSide, totalRec, spreadEdge, totalEdge),
+    spread_pick_withheld: spread?.pick_withheld ?? null,
+    total_pick_withheld: total?.pick_withheld ?? null,
     away_pitcher_name: formatStarters(total?.away_starters) ?? '',
     home_pitcher_name: formatStarters(total?.home_starters) ?? '',
     actual_home_score: total?.actual_home_score ?? spread?.actual_home_score,

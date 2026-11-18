@@ -2,6 +2,7 @@ import {
   formatString,
   type ColumnDef,
 } from '@/components/PredictionsTable';
+import { pickCell } from '@/lib/pickWithheld';
 import { formatOdds } from '@/lib/formatting';
 import {
   formatOpponentTeamCell,
@@ -94,7 +95,7 @@ export const ANYTIME_TD_COLUMNS: ColumnDef[] = [
   {
     key: 'recommendation',
     label: 'Pick',
-    format: (v, row) => formatString(v ?? row.betting_recommendation),
+    format: (v, row) => pickCell(row, v, row.betting_recommendation),
     className: 'prop-pick-cell',
   },
   {

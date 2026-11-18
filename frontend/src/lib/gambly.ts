@@ -7,6 +7,7 @@
  */
 import { slipItemToSelection, slipKeyToBetType } from '@/lib/slip-to-bet';
 import { fmtOdds } from '@/lib/yetai-format';
+import { isPickWithheld } from '@/lib/pickWithheld';
 import { hasRealMatchup } from '@/lib/yetai-matchup';
 import { asNumber, rowPersonName, type DiscoveryGroupConfig } from '@/lib/propDiscovery';
 import type { DesignPick, SlipItem } from '@/components/yetai/types';
@@ -138,18 +139,16 @@ export function gamblyLegFromDiscoveryRow(
   const nameRaw = row[group.nameKey];
   const name = nameRaw != null && String(nameRaw).trim() ? String(nameRaw).trim() : rowPersonName(row);
   if (!name) return null;
+  if (isPickWithheld(row)) return null;
   const market = propMarket(group.title);
 
   if (group.mode === 'projected_value') {
     return market === 'hits' ? `${name} to record a hit` : `${name} ${market}`;
   }
 
+  // Only an explicit backend pick makes a leg; never rebuild a side from projected vs line.
   const line = group.lineKey ? asNumber(row[group.lineKey]) : null;
-  let side = overUnder(group.pickKey ? row[group.pickKey] : row.recommendation);
-  if (!side && line != null && group.projectedKey) {
-    const projected = asNumber(row[group.projectedKey]);
-    if (projected != null && projected !== line) side = projected > line ? 'Over' : 'Under';
-  }
+  const side = overUnder(group.pickKey ? row[group.pickKey] : row.recommendation);
   if (!side || line == null) return null;
   return `${name} ${side} ${line} ${market}`;
 }

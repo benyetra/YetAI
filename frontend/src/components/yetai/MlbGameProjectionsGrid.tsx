@@ -13,6 +13,7 @@ import {
 } from '@/lib/spreadTotalsProjectionDisplay';
 import { teamColorStyle, teamPrimaryColor } from '@/lib/team-colors';
 import { gamblyLegFromProjection } from '@/lib/gambly';
+import { isPickWithheld, PICK_WITHHELD_NOTE } from '@/lib/pickWithheld';
 import { resultBadge } from '@/lib/propProjectionDisplay';
 import GambleItButton from './GambleItButton';
 import { TeamGlyph } from './primitives';
@@ -42,7 +43,6 @@ export type GameProjectionSlipPick = {
 
 const VARIANT = {
   mlb: {
-    spreadEdgeThreshold: 0.5,
     showMatchupSubtitle: true,
     emptySubtitle: 'TBD',
     primaryPickKind: 'ml' as PickKind,
@@ -54,7 +54,6 @@ const VARIANT = {
     marginUnit: 'run',
   },
   nba: {
-    spreadEdgeThreshold: 2.0,
     showMatchupSubtitle: true,
     emptySubtitle: '',
     primaryPickKind: 'spread' as PickKind,
@@ -66,7 +65,6 @@ const VARIANT = {
     marginUnit: 'pt',
   },
   wnba: {
-    spreadEdgeThreshold: 2.0,
     showMatchupSubtitle: true,
     emptySubtitle: '',
     primaryPickKind: 'spread' as PickKind,
@@ -78,7 +76,6 @@ const VARIANT = {
     marginUnit: 'pt',
   },
   nfl: {
-    spreadEdgeThreshold: 3.0,
     showMatchupSubtitle: false,
     emptySubtitle: '',
     primaryPickKind: 'spread' as PickKind,
@@ -90,7 +87,6 @@ const VARIANT = {
     marginUnit: 'pt',
   },
   nhl: {
-    spreadEdgeThreshold: 0.5,
     showMatchupSubtitle: false,
     emptySubtitle: '',
     primaryPickKind: 'total' as PickKind,
@@ -123,19 +119,15 @@ function hasFinalScore(proj: GameRow): boolean {
   return proj.actual_home_score != null && proj.actual_away_score != null;
 }
 
-function spreadRecommendation(proj: GameRow, threshold: number): Side | null {
+/** Spread side: only the stored backend recommendation; never rebuilt from margin vs market. */
+export function spreadRecommendation(proj: GameRow): Side | null {
   const stored = formatString(proj.spread_recommendation);
-  if (stored === 'HOME' || stored === 'AWAY') return stored;
+  return stored === 'HOME' || stored === 'AWAY' ? stored : null;
+}
 
-  const runLine = num(proj.run_line);
-  const marketSpread = num(proj.market_spread);
-  if (runLine == null || marketSpread == null) return null;
-
-  const impliedMarketMargin = -marketSpread;
-  const edge = runLine - impliedMarketMargin;
-  if (edge >= threshold) return 'HOME';
-  if (edge <= -threshold) return 'AWAY';
-  return null;
+/** True when the backend withheld this pick kind (`pick_withheld`, or `<kind>_pick_withheld`). */
+function kindWithheld(proj: GameRow, kind: PickKind): boolean {
+  return isPickWithheld({ pick_withheld: proj[`${kind}_pick_withheld`] ?? proj.pick_withheld });
 }
 
 function teamForSide(proj: GameRow, side: Side): string {
@@ -144,6 +136,7 @@ function teamForSide(proj: GameRow, side: Side): string {
 
 function primaryPick(proj: GameRow, variant: GameProjectionsVariant): PrimaryPick | null {
   const cfg = VARIANT[variant];
+  if (kindWithheld(proj, cfg.primaryPickKind)) return null;
 
   if (cfg.primaryPickKind === 'ml') {
     const mlRaw = formatString(proj.ml_recommendation);
@@ -172,7 +165,7 @@ function primaryPick(proj: GameRow, variant: GameProjectionsVariant): PrimaryPic
     };
   }
 
-  const spreadSide = spreadRecommendation(proj, cfg.spreadEdgeThreshold);
+  const spreadSide = spreadRecommendation(proj);
   if (!spreadSide) return null;
   const marketSpread = num(proj.market_spread);
   return {
@@ -320,7 +313,8 @@ function GameCard({
   const homeFav = homeWp >= awayWp;
   const favName = homeFav ? home : away;
   const favAbbr = homeFav ? homeAbbr : awayAbbr;
-  const valueRating = formatString(proj.value_rating);
+  const withheld = kindWithheld(proj, cfg.primaryPickKind);
+  const valueRating = withheld ? '—' : formatString(proj.value_rating);
   const isStrong = valueRating === 'Strong';
   const pick = primaryPick(proj, variant);
   const hasPick = pick != null;
@@ -410,6 +404,7 @@ function GameCard({
 
       <ModelPickModule
         pick={pick}
+        withheld={withheld}
         pickProbPct={(pick?.side === 'HOME' ? homeWp : pick?.side === 'AWAY' ? awayWp : homeFav ? homeWp : awayWp) * 100}
         favTeam={{ name: favName, abbr: favAbbr }}
         logoLeague={cfg.logoLeague}
@@ -600,6 +595,7 @@ function ProjTeamLine({
 
 function ModelPickModule({
   pick,
+  withheld,
   pickProbPct,
   favTeam,
   logoLeague,
@@ -621,6 +617,7 @@ function ModelPickModule({
   onAdd,
 }: {
   pick: PrimaryPick | null;
+  withheld: boolean;
   pickProbPct: number;
   favTeam: { name: string; abbr: string };
   logoLeague: string;
@@ -647,7 +644,8 @@ function ModelPickModule({
         <div className="proj-pick-main">
           <span className="proj-pick-kicker">No play</span>
           <span className="proj-pick-bet dim">
-            Model leans{' '}
+            {withheld ? PICK_WITHHELD_NOTE : null}
+            {withheld ? null : <>Model leans{' '}
             <ProjTeamInline
               name={favTeam.name}
               abbr={favTeam.abbr}
@@ -656,7 +654,7 @@ function ModelPickModule({
               size={16}
               className="proj-team-inline-emphasis"
             />
-            , below betting threshold
+            , below betting threshold</>}
           </span>
         </div>
       </div>
