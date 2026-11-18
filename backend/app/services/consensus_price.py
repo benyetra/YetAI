@@ -4,8 +4,9 @@ snapshots the ETL's own Odds API fetches already record (no extra credits).
 For one side of one market (spread, total, moneyline, or one player's prop) of one event:
 - quotes: each book's latest snapshot observation, kept only if it was seen in the last
   ``MAX_QUOTE_AGE`` and its book updated within ``QUOTE_MAX_LAG`` of the freshest book;
-- best: among bettable books (never reference-only or consensus-only books) quoting the side
-  at a line where our projection is still on that side, the quote with the highest EV at
+- best: among bettable books (never reference-only or consensus-only books) that are live
+  (seen by the newest fetch, market updated within BEST_MAX_LAG of the freshest book) quoting
+  the side at a line where our projection is still on that side, the quote with the highest EV at
   the fair probability of the OTHER books quoting EXACTLY the same line (de-vigged per book,
   log-pooled; at least ``MIN_OTHER_BOOKS`` of them). A book at another line is never
   converted: these markets have no validated line conversion (the count-distribution one in
@@ -16,6 +17,7 @@ For one side of one market (spread, total, moneyline, or one player's prop) of o
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Callable, Iterable, Optional
 
@@ -30,18 +32,34 @@ MAX_QUOTE_AGE = timedelta(minutes=30)
 QUOTE_MAX_LAG = timedelta(minutes=30)
 # The fair-price rule's min_books: the consensus needs this many OTHER books at the line.
 MIN_OTHER_BOOKS = 3
+# The BEST book must be live, not merely recent: game lines move in minutes, so a book that
+# pulled its market (its row stops being re-seen) or lags the others is the likeliest
+# off-market "edge" and could never be bet at that price. It must have been seen by the
+# newest fetch (within BEST_SEEN_GAP of the freshest observation) and its market update
+# must be within BEST_MAX_LAG of the freshest book's. Consensus books keep the wider window.
+BEST_SEEN_GAP = timedelta(minutes=2)
+BEST_MAX_LAG = timedelta(minutes=5)
 
 FIELDS = ("book", "line", "price", "side", "fair_prob", "ev", "quoted_at")
 
 
-def _quote(r) -> Optional[flags.Q]:
+@dataclass
+class Quote(flags.Q):
+    """flags.Q plus the book's own market update time (None when the feed gave none)."""
+
+    book_updated_at: Optional[datetime] = None
+
+
+def _quote(r) -> Quote:
     """Snapshot row -> two-way quote: 'o' is the over (totals, props) or the home team
     (spreads: line = the home point; moneylines: line 0)."""
     if r.market == "h2h":
-        return flags.Q(r.book, 0.0, r.home_price, r.away_price, r.last_seen_at)
-    if r.market == "spreads":
-        return flags.Q(r.book, r.line, r.home_price, r.away_price, r.last_seen_at)
-    return flags.Q(r.book, r.line, r.over_price, r.under_price, r.last_seen_at)
+        a, b, line = r.home_price, r.away_price, 0.0
+    elif r.market == "spreads":
+        a, b, line = r.home_price, r.away_price, r.line
+    else:
+        a, b, line = r.over_price, r.under_price, r.line
+    return Quote(r.book, line, a, b, r.last_seen_at, r.book_updated_at)
 
 
 def snapshot_quotes(
@@ -108,6 +126,16 @@ def best_same_line(
     # FAIR_PRICE_EXCLUDED_BOOKS are out of the consensus too, as in the fair-price rule.
     quotes = [q for q in quotes if q.book not in rule.excluded_books]
     skip = rule.reference_only | rule.consensus_only
+    newest_seen = max((q.last_seen_at for q in quotes), default=None)
+    updated = [u for q in quotes if (u := getattr(q, "book_updated_at", None))]
+    newest_upd = max(updated, default=None)
+
+    def live(q) -> bool:
+        if newest_seen - q.last_seen_at > BEST_SEEN_GAP:
+            return False
+        upd = getattr(q, "book_updated_at", None)
+        return newest_upd is None or upd is None or newest_upd - upd <= BEST_MAX_LAG
+
     fair: dict[str, dict[float, tuple[float, datetime]]] = {}
     for q in quotes:
         two = devig.two_way(q.over_price, q.under_price, rule.method)
@@ -116,7 +144,7 @@ def best_same_line(
     best = None
     for q in quotes:
         price = q.over_price if side == "o" else q.under_price
-        if q.book in skip or not price:
+        if q.book in skip or not price or not live(q):
             continue
         if on_side is not None and not on_side(float(q.line)):
             continue
@@ -179,7 +207,8 @@ def best_fields(
 
     ``side`` 'o' (over / home) or 'u' (under / away); ``side_name`` is what is stored in
     ``{prefix}side``. ``on_side(line)`` gets the quote's line as stored in the snapshot
-    (spreads: the home point) and says whether the projection is still on ``side`` there. Always returns every column: None when there is no consensus, so a
+    (spreads: the home point) and says whether the projection is still on ``side`` there.
+    Always returns every column: None when there is no consensus, so a
     rerun whose capture was refused never leaves an old price looking current. Never
     raises (a failed read is no consensus)."""
     names = [f for f in FIELDS if with_line or f != "line"]

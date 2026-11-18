@@ -205,3 +205,31 @@ def test_no_event_or_side_is_no_consensus(db):
     assert set(
         cp.best_fields(db, event_id=EVENT, market="totals", side=None).values()
     ) == {None}
+
+
+def test_a_book_missing_from_the_newest_fetch_is_never_best(db):
+    # Four books at -110/-110 seen now; DraftKings +125 was last seen 29 minutes earlier
+    # (it pulled the market): it still counts nowhere as the best price.
+    books = {
+        b: (44.5, -110, -110)
+        for b in ("betmgm", "pinnacle", "williamhill_us", "espnbet")
+    }
+    _record(
+        db, {"draftkings": (44.5, +125, -150)}, "totals", at=NOW - timedelta(minutes=29)
+    )
+    _record(db, books, "totals", at=NOW)
+    f = _fields(db, "totals", "o")
+    assert f["best_book"] != "draftkings"
+
+
+def test_a_book_whose_market_lags_is_never_best(db):
+    books = {b: (44.5, -110, -110) for b in ("betmgm", "pinnacle", "williamhill_us")}
+    books["fanduel"] = (44.5, +130, -160)
+    ev = _event(books, "totals")
+    for bk in ev["bookmakers"]:
+        if bk["key"] == "fanduel":  # FanDuel's own update is 20 minutes behind
+            bk["markets"][0]["last_update"] = (
+                NOW - timedelta(minutes=20)
+            ).isoformat() + "Z"
+    snaps.record_rows(db, snaps.parse_payload("americanfootball_nfl", ev), NOW)
+    assert _fields(db, "totals", "o")["best_book"] != "fanduel"
