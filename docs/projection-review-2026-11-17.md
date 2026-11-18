@@ -1,5 +1,7 @@
 # Projection and YetAI Bets review (2026-11-17)
 
+> What was built from this review, and what to expect after deploy: [`docs/build-2026-11-18.md`](build-2026-11-18.md).
+
 What is still broken after the 11-13 to 11-15 repairs (PRs #177 to #188), and why the projections and
 the YetAI Bets auto picks keep missing. Follows `docs/projection-issues-2026-11-13.md`; IDs there
 (NBA-4, X-1 and so on) are reused here.
