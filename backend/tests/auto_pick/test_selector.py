@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from app.models.database_models import SubscriptionTier
 from app.services.auto_pick.candidate import BetCandidate, MarketType
 from app.services.auto_pick.confidence_score import ConfidenceScore
+from app.services.auto_pick.ev import EV
 from app.services.auto_pick.selector import (
     BetSelector,
     ScoredCandidate,
@@ -20,6 +21,7 @@ def _sc(
     odds=-110,
     league="MLB",
     selection="s",
+    ev=None,
     **kw,
 ):
     meta = {"side": "over"}
@@ -36,7 +38,9 @@ def _sc(
         **kw,
     )
     return ScoredCandidate(
-        candidate=c, score=ConfidenceScore(total=total, breakdown={}, reasoning="")
+        candidate=c,
+        score=ConfidenceScore(total=total, breakdown={}, reasoning=""),
+        ev=EV(0.5, 0.0, 0.5, 0.0, ev) if ev is not None else None,
     )
 
 
@@ -44,11 +48,46 @@ def _reasons(scored):
     return {s.candidate.event_id: s.drop_reason for s in scored}
 
 
-def test_below_threshold_with_nothing_over_floor_picks_none():
-    sel = BetSelector(SelectorConfig(threshold=65.0))
-    scored = [_sc("e1", 50), _sc("e2", 54.9)]
-    assert sel.select(scored) == []
-    assert _reasons(scored) == {"e1": "below_floor", "e2": "below_floor"}
+def test_ranks_by_ev_not_by_score():
+    sel = BetSelector(SelectorConfig(max_picks=2, max_per_market=9))
+    scored = [
+        _sc("e1", 99, ev=0.03),
+        _sc("e2", 60, ev=0.09),
+        _sc("e3", 80, ev=0.05),
+    ]
+    picks = sel.select(scored)
+    assert [p.candidate.event_id for p in picks] == ["e2", "e3"]
+    assert _reasons(scored)["e1"] == "cap_reached"
+
+
+def test_equal_ev_ties_break_on_score():
+    sel = BetSelector(SelectorConfig(max_picks=1))
+    scored = [_sc("e1", 60, ev=0.05), _sc("e2", 70, ev=0.05)]
+    assert [p.candidate.event_id for p in sel.select(scored)] == ["e2"]
+
+
+def test_score_below_old_threshold_still_picked_when_ev_qualifies():
+    sel = BetSelector(SelectorConfig(threshold=65.0, min_score=55.0))
+    (pick,) = sel.select([_sc("e1", 10, ev=0.04)])
+    assert pick.candidate.event_id == "e1"
+
+
+def test_identical_candidates_better_price_ranks_first_with_higher_ev():
+    """Same side, line, projection, fair prob: only the price differs."""
+    from app.services.auto_pick import ev as ev_mod
+
+    def prop(event_id, price):
+        sc = _sc(event_id, 70, odds=price, meta={"fair_prob": 0.5, "stat": "points"})
+        sc.candidate.market_line = 24.5
+        sc.candidate.our_projection = 27.0
+        sc.ev, reason = ev_mod.candidate_ev(sc.candidate)
+        assert reason is None
+        return sc
+
+    worse, better = prop("worse", 105), prop("better", 120)
+    assert better.ev.ev > worse.ev.ev
+    sel = BetSelector(SelectorConfig(max_picks=1, max_per_market=9))
+    assert [p.candidate.event_id for p in sel.select([worse, better])] == ["better"]
 
 
 def test_picks_top_n_by_score_capped_at_three():
@@ -72,27 +111,6 @@ def test_game_identity_uses_teams_not_event_id():
     sel = BetSelector(SelectorConfig(threshold=65.0))
     picks = sel.select([_sc("x1", 90, **kw), _sc("x2", 88, **kw)])
     assert len(picks) == 1
-
-
-def test_fill_to_two_uses_floor():
-    sel = BetSelector(SelectorConfig(threshold=65.0, min_score=55.0))
-    scored = [_sc("e1", 80), _sc("e2", 60), _sc("e3", 58), _sc("e4", 50)]
-    picks = sel.select(scored)
-    assert [p.candidate.event_id for p in picks] == ["e1", "e2"]
-    assert _reasons(scored)["e3"] == "below_threshold"
-    assert _reasons(scored)["e4"] == "below_floor"
-
-
-def test_fill_counts_already_published():
-    sel = BetSelector(SelectorConfig(threshold=65.0, min_score=55.0))
-    # One already live today: only one more fill needed.
-    picks = sel.select([_sc("e1", 60), _sc("e2", 58)], remaining=2, already_published=1)
-    assert [p.candidate.event_id for p in picks] == ["e1"]
-
-
-def test_never_pads_below_floor():
-    sel = BetSelector(SelectorConfig(threshold=65.0, min_score=55.0))
-    assert sel.select([_sc("e1", 54), _sc("e2", 40)]) == []
 
 
 def test_remaining_zero_picks_nothing():
@@ -142,14 +160,6 @@ def test_market_concentration_counts_earlier_runs():
     )
     assert [p.candidate.event_id for p in picks] == ["e2"]
     assert _reasons(scored)["e1"] == "market_concentration"
-
-
-def test_fill_floor_off_skips_floor_fill():
-    sel = BetSelector(SelectorConfig(threshold=65.0, min_score=55.0))
-    scored = [_sc("e1", 80, league="NBA"), _sc("e2", 60, league="NHL")]
-    picks = sel.select(scored, fill_floor=False)
-    assert [p.candidate.event_id for p in picks] == ["e1"]
-    assert _reasons(scored)["e2"] == "below_threshold"
 
 
 # --- hard gates -------------------------------------------------------------

@@ -35,6 +35,9 @@ def _env(monkeypatch):
         "AUTO_YETAI_PICKS_MIN_SCORE",
     ):
         monkeypatch.delenv(k, raising=False)
+    # These tests are about selection; the record gate has its own tests.
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
+    monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")
     monkeypatch.setattr(orch_mod, "_can_grade", lambda league, market, stat: True)
 
 
@@ -45,9 +48,14 @@ def _cand(
     commence: datetime | None = NOW + timedelta(hours=4),
     selection: str | None = None,
     game: int | None = None,
+    fair: float | None = 0.55,
+    price: int = -110,
     **kw,
 ) -> BetCandidate:
     """Prop candidate in its own game. projection 9.0 vs line 5.5 -> max edge.
+
+    ``fair`` is the market's no-vig probability of the side (0.55 at -110 is +5% consensus
+    EV, so the candidate passes the EV gate; 0.50 is -4.5% and never does).
 
     League rotates with the game so the per-market cap (2) does not bind by default.
     """
@@ -60,12 +68,14 @@ def _cand(
         "stat": "points",
         "player": f"Player {n}",
     }
+    if fair is not None:
+        md["fair_prob"] = fair
     return BetCandidate(
         market_type=MarketType.PLAYER_PROP,
         event_id=f"e{n}",
         selection=selection or f"Player {n} OVER 5.5 points",
         market_line=5.5,
-        market_odds=-110,
+        market_odds=price,
         our_projection=projection,
         projection_metadata=md,
         home_team=f"Home {g}",
@@ -130,7 +140,13 @@ async def test_grading_block_for_game_markets_has_no_player(sqlite_db):
     c.market_type = MarketType.MONEYLINE
     c.market_line = 0.0
     c.our_projection = 0.8
-    c.projection_metadata = {"side": "home", "opp_odds": 120, "model_confidence": 0.8}
+    c.market_odds = -110
+    c.projection_metadata = {
+        "side": "home",
+        "opp_odds": 120,
+        "model_confidence": 0.8,
+        "fair_prob": 0.55,
+    }
     await _run(sqlite_db, [c])
     g = _bets(sqlite_db)[0].prediction_factors["grading"]
     assert g["market"] == "moneyline" and g["line"] is None
@@ -269,25 +285,74 @@ async def test_yesterdays_slate_does_not_count(sqlite_db):
 
 
 @pytest.mark.asyncio
-async def test_fill_to_two_from_floor(sqlite_db):
-    # 9.0 -> ~82 (threshold); 7.25 -> ~60 (floor only); 7.1 -> ~58; 6.0 -> ~52
-    cands = [_cand(1), _cand(2, 7.25), _cand(3, 7.1), _cand(4, 6.0)]
+async def test_every_positive_ev_candidate_is_eligible_and_negative_ev_is_not(
+    sqlite_db,
+):
+    # Weak projections are fine as long as the price has EV; fair 0.50 at -110 never does.
+    cands = [_cand(1, 6.0), _cand(2, 5.9), _cand(3, 9.0), _cand(4, 9.0, fair=0.50)]
     result = await _run(sqlite_db, cands)
-    assert result.pick_count == 2
-    assert sorted(b.selection for b in _bets(sqlite_db)) == [
-        "Player 1 OVER 5.5 points",
-        "Player 2 OVER 5.5 points",
-    ]
-    counts = _counts(sqlite_db)
-    assert counts["below_threshold"] == 1 and counts["below_floor"] == 1
+    assert result.pick_count == 3
+    assert _counts(sqlite_db) == {"negative_consensus_ev": 1}
 
 
 @pytest.mark.asyncio
-async def test_zero_picks_when_nothing_clears_floor(sqlite_db):
-    result = await _run(sqlite_db, [_cand(1, 6.0), _cand(2, 5.9)])
+async def test_zero_picks_when_no_candidate_has_ev(sqlite_db):
+    cands = [_cand(1, fair=0.50), _cand(2, 5.6, fair=0.525), _cand(3, fair=None)]
+    result = await _run(sqlite_db, cands)
     assert result.status == AutoPickRunStatus.NO_PICKS and result.pick_count == 0
     assert _bets(sqlite_db) == []
-    assert _counts(sqlite_db) == {"below_floor": 2}
+    assert _counts(sqlite_db) == {
+        "negative_consensus_ev": 1,
+        "ev_below_threshold": 1,
+        "no_consensus_price": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_negative_ev_with_top_score_is_never_picked_lower_score_positive_ev_is(
+    sqlite_db,
+):
+    # e1 has the best old-style score (huge edge) but costs more than the market's fair price.
+    cands = [_cand(1, 9.0, fair=0.50), _cand(2, 6.0)]
+    result = await _run(sqlite_db, cands)
+    assert [p.candidate.event_id for p in result.picks] == ["e2"]
+    (bet,) = _bets(sqlite_db)
+    assert bet.selection == "Player 2 OVER 5.5 points"
+    assert _counts(sqlite_db) == {"negative_consensus_ev": 1}
+
+
+@pytest.mark.asyncio
+async def test_stores_selection_version_and_ev_decision(sqlite_db):
+    await _run(sqlite_db, [_cand(1, price=105, fair=0.50)])
+    (bet,) = _bets(sqlite_db)
+    pf = bet.prediction_factors
+    assert pf["selection_version"] == "ev-v1"
+    assert set(pf["ev"]) == {"fair_prob", "model_part", "prob", "consensus_ev", "ev"}
+    assert pf["ev"]["fair_prob"] == 0.5 and pf["ev"]["ev"] > 0.02
+    assert f"EV {pf['ev']['ev']:+.1%} at +105 (market fair 50.0%" in bet.reasoning
+
+
+@pytest.mark.asyncio
+async def test_stale_projection_is_dropped_fresh_and_keyless_are_not(sqlite_db):
+    fresh_at = datetime(2026, 5, 22, 16, 30)
+    now = datetime(2026, 5, 22, 17, 30)  # 13:30 ET, the 12:00 refresh started 16:00 UTC
+    fresh, stale, keyless, missing = (_cand(i, commence=LATE) for i in (1, 2, 3, 4))
+    fresh.projection_metadata["projected_at"] = fresh_at
+    stale.projection_metadata["projected_at"] = datetime(2026, 5, 22, 15, 59)
+    missing.projection_metadata["projected_at"] = None
+    result = await _run(sqlite_db, [fresh, stale, keyless, missing], now=now)
+    assert sorted(p.candidate.event_id for p in result.picks) == ["e1", "e3"]
+    assert _counts(sqlite_db) == {"stale_line": 2}
+
+
+@pytest.mark.asyncio
+async def test_withheld_key_with_positive_ev_writes_no_bet(sqlite_db, monkeypatch):
+    # The record gate withholds the candidate's key: shadow only, nothing reaches a user.
+    monkeypatch.setattr(orch_mod, "drop_reason", lambda rec, key: "record_withheld")
+    result = await _run(sqlite_db, [_cand(1), _cand(2)])
+    assert result.pick_count == 0
+    assert sqlite_db.query(YetAIBet).count() == 0
+    assert _counts(sqlite_db) == {"record_withheld": 2}
 
 
 @pytest.mark.asyncio
@@ -333,10 +398,11 @@ async def test_non_positive_edge_and_injury_dropped(sqlite_db):
 
 @pytest.mark.asyncio
 async def test_dropped_reasons_keep_every_candidate_of_a_game(sqlite_db):
-    cands = [_cand(1, 6.0), _cand(2, 5.9, game=1)]  # same game, both below floor
+    # Same game, both priced above the market's fair price.
+    cands = [_cand(1, 6.0, fair=0.50), _cand(2, 5.9, game=1, fair=0.50)]
     await _run(sqlite_db, cands)
     run = sqlite_db.query(AutoPickRun).one()
-    assert run.dropped_reasons["counts"] == {"below_floor": 2}
+    assert run.dropped_reasons["counts"] == {"negative_consensus_ev": 2}
     top = run.dropped_reasons["top_rejected"]
     assert [t["event_id"] for t in top] == ["e1", "e2"]  # sorted by score desc
     assert set(top[0]) == {
@@ -345,8 +411,10 @@ async def test_dropped_reasons_keep_every_candidate_of_a_game(sqlite_db):
         "league",
         "market",
         "score",
+        "ev",
         "reason",
     }
+    assert top[0]["ev"] < 0
 
 
 @pytest.mark.asyncio
@@ -529,14 +597,14 @@ async def test_early_only_slate_morning_does_not_reserve(sqlite_db):
 
 
 @pytest.mark.asyncio
-async def test_early_only_slate_morning_fills_floor(sqlite_db):
+async def test_early_only_slate_morning_takes_both_candidates(sqlite_db):
     early = NOW + timedelta(hours=2)
     res = await _run(
         sqlite_db,
         [_cand(1, commence=early), _cand(2, 7.25, commence=early)],
         reserve_slots=1,
     )
-    assert res.pick_count == 2  # floor fill is on when no reserve
+    assert res.pick_count == 2  # nothing could be left for the evening
 
 
 @pytest.mark.asyncio
@@ -548,26 +616,37 @@ async def test_mixed_slate_morning_still_reserves(sqlite_db):
 
 
 @pytest.mark.asyncio
-async def test_morning_skips_floor_fill_and_evening_fills_to_two(sqlite_db):
-    # 9.0 clears threshold; 7.25 / 7.1 clear only the floor.
+async def test_morning_takes_best_ev_and_evening_gets_the_rest(sqlite_db):
     morning = await _run(
         sqlite_db,
         [
-            _cand(1, commence=LATE),
-            _cand(2, 7.25, commence=LATE),
-            _cand(3, 7.1, commence=LATE),
+            _cand(1, commence=LATE, fair=0.54),
+            _cand(2, commence=LATE, fair=0.56),
+            _cand(3, commence=LATE, fair=0.55),
         ],
         reserve_slots=1,
     )
-    assert morning.pick_count == 1
-    assert _counts_last(sqlite_db)["below_threshold"] == 2
+    assert sorted(p.candidate.event_id for p in morning.picks) == ["e2", "e3"]
+    assert _counts_last(sqlite_db) == {"cap_reached": 1}
 
     evening = await _run(
         sqlite_db,
-        [_cand(2, 7.25, commence=LATE), _cand(3, 7.1, commence=LATE)],
+        [_cand(1, commence=LATE, fair=0.54)],
         now=NOW + timedelta(hours=6, minutes=30),
     )
-    assert evening.pick_count == 1 and len(_bets(sqlite_db)) == 2
+    assert evening.pick_count == 1 and len(_bets(sqlite_db)) == 3
+
+
+@pytest.mark.asyncio
+async def test_reserve_check_ignores_staleness_the_evening_refresh_will_fix(sqlite_db):
+    # Fresh at 13:30 ET, but by 18:00 ET every row is older than the 17:00 refresh. The evening
+    # run will read rewritten rows, so the third candidate still justifies holding a slot.
+    now = datetime(2026, 5, 22, 17, 30)
+    cands = [_cand(i, commence=LATE) for i in (1, 2, 3)]
+    for c in cands:
+        c.projection_metadata["projected_at"] = datetime(2026, 5, 22, 16, 30)
+    res = await _run(sqlite_db, cands, now=now, reserve_slots=1)
+    assert res.pick_count == 2
 
 
 @pytest.mark.asyncio
@@ -575,15 +654,4 @@ async def test_reserve_never_below_one_pick(sqlite_db):
     result = await _run(
         sqlite_db, [_cand(1, commence=LATE), _cand(2, commence=LATE)], reserve_slots=5
     )
-    assert result.pick_count == 1
-
-
-@pytest.mark.asyncio
-async def test_bad_min_score_env_falls_back_with_warning(
-    sqlite_db, monkeypatch, caplog
-):
-    monkeypatch.setenv("AUTO_YETAI_PICKS_MIN_SCORE", "fifty")
-    assert orch_mod._min_score() == orch_mod.DEFAULT_MIN_SCORE
-    assert "AUTO_YETAI_PICKS_MIN_SCORE" in caplog.text
-    result = await _run(sqlite_db, [_cand(1)])
     assert result.pick_count == 1

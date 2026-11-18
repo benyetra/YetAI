@@ -5,9 +5,19 @@ from typing import Any, Optional, Protocol, runtime_checkable
 from zoneinfo import ZoneInfo
 
 EASTERN = ZoneInfo("America/New_York")
-# ET wall time of the evening beat run (celery_app.py schedules it; the 11:00 run
-# uses it to decide whether holding a slot back is worthwhile).
-EVENING_RUN_ET = time(17, 30)
+# ET wall times of the two beat runs (celery_app.py schedules them). Each sits after a
+# NBA refresh start with time for it to finish: the 12:00 refresh has 90 minutes before the
+# morning run, the 17:00 refresh has 60 before the evening run (tips are 19:00+ ET, so the
+# 20-minute start buffer still holds). The morning run uses EVENING_RUN_ET to decide whether
+# holding a slot back is worthwhile.
+MORNING_RUN_ET = time(13, 30)
+EVENING_RUN_ET = time(18, 0)
+
+# ET start times of the NBA projection refreshes (the 03:30 pipeline and the 12:00 / 17:00
+# pregame refreshes). Must equal the beat entries in celery_app.py; a test fails on drift.
+NBA_REFRESH_STARTS_ET = (time(3, 30), time(12, 0), time(17, 0))
+# A priced projection older than this is not the line on the board any more.
+MAX_LINE_AGE = timedelta(hours=3)
 
 
 class MarketType(str, Enum):
@@ -128,6 +138,21 @@ def eastern_naive_to_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=EASTERN)
     return to_naive_utc(dt)
+
+
+def latest_refresh_start(now_utc: datetime) -> datetime:
+    """Naive UTC start of the most recent NBA refresh at or before ``now_utc``.
+
+    A projection stamped before this was not reached by the latest refresh (or the refresh is
+    still half done), so its price is not trustworthy.
+    """
+    now_et = utc_to_eastern(now_utc)
+    starts = [
+        datetime.combine(now_et.date() - timedelta(days=d), t, tzinfo=EASTERN)
+        for d in (0, 1)
+        for t in NBA_REFRESH_STARTS_ET
+    ]
+    return to_naive_utc(max(s for s in starts if s <= now_et))
 
 
 def utc_to_eastern(dt: datetime) -> datetime:
