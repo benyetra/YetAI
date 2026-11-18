@@ -59,10 +59,18 @@ def collect_for_week(
     """Match prediction rows to weekly receiving yards and upsert actuals."""
     from app.models.predictions_models import RecvYdsPredictions
 
+    from app.services.etl._game_start import has_started
+    from app.services.etl.nfl.nfl_common import EASTERN, now_eastern_naive
+
     preds = session.query(RecvYdsPredictions).filter_by(season=season, week=week).all()
+    now = now_eastern_naive()
     by_id = {str(r.get("player_id")): r for r in weekly_stats}
     upserted = 0
     for pred in preds:
+        # Only games that are over: a game that has not started (or is on
+        # today's date) has no final yards, whatever a partial feed shows.
+        if not has_started(None, game_date=pred.game_date, now=now, naive_tz=EASTERN):
+            continue
         stat = by_id.get(str(pred.player_id))
         if not stat or stat.get("receiving_yards") is None:
             continue
@@ -102,25 +110,34 @@ def run() -> dict:
     init_session()
     try:
         season = int(get_nfl_season())
-        # Grade the previous completed week by default (mirror QB actuals cadence).
-        week = max(1, int(get_current_nfl_week()) - 1)
-        # The loader also returns last season (usage priors); grade only
-        # against this season's game.
-        weekly = [
-            r
-            for r in load_weekly_receiver_rows(season)
-            if int(r.get("season") or season) == season
-            and int(r.get("week") or 0) == week
-        ]
-        # db_session is a _SessionProxy singleton, not a factory.
-        n = collect_for_week(db_session, season=season, week=week, weekly_stats=weekly)
+        # Grade the current week as well as the previous one (as QB does): the
+        # NFL week rolls on Thursday, so Sunday's games are still "current"
+        # until then. Only games already played get a row.
+        current = int(get_current_nfl_week())
+        weeks = [current] if current <= 1 else [current - 1, current]
+        loaded = load_weekly_receiver_rows(season)
+        n = 0
+        for week in weeks:
+            # The loader also returns last season (usage priors); grade only
+            # against this season's game.
+            weekly = [
+                r
+                for r in loaded
+                if int(r.get("season") or season) == season
+                and int(r.get("week") or 0) == week
+            ]
+            # db_session is a _SessionProxy singleton, not a factory.
+            n += collect_for_week(
+                db_session, season=season, week=week, weekly_stats=weekly
+            )
         db_session.commit()
         return {
             "status": "ok",
             "task": "nfl_collect_recv_yds_actuals",
             "upserted": n,
             "season": season,
-            "week": week,
+            "week": current,
+            "weeks": weeks,
         }
     finally:
         close_session()

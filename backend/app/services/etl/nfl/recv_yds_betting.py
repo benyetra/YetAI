@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from app.services.etl.nfl.recv_yds_model import p_over as model_p_over
 from app.services.etl.nfl.recv_yds_model import published_recv_yards
 
 RECV_YDS_MARKET = "player_reception_yds"
@@ -12,11 +13,12 @@ ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 BASE_URL = "https://api.the-odds-api.com/v4/sports/"
 SPORT = "americanfootball_nfl"
 
-# Mirror qb_betting.generate_betting_recommendation thresholds (no O/U classifier).
-MIN_EDGE = 7.0
 MIN_CONFIDENCE = 0.70
-STRONG_EDGE = 12.0
+# A side needs this much more probability than its price's breakeven.
+MIN_PROB_MARGIN = 0.03
+STRONG_PROB_MARGIN = 0.07
 STRONG_CONFIDENCE = 0.75
+DEFAULT_PRICE = -110  # breakeven price when a side has no stored price
 
 
 def normalize_player_name(name: str) -> str:
@@ -61,51 +63,54 @@ def generate_betting_recommendation(
     prediction: float,
     ou_line: float,
     confidence: float,
+    over_odds: float | None = None,
+    under_odds: float | None = None,
 ) -> dict[str, Any]:
+    """Call a side only when P(that side) beats its price's breakeven.
+
+    ``prediction`` is the mean; P(over) comes from a skewed distribution with
+    that mean (``recv_yds_model.p_over``), so a mean above the line does not
+    by itself make an over.
+    """
+    from app.services.odds_math import breakeven_rate
+
     edge = prediction - ou_line
     edge_percentage = (edge / ou_line) * 100 if ou_line > 0 else 0.0
-
-    if confidence < MIN_CONFIDENCE:
-        return {
-            "recommendation": "PASS",
-            "reason": f"Low confidence ({confidence:.1%})",
-            "edge_percentage": edge_percentage,
-            "bet_size": None,
-        }
-    if abs(edge_percentage) < MIN_EDGE:
-        return {
-            "recommendation": "PASS",
-            "reason": f"Insufficient edge ({edge_percentage:.1f}%)",
-            "edge_percentage": edge_percentage,
-            "bet_size": None,
-        }
-    if edge_percentage >= MIN_EDGE:
-        bet_type = "OVER"
-        if edge_percentage >= STRONG_EDGE and confidence >= STRONG_CONFIDENCE:
-            bet_size = "LARGE"
-            reason = (
-                f"Strong edge ({edge_percentage:.1f}%) + "
-                f"High confidence ({confidence:.1%})"
-            )
-        else:
-            bet_size = "MEDIUM"
-            reason = f"Good edge ({edge_percentage:.1f}%)"
-    else:
-        bet_type = "UNDER"
-        if abs(edge_percentage) >= STRONG_EDGE and confidence >= STRONG_CONFIDENCE:
-            bet_size = "LARGE"
-            reason = (
-                f"Strong edge ({abs(edge_percentage):.1f}%) + "
-                f"High confidence ({confidence:.1%})"
-            )
-        else:
-            bet_size = "MEDIUM"
-            reason = f"Good edge ({abs(edge_percentage):.1f}%)"
-    return {
-        "recommendation": bet_type,
-        "reason": reason,
+    prob_over = model_p_over(prediction, ou_line)
+    out = {
+        "recommendation": "PASS",
         "edge_percentage": edge_percentage,
-        "bet_size": bet_size,
+        "bet_size": None,
+        "p_over": prob_over,
+    }
+    if confidence < MIN_CONFIDENCE:
+        return {**out, "reason": f"Low confidence ({confidence:.1%})"}
+    # A side also needs the projection on its side of the line: skew alone
+    # (a placeholder CV) is not enough to call an under on a mean above the line.
+    margins = {
+        "OVER": prob_over - breakeven_rate(over_odds or DEFAULT_PRICE),
+        "UNDER": (1 - prob_over) - breakeven_rate(under_odds or DEFAULT_PRICE),
+    }
+    if prediction <= ou_line:
+        del margins["OVER"]
+    if prediction >= ou_line:
+        margins.pop("UNDER", None)
+    if not margins:
+        return {**out, "reason": "Projection equals the line"}
+    side = max(margins, key=margins.get)
+    margin = margins[side]
+    if margin < MIN_PROB_MARGIN:
+        return {
+            **out,
+            "reason": f"No side beats its price (P(over) {prob_over:.1%})",
+        }
+    strong = margin >= STRONG_PROB_MARGIN and confidence >= STRONG_CONFIDENCE
+    prob = prob_over if side == "OVER" else 1 - prob_over
+    return {
+        **out,
+        "recommendation": side,
+        "bet_size": "LARGE" if strong else "MEDIUM",
+        "reason": f"{side.title()} {prob:.1%} vs breakeven, +{margin:.1%}",
     }
 
 
@@ -135,6 +140,8 @@ def attach_recv_betting(
         prediction=published,
         ou_line=ou_line,
         confidence=float(confidence_score),
+        over_odds=best["over"]["odds"],
+        under_odds=best["under"]["odds"],
     )
     return {
         "predicted_receiving_yards": published,
@@ -151,6 +158,7 @@ def attach_recv_betting(
         "bet_size": rec["bet_size"],
         "recommendation_reason": rec["reason"],
         "confidence_score": float(confidence_score),
+        "p_over": rec["p_over"],
     }
 
 
