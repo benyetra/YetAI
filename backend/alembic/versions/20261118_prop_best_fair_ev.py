@@ -1,4 +1,5 @@
-"""best_fair_prob / best_ev on NBA prop tables: consensus fair probability and EV of the best price."""
+"""best_fair_prob / best_ev / best_quoted_at on NBA prop tables: consensus fair probability, EV and
+quote time of the best price."""
 
 from typing import Sequence, Union
 
@@ -22,6 +23,7 @@ PROP_TABLES = [
 COLUMNS = [
     ("best_fair_prob", "DOUBLE PRECISION", sa.Float),
     ("best_ev", "DOUBLE PRECISION", sa.Float),
+    ("best_quoted_at", "TIMESTAMP WITHOUT TIME ZONE", sa.DateTime),
 ]
 
 

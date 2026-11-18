@@ -24,8 +24,8 @@ parked at breakeven does not flip daily) below LARGE_SAMPLE (300) calls, plain 0
 Records are recomputed every run from data that keeps being graded while a key is
 withheld, so re-admission is automatic.
 
-Proving in: a key must show PROVE_IN_MIN_PICKS (100) effective priced calls at or above
-breakeven before it opens when AUTO_PICK_REQUIRE_PROVEN_RECORD is on (the default) or the
+Proving in: a key must show PROVE_IN_MIN_PICKS (100) effective priced calls over at least
+PROVE_IN_MIN_DATES (10) slate dates at or above breakeven before it opens when AUTO_PICK_REQUIRE_PROVEN_RECORD is on (the default) or the
 key is a prove-in key (AUTO_PICK_PROVE_IN_KEYS). Until then it is withheld as
 ``unproven_record`` and runs in shadow (its ETL keeps writing projections, so the record
 builds). The board applies the same rule to its pick labels (``withheld_keys``).
@@ -46,6 +46,7 @@ from app.services.accuracy_shared import (
     edge_play_graded_counts,
     ou_call_graded_counts,
     ou_call_graded_record,
+    ou_row_result,
 )
 from app.services.auto_pick import ev
 from app.services.auto_pick.candidate import BetCandidate, MarketType, utc_to_eastern
@@ -68,6 +69,9 @@ DEFAULT_SHRINK_PICKS = 20
 # ROI >= 0 about 40% of the time (one 1u bet at -125 has sd ~0.95, so the standard error of
 # ROI at n=30 is ~17 points); at 100 it is about a third. Proving in is a floor, not proof.
 PROVE_IN_MIN_PICKS = 100
+# Rows of one night share games, pace and blowouts, so the 100 calls must also span this
+# many slate dates before a key opens.
+PROVE_IN_MIN_DATES = 10
 # 300 = the sample the review's F8 and the fair-price shadow decision use: from here a
 # key is withheld on any negative ROI, with no dead band.
 LARGE_SAMPLE = 300
@@ -149,6 +153,7 @@ class KeyRecord:
     unpriced_n: int = 0  # graded calls with no stored price: display only
     version: Optional[str] = None  # model version the projection record used
     bet_hits: int = 0
+    dates: int = 0  # distinct slate dates with a graded priced call
 
 
 def record_key(c: BetCandidate) -> RecordKey:
@@ -174,7 +179,12 @@ def drop_reason(
         return None
     key = rec.key if rec is not None else key
     if require_proven_record() or (key is not None and prove_in_required(key)):
-        if rec is None or rec.n_eff < PROVE_IN_MIN_PICKS or rec.shrunk_roi < 0:
+        if (
+            rec is None
+            or rec.n_eff < PROVE_IN_MIN_PICKS
+            or rec.dates < PROVE_IN_MIN_DATES
+            or rec.shrunk_roi < 0
+        ):
             return "unproven_record"
     return None
 
@@ -197,6 +207,7 @@ def combine(
     proj_units: Optional[float] = None,
     unpriced_n: int = 0,
     version: Optional[str] = None,
+    dates: int = 0,
 ) -> KeyRecord:
     """Sum the priced bet + projection records and shrink toward zero ROI (pure).
 
@@ -223,6 +234,7 @@ def combine(
         unpriced_n=unpriced_n,
         version=version,
         bet_hits=bet_hits,
+        dates=dates,
     )
 
 
@@ -231,9 +243,9 @@ def combine(
 
 def load_bet_records(
     db: Session, now: datetime
-) -> dict[RecordKey, tuple[int, float, int]]:
-    """{key: (graded bets, units, wins)} for AUTO straight bets of the current selection version
-    settled in [now - window, now)."""
+) -> dict[RecordKey, tuple[int, float, int, int]]:
+    """{key: (graded bets, units, wins, distinct settle dates)} for AUTO straight bets of the
+    current selection version settled in [now - window, now)."""
     rows = (
         db.query(YetAIBet)
         .filter(
@@ -245,7 +257,7 @@ def load_bet_records(
         )
         .all()
     )
-    out: dict[RecordKey, list] = defaultdict(lambda: [0, 0.0, 0])
+    out: dict[RecordKey, list] = defaultdict(lambda: [0, 0.0, 0, set()])
     for b in rows:
         pf = b.prediction_factors if isinstance(b.prediction_factors, dict) else {}
         if pf.get("selection_version") != ev.SELECTION_VERSION:
@@ -260,7 +272,8 @@ def load_bet_records(
         acc[0] += 1
         acc[1] += stake_units(b.odds, b.status == "won")
         acc[2] += b.status == "won"
-    return {k: (n, u, w) for k, (n, u, w) in out.items()}
+        acc[3].add(utc_to_eastern(b.settled_at).date())
+    return {k: (n, u, w, len(d)) for k, (n, u, w, d) in out.items()}
 
 
 # Which stored rows each projection record grades:
@@ -300,26 +313,36 @@ def _as_date(v) -> date:
 
 
 def current_version_rows(rows, date_field: str):
-    """(version, rows of that version): the model_version of the most recent row (latest
-    ``date_field``, then ``projected_at``, then ``id``). None is a version too: the
-    unversioned legacy model. Rows are dicts or objects."""
+    """(version, rows of that version): the model_version most rows on the latest
+    ``date_field`` carry (ties: the version of the newest row by ``projected_at``, then
+    ``id``), so one stray backfilled row cannot switch the record. None is a version too:
+    the unversioned legacy model. Rows are dicts or objects."""
     rows = list(rows)
     if not rows:
         return None, []
+    last = max(_as_date(_field(r, date_field)) for r in rows)
+    latest = [r for r in rows if _as_date(_field(r, date_field)) == last]
+    counts: dict = defaultdict(int)
+    for r in latest:
+        counts[_field(r, "model_version")] += 1
 
-    def recency(r):
+    def rank(r):
         return (
-            _as_date(_field(r, date_field)),
+            counts[_field(r, "model_version")],
             _field(r, "projected_at") or datetime.min,
             _field(r, "id") or 0,
         )
 
-    version = _field(max(rows, key=recency), "model_version")
+    version = _field(max(latest, key=rank), "model_version")
     return version, [r for r in rows if _field(r, "model_version") == version]
 
 
 def _priced_shadow_rows(stat: str, proj_field: str, rows):
-    """Rows the selector would have considered: priced, with a side, passing the EV gates."""
+    """Rows the selector would have considered: priced, with a side, inside the default odds
+    bounds, passing the EV gates."""
+    from app.services.auto_pick.selector import SelectorConfig
+
+    bounds = SelectorConfig()
     out = []
     for r in rows:
         line, price, fair = (
@@ -330,6 +353,8 @@ def _priced_shadow_rows(stat: str, proj_field: str, rows):
         proj = r.get(proj_field)
         side = str(r.get("fanduel_over_under") or "").strip().lower()[:1]
         if None in (line, price, fair, proj) or side not in ("o", "u"):
+            continue
+        if not bounds.odds_min <= price <= bounds.odds_max:
             continue
         e = ev.prop_ev(stat, side, proj, line, price, fair)
         if ev.gate_reason(e) is None:
@@ -346,14 +371,26 @@ def _nba_props(db, start, end):
             continue
         stat, actual_field, proj_field = _NBA_PROP_STATS[part]
         version, rows = current_version_rows(rows, "date")
-        hits, n, units, _priced = ou_call_graded_record(
-            _priced_shadow_rows(stat, proj_field, rows),
+        shadow = _priced_shadow_rows(stat, proj_field, rows)
+        fields = dict(
             line_field="best_line",
             pick_field="fanduel_over_under",
             actual_field=actual_field,
-            price_field="best_price",
         )
-        out[("NBA", "player_prop", stat)] = (hits, n, units, version)
+        hits, n, units, _priced = ou_call_graded_record(
+            shadow, price_field="best_price", **fields
+        )
+        dates = {
+            r.get("date")
+            for r in shadow
+            if ou_row_result(
+                line=r.get("best_line"),
+                pick=(r.get("fanduel_over_under") or "").strip().lower(),
+                actual=r.get(actual_field),
+            )
+            in ("hit", "miss")
+        }
+        out[("NBA", "player_prop", stat)] = (hits, n, units, version, len(dates))
     return out
 
 
@@ -571,7 +608,7 @@ def load_records(
     projs = load_projection_records(db, now, loaders)
     out = {}
     for key, (hits, n, *rest) in projs.items():
-        units, version = (*rest, None, None)[:2]
+        units, version, dates = (*rest, None, None, 0)[:3]
         priced = units is not None
         out[key] = combine(
             key,
@@ -580,11 +617,14 @@ def load_records(
             proj_units=units,
             unpriced_n=0 if priced else n,
             version=version,
+            dates=dates if priced else 0,
         )
     # Bets only for keys with no projection record: otherwise they are a subset of it.
     for key in set(bets) - set(projs):
-        bet_n, bet_units, bet_hits = bets[key]
-        out[key] = combine(key, bet_n=bet_n, bet_units=bet_units, bet_hits=bet_hits)
+        bet_n, bet_units, bet_hits, bet_dates = bets[key]
+        out[key] = combine(
+            key, bet_n=bet_n, bet_units=bet_units, bet_hits=bet_hits, dates=bet_dates
+        )
     return out
 
 
@@ -623,6 +663,7 @@ def all_key_rows(db: Session, now: datetime) -> list[dict]:
                 "selection_version": ev.SELECTION_VERSION,
                 "unpriced_n": r.unpriced_n,
                 "bet_n": r.bet_n,
+                "dates": r.dates,
                 "state": (
                     "open"
                     if reason is None

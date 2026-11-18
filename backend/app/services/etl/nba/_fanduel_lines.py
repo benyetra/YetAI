@@ -362,9 +362,6 @@ def apply_fanduel_to_projection(
     left untouched when no fresh one can be fetched.
     """
     row.projected_at = datetime.utcnow()
-    # projected_at is stamped on every write, so "has best_fair_prob" must mean the price was
-    # quoted in this same write; a stale best price kept from an earlier run never looks fresh.
-    row.best_fair_prob = row.best_ev = None
     line, flag, price = fetch_fanduel_prop_for_player(
         team_name, opponent_team_name, player_name, market, projection
     )
@@ -381,6 +378,7 @@ def apply_fanduel_to_projection(
             # The stored prices (FanDuel and best_*) were for the other side of the line.
             row.fanduel_price = None
             row.best_book = row.best_line = row.best_price = None
+            row.best_fair_prob = row.best_ev = row.best_quoted_at = None
         row.fanduel_over_under = side
 
     event_id = get_event_id_for_game(NBA_SPORT, team_name, opponent_team_name)
@@ -401,4 +399,8 @@ def apply_fanduel_to_projection(
         row.best_price = best.price if best else None
         row.best_fair_prob = best.fair_prob if best else None
         row.best_ev = best.ev if best else None
+        # best_* travel together with the time they were quoted: a rerun with no quotes keeps
+        # the old pair (the record still grades what was offered) and the old time (the
+        # selector's freshness gate drops it).
+        row.best_quoted_at = row.projected_at if best else None
     return stored

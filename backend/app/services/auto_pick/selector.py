@@ -93,11 +93,15 @@ def hard_gate_reason(
         return "injury_flag"
     md = c.projection_metadata
     if fresh and "projected_at" in md:
-        at = to_naive_utc(md["projected_at"])
+        # Both the projection and the quote (line + price) must come from the latest refresh.
+        oldest = to_naive_utc(md["projected_at"])
+        if "quoted_at" in md:
+            quoted = to_naive_utc(md["quoted_at"])
+            oldest = None if oldest is None or quoted is None else min(oldest, quoted)
         if (
-            at is None
-            or at < latest_refresh_start(now_utc)
-            or at < to_naive_utc(now_utc) - MAX_LINE_AGE
+            oldest is None
+            or oldest < latest_refresh_start(now_utc)
+            or oldest < to_naive_utc(now_utc) - MAX_LINE_AGE
         ):
             return "stale_line"
     if c.commence_time is not None:

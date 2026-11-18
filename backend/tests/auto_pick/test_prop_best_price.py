@@ -79,6 +79,7 @@ def test_fair_prob_and_projected_at_reach_the_candidate(sqlite_db):
                 best_price=-105,
                 best_fair_prob=0.55,
                 best_ev=0.05,
+                best_quoted_at=datetime(2026, 1, 15, 8, 0),
                 **fd,
                 **common,
             ),
@@ -90,9 +91,11 @@ def test_fair_prob_and_projected_at_reach_the_candidate(sqlite_db):
     md = c["Has Fair"].projection_metadata
     assert md["fair_prob"] == 0.55
     assert md["projected_at"] == ts == md["generated_at"]
+    assert md["quoted_at"] == datetime(2026, 1, 15, 8, 0)  # the quote's own time
     # a FanDuel-only price is never paired with a consensus probability
     assert c["Fd Only"].projection_metadata["fair_prob"] is None
     assert c["Fd Only"].projection_metadata["projected_at"] == ts
+    assert c["Fd Only"].projection_metadata["quoted_at"] is None
 
 
 def test_wnba_candidate_has_no_projected_at_key():
@@ -180,13 +183,20 @@ def test_apply_stores_fair_prob_and_ev_then_clears_without_fresh_quote(monkeypat
     row = SimpleNamespace(fanduel_line=26.5, fanduel_over_under="o", fanduel_price=-120)
     _apply_with_best(monkeypatch, row, BestQuote("dk", 25.5, -105, 0.55, 0.05))
     assert (row.best_fair_prob, row.best_ev) == (0.55, 0.05)
-    # rerun finds no quotes: best_price is kept, but it must not look fresh
+    assert row.best_quoted_at == row.projected_at
+    quoted = row.best_quoted_at
+    # rerun finds no quotes: the quote keeps its pair and its old quote time, so it never
+    # looks fresh (projected_at moves on, best_quoted_at does not)
     _apply_with_best(monkeypatch, row, None, quotes=False)
-    assert row.best_price == -105
-    assert (row.best_fair_prob, row.best_ev) == (None, None)
-    # a quote run that finds no best quote also clears
+    assert (row.best_price, row.best_fair_prob, row.best_ev) == (-105, 0.55, 0.05)
+    assert row.best_quoted_at == quoted and row.projected_at >= quoted
+    # a quote run that finds no best quote clears the whole quote
     _apply_with_best(monkeypatch, row, None)
-    assert (row.best_price, row.best_fair_prob) == (None, None)
+    assert (row.best_price, row.best_fair_prob, row.best_quoted_at) == (
+        None,
+        None,
+        None,
+    )
 
 
 def test_apply_side_flip_clears_fair_prob(monkeypatch):
@@ -204,4 +214,4 @@ def test_apply_side_flip_clears_fair_prob(monkeypatch):
     )
     _apply_with_best(monkeypatch, row, None, quotes=False)
     assert row.best_price is None
-    assert (row.best_fair_prob, row.best_ev) == (None, None)
+    assert (row.best_fair_prob, row.best_ev, row.best_quoted_at) == (None, None, None)

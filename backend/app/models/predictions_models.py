@@ -1265,6 +1265,9 @@ class PointsProjections(Base):
     best_price = Column(Integer, nullable=True)
     best_fair_prob = Column(Float, nullable=True)  # consensus P(side) at best_line
     best_ev = Column(Float, nullable=True)  # EV per 1u at best_price
+    best_quoted_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, when best_* was quoted
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1301,6 +1304,9 @@ class ThreePointProjections(Base):
     best_price = Column(Integer, nullable=True)
     best_fair_prob = Column(Float, nullable=True)  # consensus P(side) at best_line
     best_ev = Column(Float, nullable=True)  # EV per 1u at best_price
+    best_quoted_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, when best_* was quoted
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1445,6 +1451,9 @@ class StealsProjections(Base):
     best_price = Column(Integer, nullable=True)
     best_fair_prob = Column(Float, nullable=True)  # consensus P(side) at best_line
     best_ev = Column(Float, nullable=True)  # EV per 1u at best_price
+    best_quoted_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, when best_* was quoted
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1482,6 +1491,9 @@ class BlocksProjections(Base):
     best_price = Column(Integer, nullable=True)
     best_fair_prob = Column(Float, nullable=True)  # consensus P(side) at best_line
     best_ev = Column(Float, nullable=True)  # EV per 1u at best_price
+    best_quoted_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, when best_* was quoted
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1519,6 +1531,9 @@ class AssistsProjections(Base):
     best_price = Column(Integer, nullable=True)
     best_fair_prob = Column(Float, nullable=True)  # consensus P(side) at best_line
     best_ev = Column(Float, nullable=True)  # EV per 1u at best_price
+    best_quoted_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, when best_* was quoted
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1558,6 +1573,9 @@ class ReboundsProjections(Base):
     best_price = Column(Integer, nullable=True)
     best_fair_prob = Column(Float, nullable=True)  # consensus P(side) at best_line
     best_ev = Column(Float, nullable=True)  # EV per 1u at best_price
+    best_quoted_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, when best_* was quoted
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator
@@ -1630,6 +1648,9 @@ class PRAProjections(Base):
     best_price = Column(Integer, nullable=True)
     best_fair_prob = Column(Float, nullable=True)  # consensus P(side) at best_line
     best_ev = Column(Float, nullable=True)  # EV per 1u at best_price
+    best_quoted_at = Column(
+        DateTime, nullable=True
+    )  # naive UTC, when best_* was quoted
     projected_at = Column(
         DateTime, nullable=True
     )  # naive UTC, last write by the generator

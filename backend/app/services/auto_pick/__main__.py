@@ -60,14 +60,14 @@ def dry_run(db, slate_date: date, now: datetime | None = None, providers=None) -
 def print_gate_report(rows: list[dict]) -> None:
     print(
         f"{'key':34} {'n':>5} {'hits':>5} {'units':>7} {'n_eff':>6} {'ROI':>8} "
-        f"{'unpriced':>8} {'bets':>5} {'version':>10} {'selection':>9}  state"
+        f"{'unpriced':>8} {'bets':>5} {'dates':>5} {'version':>10} {'selection':>9}  state"
     )
     for r in rows:
         why = f" ({r['reason']})" if r["reason"] else ""
         print(
             f"{r['key']:34} {r['n']:>5} {r['hits']:>5} {r['units']:>7} "
             f"{r['n_eff']:>6} {r['shrunk_roi']:>8.2%} {r['unpriced_n']:>8} "
-            f"{r['bet_n']:>5} {str(r['version']):>10} {r['selection_version']:>9}  "
+            f"{r['bet_n']:>5} {r['dates']:>5} {str(r['version']):>10} {r['selection_version']:>9}  "
             f"{r['state']}{why}"
         )
 

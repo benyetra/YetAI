@@ -124,3 +124,18 @@ def test_auto_pick_runs_at_1330_reserving_one_and_1800():
     assert beat["daily"] == [[13], [30]] and beat["topup"] == [[18], [0]]
     assert beat["daily_kwargs"] == {"reserve_slots": 1}
     assert "expires" in beat["daily_opts"] and "expires" in beat["topup_opts"]
+
+
+def test_a_fresh_projection_with_an_old_quote_is_stale():
+    # The 12:00 refresh re-projected the row but found no quotes: the price is from 03:30.
+    sc = _sc(
+        "e",
+        70,
+        meta={"projected_at": _utc(16, 5), "quoted_at": _utc(7, 35)},
+        commence_time=NOW + timedelta(hours=5),
+    )
+    assert hard_gate_reason(sc, NOW, -300, 400) == "stale_line"
+    sc.candidate.projection_metadata["quoted_at"] = _utc(16, 5)
+    assert hard_gate_reason(sc, NOW, -300, 400) is None
+    sc.candidate.projection_metadata["quoted_at"] = None  # no best quote at all
+    assert hard_gate_reason(sc, NOW, -300, 400) == "stale_line"

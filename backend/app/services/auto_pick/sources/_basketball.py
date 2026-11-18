@@ -269,6 +269,10 @@ def prop_rows(db, specs, lines_model, league, date_range, side_of) -> list[dict]
                 }
             )
             # Key only when the table has the column, so WNBA stays outside the freshness gate.
+            # The line and price are as old as their quote, not as the projection.
             if hasattr(r, "projected_at"):
                 out[-1]["projected_at"] = r.projected_at
+                out[-1]["quoted_at"] = (
+                    getattr(r, "best_quoted_at", None) if used_best else None
+                )
     return out

@@ -474,7 +474,7 @@ def test_dry_run_cli_function_prints_json_and_rolls_back(sqlite_db, capsys):
 
     out = dry_run(sqlite_db, SLATE, providers=[_provider([_cand(1)])])
     json.dumps(out, default=str)
-    assert out["now_utc"] == "2026-05-22T15:00:00"  # 11:00 ET default
+    assert out["now_utc"] == "2026-05-22T17:30:00"  # 13:30 ET default (morning run)
     (pick,) = out["would_publish"]
     assert pick["tier"] == "free" and pick["grading"]["market"] == "player_prop"
     assert sqlite_db.query(YetAIBet).count() == 0

@@ -95,7 +95,8 @@ model, trusted only a little, says the bet wins more often than that price needs
 
 1. **Market's fair chance.** For NBA props, the line shopper (`odds_math.best_quote`) reads ten books, removes the
    vig from every two-sided quote and takes the consensus; it stores that fair probability of our side at the best
-   line (`best_fair_prob`) and its EV (`best_ev`) next to the best book, line and price.
+   line (`best_fair_prob`), its EV (`best_ev`) and the quote time (`best_quoted_at`) next to the best book, line and
+   price. A refresh that finds no quotes keeps the old quote and its old time, so the freshness gate drops it.
 2. **Our small share.** The projection is pulled most of the way back to the line: our mean = line + k x
    (projection - line), with k = 0.10 (PRA 0.05). The review found the NBA points edge has a slope of about 0.10 and
    every prop model is worse than the line on lined rows, so trusting more than a tenth of the gap is not supported.
@@ -118,9 +119,11 @@ confidence; `sub_scores.py`) is still computed and stored for display. `score_th
 
 A market (league, market, stat) must have earned its place on a record measured at real prices:
 
-- **What is graded.** NBA props: the projection rows of the market's current model version (the version of the
-  newest row; older versions never mix in) that the selector would have considered, i.e. rows with a stored best
-  price and consensus fair probability that pass the same EV gates, graded at `best_line` / `best_price`. This is
+- **What is graded.** NBA props: the projection rows of the market's current model version (the version most rows
+  on the latest date carry; older versions never mix in) that the selector would have considered, i.e. rows with a
+  stored best price and consensus fair probability, inside the odds bounds, that pass the same EV gates, graded at
+  `best_line` / `best_price`. It is every such row, not only the up-to-3 a day that the caps let through, and it
+  is the row's last write of the day (the 17:00 refresh overwrites the 12:00 one). This is
   the **shadow record**: while a market is withheld its candidates are not written anywhere, but the ETL keeps
   writing and grading these rows, so the record keeps building and the market can prove in. Nothing in it can reach
   a user or the public bets record. Rows with no stored price are left out, never valued at -110. Other markets'
@@ -129,7 +132,10 @@ A market (league, market, stat) must have earned its place on a record measured 
 - **Arithmetic.** n = priced graded calls (no cap), shrunk ROI = units / (n + 20), which pulls small samples toward
   zero. Withheld losing: n >= 30 and shrunk ROI below -2% (n < 300) or below 0 (n >= 300).
 - **Prove-in.** `AUTO_PICK_REQUIRE_PROVEN_RECORD` (default **true**) makes every market prove in: withheld unproven
-  until n >= 100 and shrunk ROI >= 0. (At 30 calls a no-edge market shows a non-negative ROI about 40% of the time.)
+  until n >= 100 over at least 10 slate dates (one night's rows share games, so they are not independent) and shrunk
+  ROI >= 0. (At 30 calls a no-edge market shows a non-negative ROI about 40% of the time.) A market with no shadow
+  source (NBA moneyline, MLB, WNBA: no projection record; NHL, NFL, NBA totals/spread: no stored price) cannot build a
+  priced record while withheld, so under prove-in it stays withheld until such a source exists.
   `AUTO_PICK_PROVE_IN_KEYS` lists the markets that prove in even when that flag is false (default: NHL, NBA steals,
   blocks and PRA, NBA moneyline, MLB, WNBA).
 - **Transparency.** `record_gate.all_key_rows(db, now)` returns every market's row (n, hits, units, n_eff, shrunk

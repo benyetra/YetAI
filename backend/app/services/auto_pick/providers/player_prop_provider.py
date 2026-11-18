@@ -61,6 +61,7 @@ class PlayerPropCandidateProvider:
                 # Only sources that emit it (NBA) are subject to the freshness gate.
                 if "projected_at" in r:
                     md["projected_at"] = r["projected_at"]
+                    md["quoted_at"] = r.get("quoted_at")
                 out.append(
                     BetCandidate(
                         market_type=MarketType.PLAYER_PROP,

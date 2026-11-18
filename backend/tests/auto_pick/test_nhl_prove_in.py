@@ -43,7 +43,7 @@ def test_nhl_keys_need_a_qualifying_record_with_global_switch_off(monkeypatch):
     assert rg.drop_reason(None, TOTAL) == "unproven_record"
 
     def rec(key, n, hits, units):
-        return combine(key, proj_n=n, proj_hits=hits, proj_units=units)
+        return combine(key, proj_n=n, proj_hits=hits, proj_units=units, dates=10)
 
     # Thin record.
     assert rg.drop_reason(rec(SAVES, 10, 8, 5.0)) == "unproven_record"

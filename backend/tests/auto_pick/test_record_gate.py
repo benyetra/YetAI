@@ -395,8 +395,11 @@ def test_unproven_below_100_calls_or_below_breakeven():
     assert rg.drop_reason(thin) == "unproven_record"  # 60 < 100
     flat = combine(POINTS, proj_n=100, proj_hits=50, proj_units=-1.0)
     assert rg.drop_reason(flat) == "unproven_record"  # shrunk ROI < 0, not losing
-    ok = combine(POINTS, proj_n=100, proj_hits=60, proj_units=12.0)
+    ok = combine(POINTS, proj_n=100, proj_hits=60, proj_units=12.0, dates=10)
     assert rg.drop_reason(ok) is None
+    # the same calls from too few slate dates (one night's rows are correlated)
+    one_week = combine(POINTS, proj_n=100, proj_hits=60, proj_units=12.0, dates=9)
+    assert rg.drop_reason(one_week) == "unproven_record"
     bad = combine(POINTS, proj_n=100, proj_hits=40, proj_units=-30.0)
     assert rg.drop_reason(bad) == "losing_record"  # losing is reported first
 
@@ -517,7 +520,7 @@ def test_all_key_rows_lists_every_emitted_key_with_state(
     emitted = {rg.key_label(k) for ks in rg.emitted_keys().values() for k in ks}
     assert emitted <= set(by_key)
     fields = {"key", "n", "hits", "units", "n_eff", "shrunk_roi", "version",
-              "selection_version", "unpriced_n", "bet_n", "state", "reason"}  # fmt: skip
+              "selection_version", "unpriced_n", "bet_n", "dates", "state", "reason"}  # fmt: skip
     assert all(set(r) == fields for r in rows)
     assert {r["state"] for r in rows} <= {
         "open",
@@ -618,3 +621,20 @@ def test_threes_shadow_rows_read_the_threes_projection_field(sqlite_db, monkeypa
     _fake_rows(monkeypatch, "three_pt_ou", rows)
     rec = load_records(sqlite_db, NOW, ("nba_props",))[("NBA", "player_prop", "threes")]
     assert (rec.proj_n, rec.proj_hits) == (40, 20)
+
+
+def test_shadow_record_counts_slate_dates_and_skips_out_of_bounds_prices(
+    sqlite_db, monkeypatch
+):
+    rows = [_row(i, i % 2 == 0, day=1 + i % 3) for i in range(30)]
+    rows += [_row(100 + i, True, price=+450) for i in range(5)]  # odds_max is +400
+    _fake_rows(monkeypatch, "points_ou", rows)
+    rec = load_records(sqlite_db, NOW, ("nba_props",))[POINTS]
+    assert rec.proj_n == 30 and rec.dates == 3
+
+
+def test_one_stray_row_does_not_switch_the_current_version():
+    rows = [_row(i, True, version="v2") for i in range(5)]
+    rows.append(_row(99, True, version="backfill"))  # newest id, same date
+    version, kept = rg.current_version_rows(rows, "date")
+    assert version == "v2" and len(kept) == 5
