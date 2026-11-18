@@ -422,11 +422,12 @@ def load_usage_priors_for_names(player_names: list[str]) -> list[dict[str, Any]]
     season = int(get_nfl_season())
     week = int(get_current_nfl_week())
     schedule_rows = load_schedule_rows(season)
-    if schedule_rows is not None:
-        week = open_slate_week(schedule_rows, week=week)
-        schedule = schedule_by_team_for_week(schedule_rows, week=week)
-    else:
-        schedule = None
+    if schedule_rows is None:
+        # No schedule means no way to tell which game a line is for, or whether
+        # it has kicked off: write nothing rather than guess the week and date.
+        return []
+    week = open_slate_week(schedule_rows, week=week)
+    schedule = schedule_by_team_for_week(schedule_rows, week=week)
     weekly = load_weekly_receiver_rows(season)
     return select_usage_priors_for_names(
         player_names,

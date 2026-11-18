@@ -14,6 +14,10 @@ DEFAULT_RECV_ANCHOR_ALPHA = 0.25
 # players are noisier than volume WRs; replace with a per-position value fit
 # on graded rows once enough exist.
 RECV_YARDS_CV = 0.85
+# Flip only after fitting CV per position on graded rows. While False the
+# probability is still computed and stored, but no OVER/UNDER call is written
+# (with the placeholder CV, mean == line gives P(over) 0.39, a built-in UNDER).
+RECV_CV_FITTED = False
 
 
 def recv_anchor_alpha() -> float:

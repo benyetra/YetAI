@@ -13,6 +13,7 @@ from app.services.etl.nfl.recv_yds_betting import (
     attach_recv_betting,
     generate_betting_recommendation,
 )
+from app.services.etl.nfl import recv_yds_model
 from app.services.etl.nfl.recv_yds_model import p_over
 from app.services.etl.nfl.recv_yds_usage import (
     open_slate_week,
@@ -40,7 +41,8 @@ def test_mean_above_line_but_p_over_below_half_gives_no_over():
     assert rec["p_over"] < 0.5
 
 
-def test_under_called_when_mean_far_below_line_and_price_is_used():
+def test_under_called_when_mean_far_below_line_and_price_is_used(monkeypatch):
+    monkeypatch.setattr(recv_yds_model, "RECV_CV_FITTED", True)
     rec = generate_betting_recommendation(30.0, 60.0, 0.80, -110, -110)
     assert rec["recommendation"] == "UNDER"
     # A very short under price raises the breakeven past the model's edge.
@@ -238,3 +240,58 @@ def test_repair_dry_run_changes_nothing_then_apply_deletes_v1_only():
     left = {p.player_id for p in session.query(RecvYdsPredictions).all()}
     assert left == {"b", "c"}
     assert session.query(RecvYdsActuals).count() == 0
+
+
+def test_repair_covers_the_utc_window_and_prints_ids(capsys):
+    session = _session()
+
+    def pred(pid, version, created):
+        return RecvYdsPredictions(
+            season=2026,
+            week=9,
+            game_date=date(2026, 11, 10),
+            player_id=pid,
+            player_name=pid,
+            position="WR",
+            team_name="T",
+            opponent_team_name="O",
+            predicted_receiving_yards=50.0,
+            model_version=version,
+            created_at=created,
+        )
+
+    def actual(pid):
+        return RecvYdsActuals(
+            season=2026,
+            week=9,
+            game_date=date(2026, 11, 10),
+            player_id=pid,
+            player_name=pid,
+            position="WR",
+            team_name="T",
+            opponent_team_name="O",
+            actual_receiving_yards=70.0,
+        )
+
+    session.add_all(
+        [
+            pred("noon", "recv_nonml_v1", datetime(2026, 11, 10, 15)),
+            # 21:00 ET on 11-10 is 02:00 UTC on 11-11: still in the window.
+            pred("late", "recv_nonml_v1", datetime(2026, 11, 11, 2)),
+            # 04:00 UTC on 11-10 is 23:00 ET on 11-09: outside it.
+            pred("early", "recv_nonml_v1", datetime(2026, 11, 10, 4)),
+            actual("noon"),
+            actual("late"),
+        ]
+    )
+    session.flush()
+
+    dry = repair.repair(session)
+    assert (dry["predictions"], dry["actuals"]) == (2, 2)
+    out = capsys.readouterr().out
+    assert "noon" in out and "late" in out and "early" not in out
+
+    repair.repair(session, apply=True)
+    assert session.query(RecvYdsActuals).count() == 0
+    left = {(p.player_id, p.model_version) for p in session.query(RecvYdsPredictions)}
+    assert left == {("early", "recv_nonml_v1")}

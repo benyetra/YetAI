@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from app.services.etl.nfl import recv_yds_model
 from app.services.etl.nfl.recv_yds_model import p_over as model_p_over
 from app.services.etl.nfl.recv_yds_model import published_recv_yards
 
@@ -99,6 +100,11 @@ def generate_betting_recommendation(
         }
     strong = margin >= STRONG_PROB_MARGIN and confidence >= STRONG_CONFIDENCE
     prob = prob_over if side == "OVER" else 1 - prob_over
+    if not recv_yds_model.RECV_CV_FITTED:
+        return {
+            **out,
+            "reason": f"shadow: would be {side} {prob:.1%}, CV not fitted",
+        }
     return {
         **out,
         "recommendation": side,
