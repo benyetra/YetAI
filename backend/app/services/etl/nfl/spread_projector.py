@@ -1,9 +1,19 @@
-"""NFL spread / win-probability projector (Elo + PPG overlay)."""
+"""NFL spread / win-probability projector (Elo + PPG overlay), anchored to the line.
+
+Same scheme as the NBA (PR #181): the raw model margin is kept in
+factors["model_margin"] and the published margin is
+market + a + k * (model - market), with k and a fitted walk-forward on graded
+NFL games (market_anchor.fit_anchor). A model with no measured information
+publishes the line. Win probability comes from the published margin, and a
+call is shown only once this version's own graded record clears breakeven.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date, datetime, timedelta
+from typing import List, Tuple
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import (
@@ -18,9 +28,13 @@ from app.services.etl._game_start import not_started
 from app.services.etl._spread_model import (
     NFL_CONFIG,
     load_elos_from_actuals,
+    season_id_for_date,
     spread_recommendation,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba.market_anchor import NO_ANCHOR, Anchor, anchored, fit_anchor
+from app.services.etl.nba.spread_projector import spread_pick_record
+from app.services.etl.nba.totals_baseline import recommend
 from app.services.etl.nfl._team_ppg import compute_team_ppg_stats, team_ppg_for
 from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 from app.services.etl.nfl.qb_spread_adjustment import (
@@ -34,6 +48,76 @@ logger = logging.getLogger(__name__)
 
 INITIAL_ELO = NFL_CONFIG.initial_elo
 HOME_COURT_ADVANTAGE = NFL_CONFIG.home_court_advantage
+
+# Stamped on every row (column is String(20)); the call record counts only
+# rows of this version.
+SPREAD_MODEL_VERSION = "nfl-spread-anchor-v1"
+# NOT tuned on data (no offline NFL data): conservative priors. An NFL season is
+# ~272 games, so a 150-game window covers most of one; k_prior 200 keeps k near 0
+# until the model shows a slope. No constant (a_prior None), as in the NBA.
+SPREAD_ANCHOR_WINDOW = 150
+SPREAD_ANCHOR_K_PRIOR = 200
+SPREAD_ANCHOR_A_PRIOR = None
+
+
+def _factor(factors, key):
+    if isinstance(factors, str):
+        try:
+            factors = json.loads(factors)
+        except ValueError:
+            return None
+    return factors.get(key) if isinstance(factors, dict) else None
+
+
+def _graded(db, *columns):
+    """Projection rows joined to their final margin."""
+    P, A = NFLSpreadProjections, NFLSpreadActuals
+    return db.query(*columns, A.actual_margin).join(
+        A,
+        (A.game_date == P.game_date)
+        & (A.home_team_name == P.home_team_name)
+        & (A.away_team_name == P.away_team_name),
+    )
+
+
+def spread_anchor_history(db, before: date) -> List[Tuple[float, float, float]]:
+    """(model margin, market margin, actual margin) of graded games before
+    ``before``, oldest first. Older rows stored the raw model in
+    projected_margin; newer ones keep it in factors["model_margin"]."""
+    P = NFLSpreadProjections
+    rows = (
+        _graded(db, P.projected_margin, P.market_spread_home, P.factors)
+        .filter(P.game_date < before, P.market_spread_home.isnot(None))
+        .order_by(P.game_date.asc(), P.home_team_name.asc(), P.away_team_name.asc())
+        .all()
+    )
+    out = []
+    for margin, spread, factors, actual in rows:
+        model = _factor(factors, "model_margin")
+        out.append((margin if model is None else model, -spread, actual))
+    return out
+
+
+def season_opener(today: date) -> date:
+    """First day (1 Aug) of the NFL season ``today`` belongs to."""
+    return date(
+        season_id_for_date(today, cfg=NFL_CONFIG), NFL_CONFIG.season_start_month, 1
+    )
+
+
+def version_pick_record(db, start: date, end_exclusive: date) -> Tuple[int, int]:
+    """spread_pick_record over this version's graded rows in [start, end)."""
+    P = NFLSpreadProjections
+    rows = (
+        _graded(db, P.projected_margin, P.market_spread_home)
+        .filter(
+            P.model_version == SPREAD_MODEL_VERSION,
+            P.game_date >= start,
+            P.game_date < end_exclusive,
+        )
+        .all()
+    )
+    return spread_pick_record(rows, NFL_CONFIG.edge_threshold)
 
 
 def projection_end_date(today: date) -> date:
@@ -104,6 +188,8 @@ def _project_spread_row(
     ppg_stats: dict[str, tuple[float, float]],
     home_qb_out: bool = False,
     away_qb_out: bool = False,
+    anchor: Anchor = NO_ANCHOR,
+    record: Tuple[int, int] = (0, 0),
 ) -> dict:
     home_elo = elos.get(home_team_name, INITIAL_ELO)
     away_elo = elos.get(away_team_name, INITIAL_ELO)
@@ -119,10 +205,13 @@ def _project_spread_row(
         home_qb_out=home_qb_out, away_qb_out=away_qb_out
     )
     elo_pace_margin = base_margin + pace_adj
-    projected_margin = elo_pace_margin + qb_out_adj
+    model_margin = elo_pace_margin + qb_out_adj
+    market_margin = None if spread_home is None else -spread_home
+    projected_margin = anchored(model_margin, market_margin, anchor)
     home_win_prob = _sm.margin_to_win_prob(projected_margin, cfg=NFL_CONFIG)
-    edge, recommendation = spread_recommendation(
-        projected_margin, spread_home, cfg=NFL_CONFIG
+    edge, _ = spread_recommendation(projected_margin, spread_home, cfg=NFL_CONFIG)
+    recommendation, confidence, note = recommend(
+        edge, record, min_edge=NFL_CONFIG.edge_threshold, sides=("HOME", "AWAY")
     )
 
     return {
@@ -135,13 +224,23 @@ def _project_spread_row(
         "market_spread_home": spread_home,
         "edge": edge,
         "recommendation": recommendation,
-        "confidence_score": min(1.0, abs(edge) / 6.0) if edge is not None else None,
+        "confidence_score": confidence,
         "factors": {
             "elo_diff": home_elo - away_elo,
             "pace_adj": pace_adj,
             "elo_pace_margin": elo_pace_margin,
             "qb_out_adj": qb_out_adj,
             "method": "elo_pace",
+            "model_margin": model_margin,
+            "market_margin": market_margin,
+            "market_win_prob": (
+                None
+                if market_margin is None
+                else _sm.margin_to_win_prob(market_margin, cfg=NFL_CONFIG)
+            ),
+            "anchor": anchor._asdict(),
+            "pick_record": list(record),
+            "recommendation_note": note,
         },
     }
 
@@ -164,6 +263,14 @@ def run() -> dict:
         ppg_stats = compute_team_ppg_stats(actuals, season=season)
         loaded_week = get_current_nfl_week(season, today=today)
         qb_out_by_team = _load_qb_out_by_team(db, season=season, week=loaded_week)
+
+        anchor = fit_anchor(
+            spread_anchor_history(db, today),
+            window=SPREAD_ANCHOR_WINDOW,
+            k_prior=SPREAD_ANCHOR_K_PRIOR,
+            a_prior=SPREAD_ANCHOR_A_PRIOR,
+        )
+        record = version_pick_record(db, season_opener(today), today)
 
         games = (
             db.query(NFLGameLines)
@@ -189,6 +296,8 @@ def run() -> dict:
                 ppg_stats=ppg_stats,
                 home_qb_out=home_qb_out,
                 away_qb_out=away_qb_out,
+                anchor=anchor,
+                record=record,
             )
             upsert_rows.append(
                 {
@@ -198,7 +307,7 @@ def run() -> dict:
                     "home_team_name": g.home_team_name,
                     "away_team_name": g.away_team_name,
                     "created_at": datetime.utcnow(),
-                    "model_version": "elo-pace-v1",
+                    "model_version": SPREAD_MODEL_VERSION,
                     **projection,
                 }
             )

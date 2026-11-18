@@ -1,4 +1,4 @@
-"""Shared Elo + pace-overlay spread math for basketball leagues."""
+"""Shared Elo + pace-overlay spread math for basketball leagues and the NFL."""
 
 from __future__ import annotations
 
@@ -29,7 +29,21 @@ NBA_CONFIG = SpreadLeagueConfig(
     # MLE on 2025-26 market margins, n=664 (scripts/nba_game_model_replay.py).
     win_prob_logistic_scale=6.6,
 )
-NFL_CONFIG = SpreadLeagueConfig(home_court_advantage=2.5, edge_threshold=3.0)
+NFL_CONFIG = SpreadLeagueConfig(
+    # 2.5 is the long-run NFL home edge (FiveThirtyEight's NFL Elo uses ~2.2-2.5;
+    # recent seasons are a little lower). Kept; not re-fitted here.
+    home_court_advantage=2.5,
+    edge_threshold=3.0,
+    # K=20 and 25 Elo per point are FiveThirtyEight's NFL Elo settings, so the
+    # inherited defaults (elo_k 20, spread_per_elo 25) are right for the NFL too.
+    # NFL final margins miss the closing spread by about 13.5 points (sd); a
+    # logistic with scale s has sd s * pi / sqrt(3), so s = 13.5 / 1.814 = 7.4.
+    win_prob_logistic_scale=7.4,
+    # Season runs Sep-Feb: any month from August on belongs to the new season,
+    # so January/February playoff games stay with the season that started in
+    # the autumn (the basketball default of May would split them wrongly).
+    season_start_month=8,
+)
 
 
 class SpreadActualRow(Protocol):
