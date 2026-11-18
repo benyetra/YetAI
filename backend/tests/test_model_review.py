@@ -19,7 +19,15 @@ SETTLED = datetime(2026, 11, 12, 20, 0)  # naive UTC, yesterday evening ET
 
 
 def _bet(db, id, status, ref_player=None, **kw):
-    pf = {"grading": {"league": "NBA", "market": "player_prop", "stat": "points"}}
+    pf = {
+        "market_line": 20.5,  # pick-time snapshot: the side and line the bet took
+        "grading": {
+            "league": "NBA",
+            "market": "player_prop",
+            "stat": "points",
+            "side": "over",
+        },
+    }
     if ref_player is not None:
         pf["projection_ref"] = {
             "table": PointsProjections.__tablename__,
@@ -50,7 +58,9 @@ def _bet(db, id, status, ref_player=None, **kw):
 
 
 def _fake_other_sports(db, start, end):
-    row = lambda p, l, a, who: ms._row(p, l, a, "over", ("t", who), who)  # noqa: E731
+    row = lambda p, l, a, who: ms._row(
+        p, l, a, "over", ("t", "2026-11-12", who), who
+    )  # noqa: E731
     return {
         ("NHL", "player_prop", "saves"): ("ou", [row(30.0, 25.5, 24.0, "G. Goalie")]),
         ("NFL", "player_prop", "passing_yards"): (
@@ -112,7 +122,10 @@ def test_review_text_has_every_section_and_fixture_numbers(review_db):
     assert "voids (30d): 1" in text and "postponed" in text
     # NBA points: 10/40 calls; proj 30 vs mean actual 13.75 -> bias +16.25; line 20.5 MAE 9.00
     assert "NBA/player_prop/points: 10/40 calls 25.0% (below breakeven)" in text
-    assert "bias +16.25, MAE 16.25, line MAE 9.00 (n=40)" in text
+    assert (
+        "bias +16.25, MAE 16.25 vs line MAE 9.00 on 40 lined rows; "
+        "all-rows projection MAE 16.25 (n=40)"
+    ) in text
     assert "NHL/player_prop/saves" in text and "NFL/player_prop/passing_yards" in text
     # withheld key named with why
     assert "WITHHELD NBA/player_prop/points" in text and "shrunk ROI" in text
@@ -120,7 +133,7 @@ def test_review_text_has_every_section_and_fixture_numbers(review_db):
     d = review["disagreements"]
     assert d["disagreements"] == 1 and d["rows"][0]["bet_id"] == "w3"
     assert d["checked"] == 2 and d["without_projection_ref"] == 2
-    assert "w3 Bet w3: bet won, projection lost" in text
+    assert "w3 Bet w3: bet won, bet side over at 20.5 grades lost" in text
     # misses: ranked by error vs the key's MAE; a 20-point miss leads, saves miss is small
     top = review["misses"]["rows"][0]
     assert (top["key"], top["error"], top["actual"]) == (
@@ -136,6 +149,11 @@ def test_review_text_has_every_section_and_fixture_numbers(review_db):
 def _credits_stub(monkeypatch, quota):
     from app.services import odds_api_sync, odds_credit_report as cr
 
+    from app.core.config import settings
+    from app.services import odds_api_budget
+
+    monkeypatch.setattr(odds_api_budget, "_usage", lambda day=None: 0)  # Redis up
+    monkeypatch.setattr(settings, "ODDS_API_KEY", "k")
     monkeypatch.setenv("ODDS_API_CYCLE_START", "2026-10-20")
     monkeypatch.setattr(odds_api_sync, "read_live_quota", lambda: quota)
     monkeypatch.setattr(cr, "snapshot_quota", lambda q, day: None)
@@ -160,6 +178,8 @@ def test_credits_section_renders(review_db, monkeypatch):
 
 def test_credits_failure_does_not_break_review(review_db, monkeypatch):
     from app.services import odds_api_sync
+
+    _credits_stub(monkeypatch, None)
 
     def boom():
         raise RuntimeError("quota down")

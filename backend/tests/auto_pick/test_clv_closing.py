@@ -165,8 +165,10 @@ def test_review_clv_section_numbers_and_text(sqlite_db, monkeypatch):
     n = NormalDist()
     p1 = 1 - n.cdf((20.5 - 21.5) / 6.5) - american_to_prob(-120)
     p2 = n.cdf((19.5 - 19.0) / 6.5) - american_to_prob(-105)
-    assert k["mean_prob_clv"] == pytest.approx((p1 + p2) / 2, abs=1e-4)
-    assert k["share_prob_positive"] == 1.0
+    # The old EV-at-taken-price figure (the headline prob CLV is now no-vig vs no-vig at
+    # pick time; these rows carry no pick-time quotes, so it is None and counted).
+    assert k["mean_ev_at_taken"] == pytest.approx((p1 + p2) / 2, abs=1e-4)
+    assert k["mean_prob_clv"] is None and k["no_pick_time_quotes"] == 2
     assert k["median_minutes_before_start"] == 20.0
     assert k["priced"] == 3
     # units at the taken price: -120 hit, -105 hit, -110 hit
