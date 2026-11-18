@@ -15,7 +15,7 @@ from alembic import op
 
 
 revision: str = "20261118_nhl_goalie_uq"
-down_revision: Union[str, None] = "20261115_fair_price_shadow"
+down_revision: Union[str, None] = "20261118_nba_prop_low_sample"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
