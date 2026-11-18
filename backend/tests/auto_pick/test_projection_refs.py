@@ -302,6 +302,8 @@ def test_nhl_sources(sqlite_db):
 @pytest.mark.asyncio
 async def test_bet_carries_projection_ref_and_model_version(sqlite_db, monkeypatch):
     monkeypatch.setattr(orch_mod, "_can_grade", lambda *a: True)
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
+    monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")
     ref = {"table": "pred_points_projections", "id": 42, "player_id": 1}
     c = orch_t._cand(1)
     c.projection_metadata.update(projection_ref=ref, model_version="m" * 120)

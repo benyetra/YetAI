@@ -13,22 +13,22 @@ from tests.auto_pick.test_orchestrator import (
 
 
 @pytest.mark.asyncio
-async def test_reserve_on_own_pick_loses_floor_fill(sqlite_db):
+async def test_reserve_on_own_pick_gives_up_the_slot(sqlite_db):
     early = NOW + timedelta(hours=2)
-    # A: late game, clears threshold. B: early game, clears only the floor.
-    morning = await _run(
+    # Only A (late game, best EV) could still be picked at 18:00 ET. The morning run takes
+    # A and B itself, so nothing is left for the evening and it takes the full cap now.
+    res = await _run(
         sqlite_db,
-        [_cand(1, commence=LATE), _cand(2, 7.25, commence=early)],
+        [
+            _cand(1, commence=LATE, fair=0.56),
+            _cand(2, commence=early, fair=0.55),
+            _cand(3, commence=early, fair=0.54),
+            _cand(4, commence=early, fair=0.53),
+        ],
         reserve_slots=1,
     )
-    evening = await _run(
-        sqlite_db,
-        [_cand(1, commence=LATE), _cand(2, 7.25, commence=early)],
-        now=NOW + timedelta(hours=6, minutes=30),
-    )
-    total = len(_bets(sqlite_db))
-    # Same slate with no reserve publishes 2 (A + floor fill B).
-    assert total == 2
+    assert sorted(p.candidate.event_id for p in res.picks) == ["e1", "e2", "e3"]
+    assert len(_bets(sqlite_db)) == 3
 
 
 @pytest.mark.asyncio

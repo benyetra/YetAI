@@ -39,6 +39,29 @@ class PlayerPropCandidateProvider:
                 opponent = (
                     r.get("opponent") or r.get("opponent_team_name") or ""
                 ).strip() or None
+                md = {
+                    "sample_size": r.get("sample_size"),
+                    "generated_at": r.get("generated_at"),
+                    "model_confidence": r.get("model_confidence"),
+                    "injury_flag": r.get("injury_flag", False),
+                    "stat": r["stat"],
+                    "side": r["side"],
+                    "projection_ref": r.get("projection_ref"),
+                    "model_version": r.get("model_version"),
+                    "player": r.get("player"),
+                    "team": r.get("team"),
+                    "opponent": opponent,
+                    "opponent_team_name": opponent,
+                    "combined_score": r.get("combined_score"),
+                    "game_id": r.get("game_id"),
+                    "book": r.get("book"),
+                    "odds_assumed": bool(r.get("odds_assumed", False)),
+                    "fair_prob": r.get("fair_prob"),
+                }
+                # Only sources that emit it (NBA) are subject to the freshness gate.
+                if "projected_at" in r:
+                    md["projected_at"] = r["projected_at"]
+                    md["quoted_at"] = r.get("quoted_at")
                 out.append(
                     BetCandidate(
                         market_type=MarketType.PLAYER_PROP,
@@ -48,24 +71,7 @@ class PlayerPropCandidateProvider:
                         market_line=float(r["line"]),
                         market_odds=int(r["odds"]),
                         our_projection=float(r["projection"]),
-                        projection_metadata={
-                            "sample_size": r.get("sample_size"),
-                            "generated_at": r.get("generated_at"),
-                            "model_confidence": r.get("model_confidence"),
-                            "injury_flag": r.get("injury_flag", False),
-                            "stat": r["stat"],
-                            "side": r["side"],
-                            "projection_ref": r.get("projection_ref"),
-                            "model_version": r.get("model_version"),
-                            "player": r.get("player"),
-                            "team": r.get("team"),
-                            "opponent": opponent,
-                            "opponent_team_name": opponent,
-                            "combined_score": r.get("combined_score"),
-                            "game_id": r.get("game_id"),
-                            "book": r.get("book"),
-                            "odds_assumed": bool(r.get("odds_assumed", False)),
-                        },
+                        projection_metadata=md,
                         away_team=away,
                         home_team=home,
                         commence_time=r.get("commence_time"),

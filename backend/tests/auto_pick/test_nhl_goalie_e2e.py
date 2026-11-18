@@ -149,37 +149,32 @@ async def test_goalie_saves_without_record_runs_in_shadow(written, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_confirmed_goalie_publishes_graded_pick(written, monkeypatch):
+async def test_confirmed_goalie_is_a_candidate_but_has_no_price_model(
+    written, monkeypatch
+):
+    """The goalie row becomes a candidate, but there is no consensus price for NHL saves, so
+    the EV gate drops it: nothing is published at an unverified price."""
     monkeypatch.delenv("NHL_GOALIE_PROBABLE_PICKS", raising=False)
-    monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")  # as once the record qualifies
+    monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")
     res, bets = await _run(written)
-    (b,) = [b for b in bets if b.sport == "NHL"]  # probable VAN goalie is not picked
-    assert b.status == "active"
-    assert b.prediction_factors["grading"] == {
-        "market": "player_prop",
-        "league": "NHL",
-        "stat": "saves",
-        "player": "Dylan Garand",
-        "home_team": "Vancouver Canucks",
-        "away_team": "New York Rangers",
-        "side": "over",
-        "line": 25.5,
-        "game_date": "2026-11-13",
-    }
+    assert [
+        b for b in bets if b.sport == "NHL"
+    ] == []  # probable VAN goalie not a candidate
+    run = written.query(AutoPickRun).one()
+    assert run.candidates_considered == 1
+    assert run.dropped_reasons["counts"] == {"no_consensus_price": 1}
     assert yg.can_grade("NHL", "player_prop", "saves")
-    assert b.commence_time == datetime(2026, 11, 14, 2, 0) and b.commence_time > NOW
 
 
 @pytest.mark.asyncio
-async def test_probable_goalie_publishes_only_with_flag(written, monkeypatch):
+async def test_probable_goalie_is_a_candidate_only_with_flag(written, monkeypatch):
     monkeypatch.setenv("NHL_GOALIE_PROBABLE_PICKS", "1")
-    monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")  # as once the record qualifies
+    monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")
     res, bets = await _run(written)
-    # Same game: one pick per event (event_already_used), so one of the two goalies
-    # is published; with the flag the probable VAN goalie is a candidate too.
-    assert len([b for b in bets if b.sport == "NHL"]) == 1
+    assert [b for b in bets if b.sport == "NHL"] == []
     run = written.query(AutoPickRun).one()
-    assert run.candidates_considered == 2
+    assert run.candidates_considered == 2  # the probable VAN goalie too
+    assert run.dropped_reasons["counts"] == {"no_consensus_price": 2}
 
 
 def _espn_void_setup(monkeypatch):

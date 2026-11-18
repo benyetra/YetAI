@@ -30,6 +30,7 @@ from app.services.auto_pick.candidate import (
     slate_window,
     to_naive_utc,
 )
+from app.services.auto_pick import ev as ev_mod
 from app.services.auto_pick.config_loader import load_scoring_config
 from app.services.auto_pick.context_builder import build_scoring_context
 from app.services.auto_pick.record_gate import (
@@ -99,24 +100,8 @@ def _env_flag(name: str, default: str) -> bool:
     return os.getenv(name, default).strip().lower() == "true"
 
 
-DEFAULT_MIN_SCORE = 55.0
 # pg_advisory_xact_lock key serialising auto-pick write paths ("YETAIPCK").
 AUTO_PICK_LOCK_KEY = 0x5945544149504B
-
-
-def _min_score() -> float:
-    raw = os.getenv("AUTO_YETAI_PICKS_MIN_SCORE")
-    if raw is None or not raw.strip():
-        return DEFAULT_MIN_SCORE
-    try:
-        return float(raw)
-    except ValueError:
-        log.warning(
-            "AUTO_YETAI_PICKS_MIN_SCORE=%r is not a number; using %s",
-            raw,
-            DEFAULT_MIN_SCORE,
-        )
-        return DEFAULT_MIN_SCORE
 
 
 def _dialect_name(db: Session) -> str:
@@ -162,6 +147,30 @@ def _price_at_book(c: BetCandidate) -> str:
         return ""
     odds = f"+{c.market_odds}" if c.market_odds > 0 else str(c.market_odds)
     return f"Price {odds} at {BOOK_NAMES.get(book, book)}."
+
+
+def _ev_block(e: Optional[ev_mod.EV]) -> Optional[dict]:
+    """The stored decision: what the pick was chosen on (rounded)."""
+    if e is None:
+        return None
+    return {
+        "fair_prob": round(e.fair_prob, 4),
+        "model_part": round(e.model_part, 4),
+        "prob": round(e.prob, 4),
+        "consensus_ev": round(e.consensus_ev, 4),
+        "ev": round(e.ev, 4),
+    }
+
+
+def _ev_text(c: BetCandidate, e: Optional[ev_mod.EV]) -> str:
+    """ "EV +3.1% at +105 (market fair 50.0%, ours 52.4%)." for the reasoning text."""
+    if e is None:
+        return ""
+    odds = f"+{c.market_odds}" if c.market_odds > 0 else str(c.market_odds)
+    return (
+        f"EV {e.ev:+.1%} at {odds} "
+        f"(market fair {e.fair_prob:.1%}, ours {e.prob:.1%})."
+    )
 
 
 BOOK_NAMES = {
@@ -257,8 +266,7 @@ class AutoPickOrchestrator:
         reserve_slots: int = 0,
     ) -> None:
         self.dry_run = dry_run
-        # Slots this run leaves for a later run today (cap - reserve, min 1);
-        # a reserving run also skips the fill-to-2-from-floor step.
+        # Slots this run leaves for a later run today (cap - reserve, min 1).
         self.reserve_slots = max(0, reserve_slots)
         self.db = db
         self.providers = providers
@@ -278,7 +286,6 @@ class AutoPickOrchestrator:
             odds_min=cfg.odds_min,
             odds_max=cfg.odds_max,
             max_picks=cfg.max_picks,
-            min_score=_min_score(),
             parlay_leg_threshold=cfg.parlay_leg_threshold,
             parlay_score_threshold=cfg.parlay_score_threshold,
         )
@@ -338,14 +345,13 @@ class AutoPickOrchestrator:
                 already_published=already,
                 used_games=used_games,
                 market_counts=market_counts,
-                fill_floor=reserve == 0,
             )
 
         reserve = self.reserve_slots
         picks = pick(reserve)
         if reserve:
             # Keep the slot only if something is left for the evening once this run's own
-            # picks are taken; otherwise fill the floor now (the evening could not).
+            # picks are taken; otherwise take the full cap now (the evening could not).
             taken = used_games | {game_key(p.candidate) for p in picks}
             if not self._evening_can_pick(scored, selector_config, taken, date_range):
                 picks = pick(0)
@@ -427,14 +433,14 @@ class AutoPickOrchestrator:
         used_games: set,
         date_range: DateRange,
     ) -> bool:
-        """True if some candidate would still pass the gates and the score floor at
-        the evening run (unknown start times fail the gate after 12:00 ET)."""
+        """True if some candidate would still pass every gate at the evening run (unknown
+        start times fail the gate after 12:00 ET). The freshness gate is skipped: the evening
+        run reads rows the 17:00 refresh has rewritten."""
         evening = to_naive_utc(
             datetime.combine(date_range.slate_date, EVENING_RUN_ET, tzinfo=EASTERN)
         )
         return any(
-            sc.score.total >= cfg.min_score
-            and self._gate(sc, cfg, used_games, now=evening) is None
+            self._gate(sc, cfg, used_games, now=evening, fresh=False) is None
             for sc in scored
         )
 
@@ -444,11 +450,17 @@ class AutoPickOrchestrator:
         cfg: SelectorConfig,
         used_games: set,
         now: Optional[datetime] = None,
+        fresh: bool = True,
     ) -> Optional[str]:
-        reason = hard_gate_reason(sc, now or self.now, cfg.odds_min, cfg.odds_max)
+        reason = hard_gate_reason(
+            sc, now or self.now, cfg.odds_min, cfg.odds_max, fresh=fresh
+        )
         if reason:
             return reason
         c = sc.candidate
+        sc.ev, reason = ev_mod.candidate_ev(c)
+        if reason:
+            return reason
         key = record_key(c)
         reason = drop_reason(self._records.get(key), key)
         if reason:
@@ -491,6 +503,7 @@ class AutoPickOrchestrator:
                 "league": sc.candidate.league,
                 "market": sc.candidate.market_type.value,
                 "score": sc.score.total,
+                "ev": round(sc.ev.ev, 4) if sc.ev else None,
                 "reason": sc.drop_reason,
             }
             for sc in dropped[:15]
@@ -792,7 +805,9 @@ class AutoPickOrchestrator:
         bet_type = _MARKET_TYPE_TO_BET_TYPE.get(c.market_type, BetType.PROP)
 
         title = display_matchup_title(c)
-        reasoning_text = " ".join(t for t in (s.reasoning, _price_at_book(c)) if t)
+        reasoning_text = " ".join(
+            t for t in (s.reasoning, _price_at_book(c), _ev_text(c, p.ev)) if t
+        )
 
         return YetAIBet(
             id=str(uuid.uuid4()),
@@ -830,6 +845,8 @@ class AutoPickOrchestrator:
                     "event_id": c.event_id,
                     "grading": grading_block(c),
                     "slate_date": c.game_date.isoformat() if c.game_date else None,
+                    "selection_version": ev_mod.SELECTION_VERSION,
+                    "ev": _ev_block(p.ev),
                 }
             ),
         )

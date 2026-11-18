@@ -1,9 +1,10 @@
 """
 Daily Celery task that runs the auto-pick orchestrator.
 
-Scheduled by celery beat (see celery_app.py) at 11:00 and 17:30 ET (celery runs in
-America/New_York). The 11:00 run reserves one slot (``reserve_slots=1``) and skips the
-fill-to-2 floor; the 17:30 run fills the day to the cap and to 2 from the floor.
+Scheduled by celery beat (see celery_app.py) at 13:30 and 18:00 ET (celery runs in
+America/New_York), 90 and 60 minutes after the 12:00 and 17:00 NBA refreshes. The 13:30 run
+reserves one slot (``reserve_slots=1``); the 18:00 run fills the day to the cap. Picks are
+the candidates with positive expected value at the real price, best first.
 On completion, sends an admin notification with the number of published picks
 (or pending approval when AUTO_YETAI_PICKS_AUTO_PUBLISH=false).
 """

@@ -346,6 +346,11 @@ def fetch_fanduel_prop_for_player(
     return line, flag, int(price) if price else None
 
 
+def _clear_best(row: Any) -> None:
+    row.best_book = row.best_line = row.best_price = None
+    row.best_fair_prob = row.best_ev = row.best_quoted_at = None
+
+
 def apply_fanduel_to_projection(
     row: Any,
     *,
@@ -366,7 +371,11 @@ def apply_fanduel_to_projection(
         team_name, opponent_team_name, player_name, market, projection
     )
     stored = line is not None
+    prev_side = getattr(row, "fanduel_over_under", None)
     if stored:
+        if prev_side in ("o", "u") and flag != prev_side:
+            # best_* (and their fair probability) were quoted for the other side.
+            _clear_best(row)
         row.fanduel_line = line
         row.fanduel_over_under = flag
         row.fanduel_price = price  # never leave a stale price next to a new line
@@ -374,10 +383,10 @@ def apply_fanduel_to_projection(
         # A rerun that finds nothing must not wipe a line stored by an earlier run.
         # Re-derive the side from it (lifts an OUT flag: the player is active again).
         side = pick_side(projection, row.fanduel_line)
-        if side != row.fanduel_over_under and row.fanduel_over_under in ("o", "u"):
+        if side != prev_side and prev_side in ("o", "u"):
             # The stored prices (FanDuel and best_*) were for the other side of the line.
             row.fanduel_price = None
-            row.best_book = row.best_line = row.best_price = None
+            _clear_best(row)
         row.fanduel_over_under = side
 
     event_id = get_event_id_for_game(NBA_SPORT, team_name, opponent_team_name)
@@ -396,4 +405,10 @@ def apply_fanduel_to_projection(
         row.best_book = best.book if best else None
         row.best_line = best.line if best else None
         row.best_price = best.price if best else None
+        row.best_fair_prob = best.fair_prob if best else None
+        row.best_ev = best.ev if best else None
+        # best_* travel together with the time they were quoted: a rerun with no quotes keeps
+        # the old pair (the record still grades what was offered) and the old time (the
+        # selector's freshness gate drops it).
+        row.best_quoted_at = row.projected_at if best else None
     return stored

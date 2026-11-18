@@ -116,6 +116,7 @@ def test_board_marks_scratched_goalie_with_no_pick_or_tier(db, monkeypatch):
     # Scratch handling alone: with NHL prove-in on (default) and no saves record,
     # every pick label is withheld (tests/auto_pick/test_nhl_prove_in.py).
     monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
     _goalie(db, 1, d=eastern_today(), was_scratch=True)
     _goalie(db, 2, d=eastern_today())
     out = p.nhl_predictions(

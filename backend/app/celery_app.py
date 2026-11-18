@@ -321,7 +321,10 @@ if os.getenv("MLB_JOBS_ENABLED", "false").lower() == "true":
     celery_app.conf.beat_schedule.update(_MLB_BEAT_SCHEDULE)
 
 
-from app.services.auto_pick.candidate import EVENING_RUN_ET  # noqa: E402
+from app.services.auto_pick.candidate import (  # noqa: E402
+    EVENING_RUN_ET,
+    MORNING_RUN_ET,
+)
 
 
 def auto_picks_enabled() -> bool:
@@ -348,12 +351,12 @@ celery_app.conf.beat_schedule["odds_credits_runout_alert"] = {
 }
 
 if auto_picks_enabled():
-    # Celery timezone is America/New_York: these are ET wall times. The 11:00 run
-    # leaves one slot (and the fill-to-2 floor) for the 17:30 run, which sees the
-    # pregame refreshes and fills the day to the cap.
+    # Celery timezone is America/New_York: these are ET wall times. Each run follows an NBA
+    # refresh (12:00 and 17:00) by enough time for it to finish, so picks use fresh prices.
+    # The morning run leaves one slot for the evening run, which fills the day to the cap.
     celery_app.conf.beat_schedule["auto_pick_yetai_bets_daily"] = {
         "task": "auto_pick.yetai_bets",
-        "schedule": crontab(hour=11, minute=0),
+        "schedule": crontab(hour=MORNING_RUN_ET.hour, minute=MORNING_RUN_ET.minute),
         "kwargs": {"reserve_slots": 1},
         # Drops a copy redelivered ~24h later (visibility_timeout) after a worker
         # was killed mid-run, while still allowing a run that starts a little late.

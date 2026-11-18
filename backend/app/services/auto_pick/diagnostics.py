@@ -191,8 +191,11 @@ def _hints_for_run(run: AutoPickRun) -> list[str]:
         )
     elif run.candidates_selected == 0:
         for reason, text in (
-            ("below_floor", "below the min score floor"),
-            ("below_threshold", "below score_threshold"),
+            ("no_consensus_price", "had no market fair price (no two-sided quote)"),
+            ("no_model_probability", "had no probability model for the market"),
+            ("negative_consensus_ev", "were priced above the market's own fair price"),
+            ("ev_below_threshold", "did not beat the minimum expected value"),
+            ("stale_line", "had a price older than the latest line refresh"),
             ("non_positive_edge", "had no positive edge for the picked side"),
             ("no_play", "had no model recommendation"),
             ("ungradeable", "have no results source (can_grade is False)"),

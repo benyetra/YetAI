@@ -93,44 +93,31 @@ def _seed_slate(sqlite_db):
 
 
 @pytest.mark.asyncio
-async def test_nhl_key_without_record_runs_in_shadow(sqlite_db):
+async def test_nhl_key_without_record_is_reported_withheld(sqlite_db):
     _seed_slate(sqlite_db)
     result = await AutoPickOrchestrator(
         db=sqlite_db, providers=_build_providers(sqlite_db), now=NOW
     ).run()
-    assert result.pick_count == 2
-    assert {b.sport for b in sqlite_db.query(YetAIBet).all()} == {"NBA"}
+    assert result.pick_count == 0 and sqlite_db.query(YetAIBet).count() == 0
     dropped = sqlite_db.query(AutoPickRun).one().dropped_reasons
     assert dropped["withheld_keys"]["NHL/total"]["reason"] == "unproven_record"
     assert dropped["withheld_keys"]["NHL/total"]["prove_in"] is True
 
 
 @pytest.mark.asyncio
-async def test_seeded_slate_publishes_three_gradeable_picks(sqlite_db, monkeypatch):
-    # Pipeline mechanics with NHL prove-in off (the default withholds NHL until it
-    # has a record: test above).
+async def test_seeded_spread_and_total_slate_publishes_nothing(sqlite_db, monkeypatch):
+    # Real sources and providers build 3 candidates (2 NBA spreads, 1 NHL total) with real
+    # grading support, but the spread and the total have no consensus price and no probability
+    # model, so the EV gate drops them all: the system publishes nothing it cannot price.
     monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
     _seed_slate(sqlite_db)
     result = await AutoPickOrchestrator(
         db=sqlite_db, providers=_build_providers(sqlite_db), now=NOW
     ).run()
 
-    bets = sqlite_db.query(YetAIBet).all()
-    assert result.pick_count == 3, sqlite_db.query(AutoPickRun).one().dropped_reasons
-    assert [b.status for b in bets] == ["active"] * 3
-    by_league = {(b.sport, b.prediction_factors["grading"]["market"]) for b in bets}
-    assert by_league == {("NBA", "spread"), ("NHL", "total")}
-    for b in bets:
-        g = b.prediction_factors["grading"]
-        assert _can_grade(g["league"], g["market"], g.get("stat"))
-        assert g["game_date"] == "2026-05-22" and g["home_team"] and g["away_team"]
-        assert g["side"] in ("home", "away", "over", "under")
-        assert b.commence_time is not None and b.commence_time > NOW
-    nhl = next(b for b in bets if b.sport == "NHL")
-    assert nhl.commence_time == datetime(2026, 5, 22, 23, 0)  # 19:00 ET -> UTC
-    assert nhl.prediction_factors["grading"]["line"] == 5.5
-    assert nhl.home_team == "Boston Bruins"
-    assert nhl.prediction_factors["grading"]["away_team"] == "Toronto Maple Leafs"
-
-    away = next(b for b in bets if b.prediction_factors["grading"]["side"] == "away")
-    assert away.prediction_factors["grading"]["line"] == 2.0  # picked side's spread
+    run = sqlite_db.query(AutoPickRun).one()
+    assert run.candidates_considered == 3
+    assert result.pick_count == 0 and sqlite_db.query(YetAIBet).count() == 0
+    assert run.dropped_reasons["counts"] == {"no_consensus_price": 3}
+    assert _can_grade("NBA", "spread", None) and _can_grade("NHL", "total", None)
