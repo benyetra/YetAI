@@ -73,6 +73,13 @@ def player_key(name: Optional[str]) -> str:
     return normalize_player_name(name) if name else ""
 
 
+def short_player_key(name: Optional[str]) -> str:
+    """First initial + last token of ``player_key``: "C. Hellebuyck" and "Connor Hellebuyck"
+    both give "c hellebuyck" (boxscore labels are short, Odds API names are full)."""
+    toks = player_key(name).split()
+    return f"{toks[0][0]} {toks[-1]}" if len(toks) > 1 else (toks[0] if toks else "")
+
+
 def parse_event(sport: str, event: dict) -> list[dict]:
     """Snapshot row dicts (no timestamps of ours) for one Odds API event payload."""
     commence = _naive_utc(event.get("commence_time"))
@@ -279,21 +286,37 @@ def _rows(db, start: date, end: date, markets: Iterable[str], player_keys=None):
     return q.all()
 
 
+def snapshot_index(
+    db, start: date, end: date, markets: Iterable[str]
+) -> dict[tuple, list]:
+    """{(game_date, market, player_key, event_id): every observation} for games on [start, end]."""
+    groups: dict[tuple, list] = defaultdict(list)
+    for r in _rows(db, start, end, markets):
+        groups[(r.game_date, r.market, r.player_key, r.event_id)].append(r)
+    return groups
+
+
+def close_of(rows: Iterable) -> list:
+    """Closing rows (one observation per book): the latest first seen before the start."""
+    return _latest_per_book(
+        rows,
+        lambda r: r.commence_time is not None and r.first_seen_at < r.commence_time,
+    )
+
+
+def rows_at(rows: Iterable, at: datetime) -> list:
+    """Each book's observation in effect at ``at`` (first seen at or before it)."""
+    return _latest_per_book(rows, lambda r: r.first_seen_at <= at)
+
+
 def closing_index(
     db, start: date, end: date, markets: Iterable[str]
 ) -> dict[tuple, list]:
     """{(game_date, market, player_key, event_id): closing rows, one observation per book}
     for games on [start, end]; only observations first seen before the start count."""
-    groups: dict[tuple, list] = defaultdict(list)
-    for r in _rows(db, start, end, markets):
-        groups[(r.game_date, r.market, r.player_key, r.event_id)].append(r)
     out = {}
-    for k, rows in groups.items():
-        close = _latest_per_book(
-            rows,
-            lambda r: r.commence_time is not None and r.first_seen_at < r.commence_time,
-        )
-        if close:
+    for k, rows in snapshot_index(db, start, end, markets).items():
+        if close := close_of(rows):
             out[k] = close
     return out
 
@@ -309,7 +332,7 @@ def quotes_at(db, game_date: date, market: str, name_or_key: str, at: datetime) 
     """Each book's observation in effect at ``at`` (first seen at or before it)."""
     key = player_key(name_or_key)
     rows = _rows(db, game_date, game_date, [market], [key])
-    return _latest_per_book(rows, lambda r: r.first_seen_at <= at)
+    return rows_at(rows, at)
 
 
 def to_quotes(rows: Iterable) -> list[Quote]:

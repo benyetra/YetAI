@@ -33,8 +33,15 @@ from app.services.odds_math import breakeven_rate, median_price, units_for_resul
 from app.services.auto_pick import record_gate
 from app.services.auto_pick.candidate import EASTERN
 from app.services.auto_pick.context_builder import _normalize_sport
-from app.services.odds_snapshots import closing_index, player_key
-from app.services.prop_clv import NBA_STAT_MARKET, clv_vs_close
+from app.services.fair_price.grade import CLOSE_MAX_LEAD_MIN
+from app.services.odds_snapshots import (
+    close_of,
+    player_key,
+    rows_at,
+    short_player_key,
+    snapshot_index,
+)
+from app.services.prop_clv import NBA_STAT_MARKET, clv_vs_close, fair_prob_clv
 
 log = logging.getLogger(__name__)
 
@@ -1094,22 +1101,31 @@ def _versions_section(db: Session, today: date) -> dict:
 _CLV_MARKETS = {
     ("NHL", "player_prop", "saves"): "player_total_saves",
     ("NFL", "player_prop", "receiving_yards"): "player_reception_yds",
+    ("NHL", "player_prop", "shots"): "player_shots_on_goal",
 }
 # Not joinable from the review's row loaders (no player name / no loader at all).
 _CLV_UNJOINED = {
     ("NFL", "player_prop", "passing_yards"): "passing rows carry a QB id, not a name",
-    ("NHL", "player_prop", "shots"): "the review has no shots loader",
+    ("NFL", "player_prop", "anytime_td"): "Yes/No market with no line, so no line CLV",
 }
 
 
 def _clv_for_key(key, rows, idx) -> dict:
+    """``idx`` is odds_snapshots.snapshot_index: every observation per (date, market, player,
+    event). Closes come from it, and so do the pick-time quotes (each book's observation first
+    seen at or before the row's projection write time ``at``)."""
     market = _CLV_MARKETS.get(key) or NBA_STAT_MARKET.get(key[2] or "")
+    by_all: dict[tuple, list] = defaultdict(list)
     by_close: dict[tuple, list] = defaultdict(list)
-    for (d, m, p, _e), close in idx.items():
-        by_close[(d, m, p)].extend(close)
+    shorts: dict[tuple, set] = defaultdict(set)
+    for (d, m, p, _e), obs in idx.items():
+        by_all[(d, m, p)].extend(obs)
+        by_close[(d, m, p)].extend(close_of(obs))
+        shorts[(d, m, short_player_key(p))].add(p)
     graded = priced = with_close = 0
+    stale = no_at = no_indep = ambiguous = 0
     units = 0.0
-    line_clvs, prob_clvs, minutes = [], [], []
+    line_clvs, prob_clvs, ev_clvs, minutes = [], [], [], []
     for r in rows:
         res = ou_row_result(line=r["line"], pick=r["pick"], actual=r["actual"])
         if res not in ("hit", "miss"):
@@ -1125,11 +1141,30 @@ def _clv_for_key(key, rows, idx) -> dict:
             day = date.fromisoformat(r["ident"][1])
         except ValueError:
             continue  # ident without a game date: cannot join
-        close = by_close.get((day, market, player_key(r["label"])))
+        pk = player_key(r["label"])
+        if not by_close.get((day, market, pk)):
+            # Exact name found nothing: join on first initial + surname, only if unambiguous.
+            cands = shorts.get((day, market, short_player_key(r["label"])), set())
+            if len(cands) > 1:
+                ambiguous += 1
+            if len(cands) == 1:
+                pk = next(iter(cands))
+        close = by_close.get((day, market, pk))
+        # A close seen long before the start is not a close.
+        usable = [
+            q
+            for q in close or []
+            if q.commence_time is None
+            or q.last_seen_at is None
+            or (q.commence_time - q.last_seen_at).total_seconds()
+            <= CLOSE_MAX_LEAD_MIN * 60
+        ]
+        if close and not usable:
+            stale += 1
         side = "o" if r["pick"].strip().lower() in ("over", "o") else "u"
         c = (
-            clv_vs_close(side, float(line), price, book, close, market)
-            if close
+            clv_vs_close(side, float(line), price, book, usable, market)
+            if usable
             else None
         )
         if c is None:
@@ -1137,7 +1172,21 @@ def _clv_for_key(key, rows, idx) -> dict:
         with_close += 1
         line_clvs.append(c["line_clv"])
         if c["prob_clv"] is not None:
-            prob_clvs.append(c["prob_clv"])
+            ev_clvs.append(c["prob_clv"])
+        at = r.get("at")
+        picked = (
+            rows_at(by_all[(day, market, pk)], at) if isinstance(at, datetime) else []
+        )
+        if not picked:
+            no_at += 1
+        else:
+            if {getattr(q, "id", None) for q in picked if q.book == book} & {
+                getattr(q, "id", None) for q in usable if q.book == book
+            } - {None}:
+                no_indep += 1
+            fp = fair_prob_clv(side, float(line), picked, usable, market)
+            if fp is not None:
+                prob_clvs.append(fp)
         row = c["row"]
         if row.commence_time and row.last_seen_at:
             minutes.append((row.commence_time - row.last_seen_at).total_seconds() / 60)
@@ -1155,7 +1204,12 @@ def _clv_for_key(key, rows, idx) -> dict:
             if prob_clvs
             else None
         ),
+        "mean_ev_at_taken": _r(mean(ev_clvs), 4) if ev_clvs else None,
         "median_minutes_before_start": _r(median(minutes), 1) if minutes else None,
+        "stale_close_excluded": stale,
+        "no_pick_time_quotes": no_at,
+        "no_independent_close": no_indep,
+        "ambiguous_name": ambiguous,
     }
 
 
@@ -1173,7 +1227,7 @@ def _clv_section(db: Session, today: date, cur: Optional[Loaded] = None) -> dict
         and (k in _CLV_MARKETS or (k[0] == "NBA" and k[2] in NBA_STAT_MARKET))
     }
     markets = {_CLV_MARKETS.get(k) or NBA_STAT_MARKET[k[2]] for k in joined}
-    idx = closing_index(db, start, end, markets) if markets else {}
+    idx = snapshot_index(db, start, end, markets) if markets else {}
     keys = [
         c
         for k in sorted(joined, key=lambda k: tuple(p or "" for p in k))
@@ -1657,8 +1711,19 @@ def render_text(review: dict) -> str:
             prob = (
                 ""
                 if k["mean_prob_clv"] is None
-                else f", prob CLV {k['mean_prob_clv'] * 100:+.1f}pt ({_pct(k['share_prob_positive'])} > 0)"
+                else f", prob CLV (no-vig close vs no-vig at pick time) "
+                f"{k['mean_prob_clv'] * 100:+.1f}pt ({_pct(k['share_prob_positive'])} > 0)"
             )
+            if k["mean_ev_at_taken"] is not None:
+                prob += f"; EV at taken price {k['mean_ev_at_taken'] * 100:+.1f}pt"
+            for n, what in (
+                (k["stale_close_excluded"], "closes > 60 min before start excluded"),
+                (k["no_pick_time_quotes"], "without pick-time quotes"),
+                (k["no_independent_close"], "close is the pick-time quote"),
+                (k["ambiguous_name"], "ambiguous short names not joined"),
+            ):
+                if n:
+                    prob += f", {n} {what}"
             mins = (
                 ""
                 if k["median_minutes_before_start"] is None

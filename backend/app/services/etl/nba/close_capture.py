@@ -5,10 +5,11 @@ once, when its ``commence_time`` falls in ``(now, now + NBA_CLOSE_CAPTURE_LEAD_M
 (default 25) and no snapshot of a capture market was seen inside that window yet. The
 snapshot hook in ``odds_api_sync.sync_odds_get`` stores the rows; this task writes nothing.
 
-Cost: credits = markets returned per event, once per event. Default markets
-``player_rebounds,player_assists`` (what the residual model targets) are ~2 credits per
-event. All 7 prop markets plus spreads,totals,h2h would be ~10 per event. The events list
-is free. Off with ``NBA_CLOSE_CAPTURE_ENABLED=0``.
+Cost: credits = markets returned per event, once per event. Default markets are all seven
+NBA prop markets we project and price (7 credits per event, priority order below). Before
+each event the call is trimmed to the first ``headroom`` markets when the daily budget
+(``odds_api_budget``) has less than 7 credits left, and skipped at 0. The events list is
+free. Off with ``NBA_CLOSE_CAPTURE_ENABLED=0``.
 """
 
 from __future__ import annotations
@@ -19,11 +20,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.core.config import settings
+from app.services import odds_api_budget
 from app.services.etl.nba._fanduel_lines import NBA_SPORT, PROP_BOOKS, _get_events
 from app.services.odds_api_sync import sync_odds_get
 
 logger = logging.getLogger(__name__)
 
+# Priority order: rebounds and assists (the residual model's targets) survive any trim.
+DEFAULT_MARKETS = (
+    "player_rebounds,player_assists,player_points,player_threes,"
+    "player_points_rebounds_assists,player_steals,player_blocks"
+)
 _URL = "https://api.the-odds-api.com/v4/sports/basketball_nba/events/{}/odds"
 
 
@@ -52,9 +59,7 @@ def run(now: Optional[datetime] = None) -> dict:
 
     now = now or datetime.utcnow()
     lead = timedelta(minutes=int(os.getenv("NBA_CLOSE_CAPTURE_LEAD_MIN", "25")))
-    markets = os.getenv(
-        "NBA_CLOSE_CAPTURE_MARKETS", "player_rebounds,player_assists"
-    ).strip()
+    markets = os.getenv("NBA_CLOSE_CAPTURE_MARKETS", DEFAULT_MARKETS).strip()
     mkt_list = [m for m in markets.split(",") if m.strip()]
     events = _get_events(NBA_SPORT) or []
     out = {
@@ -62,6 +67,8 @@ def run(now: Optional[datetime] = None) -> dict:
         "events_seen": len(events),
         "captured": 0,
         "skipped_already": 0,
+        "skipped_budget": 0,
+        "markets_trimmed": 0,
         "credits": 0,
     }
     for ev in events:
@@ -84,17 +91,27 @@ def run(now: Optional[datetime] = None) -> dict:
         if done:
             out["skipped_already"] += 1
             continue
+        ask = mkt_list
+        used = odds_api_budget._usage()  # None: Redis down, the call is not counted
+        if used is not None:
+            headroom = odds_api_budget.DAILY_CREDIT_BUDGET - used
+            if headroom <= 0:
+                out["skipped_budget"] += 1
+                continue
+            if headroom < len(mkt_list):
+                ask = mkt_list[:headroom]
+                out["markets_trimmed"] += 1
         resp = sync_odds_get(
             _URL.format(eid),
             params={
                 "regions": "us",
                 "oddsFormat": "american",
-                "markets": markets,
+                "markets": ",".join(ask),
                 "bookmakers": PROP_BOOKS,
                 "apiKey": settings.ODDS_API_KEY,
             },
             caller="etl.nba.close_capture",
-            estimated_cost=len(mkt_list),
+            estimated_cost=len(ask),
             raise_for_status=False,
         )
         if resp is None or not resp.ok:
