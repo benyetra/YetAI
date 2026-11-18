@@ -348,13 +348,13 @@ def test_best_quote_fields_follow_their_own_market(league, sqlite_db, monkeypatc
     for group, rows in out.items():
         for f in NEW_FIELDS + ML_FIELDS:
             assert rows[0][f] is None, (group, f)
-    # spread proven, moneyline not: spread quote stays, ml quote goes
+    # spread proven, moneyline not: this sparse row forms no pick candidate, so the open
+    # spread shows no pick either (a passing row keeps its quote: test_board_open_game_picks)
     _gate_says(monkeypatch, {ml: "unproven_record"})
     row = api._withhold_board_picks(_payload(sport), sqlite_db, sport, None)["spreads"][
         0
     ]
-    assert all(row[f] == PICKY[f] for f in NEW_FIELDS)
-    assert all(row[f] is None for f in ML_FIELDS)
+    assert all(row[f] is None for f in NEW_FIELDS + ML_FIELDS)
     assert row["ml_pick_withheld"] == "unproven_record" and "pick_withheld" not in row
     # moneyline proven, spread not: conservative, the whole row goes
     _gate_says(monkeypatch, {spread: "losing_record"})
@@ -362,9 +362,10 @@ def test_best_quote_fields_follow_their_own_market(league, sqlite_db, monkeypatc
         0
     ]
     assert all(row[f] is None for f in NEW_FIELDS + ML_FIELDS)
-    # both proven: nothing stripped
+    # both proven: open, but no candidate from a sparse row -> no pick, no withheld note
     _gate_says(monkeypatch, {})
     row = api._withhold_board_picks(_payload(sport), sqlite_db, sport, None)["spreads"][
         0
     ]
-    assert all(row[f] == PICKY[f] for f in NEW_FIELDS + ML_FIELDS)
+    assert all(row[f] is None for f in NEW_FIELDS + ML_FIELDS)
+    assert "pick_withheld" not in row and "ml_pick_withheld" not in row

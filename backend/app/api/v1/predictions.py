@@ -346,10 +346,165 @@ def _withhold_unproven_picks(
             (withheld.get(key) if key in gated else "no_record_check")
             for key, _ in entries
         ]
-        if not any(reasons):
+        markets = _open_game_markets(entries, reasons)
+        if not any(reasons) and not markets:
             continue
-        out[group] = [_strip_row(r, entries, reasons) for r in rows]
+        stripped = [
+            _strip_row(r, entries, reasons) if any(reasons) else dict(r) for r in rows
+        ]
+        out[group] = _pick_open_game_markets(db, entries, markets, rows, stripped)
     return out
+
+
+def _open_game_markets(entries: tuple, reasons: list) -> list:
+    """[(entry index, (league, market))] for the OPEN game markets of a group."""
+    return [
+        (i, (key[0], key[1]))
+        for i, ((key, _), r) in enumerate(zip(entries, reasons))
+        if key and not r and (key[0], key[1]) in _GAME_PICKS
+    ]
+
+
+# (league, market) -> (build, provider): the candidate the auto picker would form from one
+# stored row. build(row, game lines {(home, away): line}, day) is the source's own pure row
+# function, the provider the one the selector runs: the board asks the same code.
+def _game_pick_builders() -> dict:
+    from app.services.auto_pick.providers.moneyline_provider import (
+        MoneylineCandidateProvider as ML,
+    )
+    from app.services.auto_pick.providers.spread_provider import (
+        SpreadCandidateProvider as SP,
+    )
+    from app.services.auto_pick.providers.totals_provider import (
+        TotalsCandidateProvider as TT,
+    )
+    from app.services.auto_pick.sources import (
+        _basketball,
+        nba_moneyline_source,
+        nfl_moneyline_source,
+        nfl_spread_source,
+        nfl_totals_source,
+    )
+    from app.services.auto_pick.sources.nhl_totals_source import nhl_totals_rows_from
+
+    return {
+        ("NBA", "spread"): (
+            lambda r, g, d: _basketball.spread_rows_from([r], g, "NBA"),
+            SP,
+        ),
+        ("NBA", "moneyline"): (
+            lambda r, g, d: nba_moneyline_source.moneyline_rows_from([r], g),
+            ML,
+        ),
+        ("NBA", "total"): (
+            lambda r, g, d: _basketball.totals_rows_from([r], g, "NBA"),
+            TT,
+        ),
+        ("NFL", "spread"): (
+            lambda r, g, d: nfl_spread_source.spread_rows_from_nfl([r], g, d),
+            SP,
+        ),
+        ("NFL", "moneyline"): (
+            lambda r, g, d: nfl_moneyline_source.moneyline_rows_from_nfl([r], g, d),
+            ML,
+        ),
+        ("NFL", "total"): (
+            lambda r, g, d: nfl_totals_source.totals_rows_from_nfl([r], g, d),
+            TT,
+        ),
+        ("NHL", "total"): (lambda r, g, d: nhl_totals_rows_from([r], d), TT),
+    }
+
+
+_GAME_PICKS = {
+    ("NBA", "spread"), ("NBA", "moneyline"), ("NBA", "total"),
+    ("NFL", "spread"), ("NFL", "moneyline"), ("NFL", "total"),
+    ("NHL", "total"),
+}  # fmt: skip
+_ML_FIELDS = _spread_and_ml("NBA")[1][1]
+_SIDE_WORDS = {"home": "HOME", "away": "AWAY", "over": "OVER", "under": "UNDER"}
+
+
+def _game_lines(db: Session, league: str, rows: list) -> dict:
+    """{game_date: {(home, away): game line}} for the NBA / NFL rows (NHL has none)."""
+    model = {"NBA": NBAGameLines, "NFL": NFLGameLines}.get(league)
+    days = {r.get("game_date") for r in rows} - {None}
+    out: dict = {}
+    if model is None or not days:
+        return out
+    with db.begin_nested():
+        for g in db.query(model).filter(model.game_date.in_(days)).all():
+            out.setdefault(g.game_date, {})[(g.home_team_name, g.away_team_name)] = g
+    return out
+
+
+def _passes_selector_gates(builder, row: dict, lines: dict) -> bool:
+    """True when the selector would form a candidate from this stored row that passes its
+    clock-free hard gates and the EV gates (consensus EV >= 0, blended EV above MIN_EV).
+    """
+    from types import SimpleNamespace
+
+    from app.services.auto_pick import record_gate
+
+    build, provider = builder
+    day = record_gate._as_date(row.get("game_date"))
+    cands = record_gate._candidates(
+        provider,
+        build(SimpleNamespace(**row), lines.get(row.get("game_date"), {}), day),
+    )
+    return any(record_gate._passes_gates(c) for c in cands)
+
+
+def _pick_open_game_markets(
+    db: Session, entries: tuple, markets: list, rows: list, out: list
+) -> list:
+    """Game markets whose gate key is OPEN: the row's pick is the stored best quote
+    (``best_side`` at ``best_line``, ``best_book``, ``best_price``; ``ml_best_*`` for the
+    moneyline on a spread row) when the selector would pick it, else no pick at all (not
+    the "not proved" note). The board shows what auto picks publish. Withheld markets
+    were stripped before this and are left alone."""
+    if not markets:
+        return out
+    builders = _game_pick_builders()
+    league = markets[0][1][0]
+    try:
+        lines = _game_lines(db, league, rows)
+    except Exception:
+        logger.exception("game lines failed; open game markets show no pick")
+        lines = {}
+    result = []
+    for orig, row in zip(rows, out):
+        row = dict(row)
+        if row.get("pick_withheld"):  # a withheld row keeps today's behaviour exactly
+            result.append(row)
+            continue
+        # decide every open market on the stored quotes before any field is cleared
+        passed = {}
+        for i, (lg, market) in markets:
+            try:
+                passed[i] = _passes_selector_gates(builders[(lg, market)], orig, lines)
+            except Exception:
+                logger.exception("open game market check failed; showing no pick")
+                passed[i] = False
+        for i, (_league, market) in markets:
+            moneyline = market == "moneyline"
+            side = orig.get(("ml_" if moneyline else "") + "best_side")
+            if moneyline:
+                row.update(dict.fromkeys(_ML_FIELDS) if not passed[i] else {})
+                row["ml_recommendation"] = _SIDE_WORDS.get(side) if passed[i] else None
+                continue
+            keep = _ML_FIELDS if len(entries) > 1 else ()
+            if passed[i] and side in _SIDE_WORDS:
+                row["recommendation"] = _SIDE_WORDS[side]
+                if "betting_recommendation" in row:  # NHL boards read this one
+                    row["betting_recommendation"] = _SIDE_WORDS[side]
+            else:
+                gone = ((_PICK_FIELDS & row.keys()) | {"recommendation", "edge"}) - set(
+                    keep
+                )
+                row.update(dict.fromkeys(gone))
+        result.append(row)
+    return result
 
 
 def _strip_row(row: dict[str, Any], entries: tuple, reasons: list) -> dict[str, Any]:
