@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 DEFAULT_NFL_SEASON = 2026
@@ -56,6 +56,10 @@ def get_current_nfl_week(
 
 EASTERN = ZoneInfo("America/New_York")
 
+# Earliest NFL kickoff (the London games). When a game's own kickoff is not
+# known, a game dated today counts as started from here.
+EARLIEST_KICKOFF_ET = time(9, 30)
+
 
 def now_eastern_naive() -> datetime:
     """Current wall-clock time in US Eastern, without tzinfo (nflverse kickoffs
@@ -79,3 +83,18 @@ def has_kicked_off(
 
     current = now if now is not None else now_eastern_naive()
     return has_started(kickoff, now=current, naive_tz=EASTERN)
+
+
+def started_by_date(day: date | datetime | None, now: datetime) -> bool:
+    """Started-ness of a game with no known kickoff, from its date alone.
+
+    ``now`` is naive Eastern. A past date is started; today's date is started
+    from ``EARLIEST_KICKOFF_ET``; a future or missing date is not.
+    """
+    if isinstance(day, datetime):
+        day = day.date()
+    if day is None:
+        return False
+    if day < now.date():
+        return True
+    return day == now.date() and now.time() >= EARLIEST_KICKOFF_ET

@@ -6,6 +6,19 @@ import os
 
 DEFAULT_RECV_ANCHOR_ALPHA = 0.25
 
+# Receiving yards are right-skewed (many small games, a few huge ones), so the
+# mean sits above the median a book's line is set near. We model a game as a
+# gamma with the published projection as its mean. PLACEHOLDER: the
+# coefficient of variation (sd / mean) is one fixed number for every player,
+# in the range seen for WR/TE/RB yards lines. Ceiling: it ignores that role
+# players are noisier than volume WRs; replace with a per-position value fit
+# on graded rows once enough exist.
+RECV_YARDS_CV = 0.85
+# Flip only after fitting CV per position on graded rows. While False the
+# probability is still computed and stored, but no OVER/UNDER call is written
+# (with the placeholder CV, mean == line gives P(over) 0.39, a built-in UNDER).
+RECV_CV_FITTED = False
+
 
 def recv_anchor_alpha() -> float:
     """Model weight α in soft-anchor publish: ``α·model + (1−α)·line``."""
@@ -103,3 +116,18 @@ def published_recv_yards(
         ),
         "soft_anchor",
     )
+
+
+def p_over(mean_yards: float, line: float, cv: float = RECV_YARDS_CV) -> float:
+    """P(receiving yards > ``line``) for a gamma with this mean and CV.
+
+    For a skewed stat this is below 0.5 when the line equals the mean, which
+    is why a mean above the line is not by itself a reason to take the over.
+    """
+    from scipy.stats import gamma
+
+    mean = float(mean_yards)
+    if mean <= 0:
+        return 0.0
+    shape = 1.0 / (cv * cv)
+    return float(gamma.sf(float(line), a=shape, scale=mean / shape))

@@ -244,3 +244,15 @@ def test_schedule_by_team_drops_other_weeks_and_kicked_off_games():
         "game_date": "2026-11-15",
         "home": False,
     }
+
+
+def test_no_rows_written_when_the_schedule_cannot_be_loaded(monkeypatch):
+    from app.services.etl.nfl import recv_yds_usage
+
+    monkeypatch.setattr(recv_yds_usage, "load_schedule_rows", lambda season: None)
+    monkeypatch.setattr(
+        recv_yds_usage,
+        "load_weekly_receiver_rows",
+        lambda season: [_game(9, targets=8, receptions=5, yards=60), _qb(9, 32)],
+    )
+    assert recv_yds_usage.load_usage_priors_for_names(["A.J. Brown"]) == []

@@ -334,7 +334,7 @@ def test_qb_betting_does_not_attach_next_weeks_line_to_a_played_game(monkeypatch
     )
     session = MagicMock()
     query = session.query.return_value
-    query.filter_by.return_value.limit.return_value.all.return_value = [played]
+    query.filter_by.return_value.all.return_value = [played]
     query.filter.return_value.all.return_value = []
     monkeypatch.setattr(qb_betting, "db_session", session)
     monkeypatch.setattr(

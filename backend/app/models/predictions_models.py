@@ -22,6 +22,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from app.core.database import Base
@@ -2094,6 +2095,18 @@ class NHLGameStats(Base):
 
 class NHLGoaliePredictions(Base):
     __tablename__ = "pred_nhl_goalie_predictions"
+    # One live row per team per game date. A superseded starter's row stays for history
+    # (was_scratch), so the key only covers rows that are not flagged.
+    __table_args__ = (
+        Index(
+            "uq_nhl_goalie_pred_date_team_active",
+            "game_date",
+            "team_id",
+            unique=True,
+            postgresql_where=text("was_scratch IS NOT TRUE"),
+            sqlite_where=text("was_scratch IS NOT 1"),
+        ),
+    )
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False)
     game_id = Column(Integer, nullable=True)  # NHL game ID

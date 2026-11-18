@@ -303,10 +303,13 @@ def test_refresh_writes_three_markets_from_one_payload_per_event(monkeypatch, se
             }
         ]
     }
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     with (
         patch.object(dp, "now_eastern") as now,
+        patch.object(
+            dp, "_now", return_value=datetime(2026, 11, 13, 20, 0, tzinfo=timezone.utc)
+        ),
         patch.object(dp.NHLAPIClient, "get_schedule", create=True, return_value=sched),
         patch.object(dp, "get_nhl_events_from_odds_api", return_value=events),
         patch("app.services.etl.nhl._db.init_session"),

@@ -140,7 +140,7 @@ def test_board_marks_scratched_goalie_with_no_pick_or_tier(db, monkeypatch):
 
 def test_nhl_past_view_returns_every_row_not_first_fifty(db):
     for i in range(1, 61):
-        _goalie(db, i)
+        _goalie(db, i, team_id=100 + i)  # one live row per team per date
     out = p.nhl_predictions(
         target_date=PAST,
         tz="UTC",

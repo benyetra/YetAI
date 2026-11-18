@@ -13,6 +13,8 @@ from app.services.etl.nfl.nfl_common import (
     EASTERN,
     get_current_nfl_week,
     get_nfl_season,
+    has_kicked_off,
+    now_eastern_naive,
 )
 from app.services.etl.nfl.venues import surface_type as venue_surface_type
 from app.services.etl.nfl.venues import venue_type as venue_roof_type
@@ -61,6 +63,18 @@ def upcoming_events(events, *, now_utc: Optional[datetime] = None) -> list:
             upcoming.append((kickoff, event))
     upcoming.sort(key=lambda pair: pair[0])
     return [event for _, event in upcoming]
+
+
+# A kicker is only projected for a game inside the coming NFL week. ESPN
+# serves next season's schedule months ahead, so without this the off-season
+# run would project (and publish) kickers for a September game.
+SLATE_WINDOW_DAYS = 8
+
+
+def in_slate_window(kickoff, *, now: Optional[datetime] = None) -> bool:
+    """True when ``kickoff`` (naive Eastern) falls within the coming week."""
+    current = now if now is not None else now_eastern_naive()
+    return current <= kickoff <= current + timedelta(days=SLATE_WINDOW_DAYS)
 
 
 def get_team_schedule(team_id):
@@ -679,6 +693,11 @@ def save_kicker_data(kicker_data):
     """
     Save kicker predictions to both current Kickers table and historical KickerPredictions table
     """
+    # Rows for games already kicked off stay as they were at kickoff.
+    if has_kicked_off(kicker_data["game_time"]):
+        print(f"⏭️ {kicker_data['name']}: game already started, row left as is")
+        return
+
     game_date = (
         kicker_data["game_time"].date()
         if isinstance(kicker_data["game_time"], datetime)
@@ -900,11 +919,18 @@ def _run_kickers_core():
                         and len(schedule["events"]) > 0
                     ):
                         next_game = schedule["events"][0]
-                        # Real kickoff (Eastern). "Tomorrow" is only the
-                        # fallback when ESPN's date cannot be read.
-                        game_time = event_kickoff_eastern(
-                            next_game
-                        ) or datetime.now() + timedelta(days=1)
+                        # Real kickoff (Eastern); with no readable date there
+                        # is no game to write a row for.
+                        game_time = event_kickoff_eastern(next_game)
+                        if game_time is None:
+                            print(f"⏭️ {kicker.get('name')}: no kickoff time, no row")
+                            continue
+                        if not in_slate_window(game_time):
+                            print(
+                                f"⏭️ {kicker.get('name')}: next game {game_time} is "
+                                "outside this week's slate (off-season?), no row"
+                            )
+                            continue
                         venue_name = "Stadium"  # Default venue
                         opponent_name = "Opponent"  # Default opponent
 

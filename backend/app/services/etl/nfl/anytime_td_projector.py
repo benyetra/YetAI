@@ -15,8 +15,10 @@ from app.services.etl.nfl.anytime_td_calibration import (
 from app.services.etl.nfl.anytime_td_model import expected_tds
 from app.services.etl.nfl.nfl_common import (
     get_current_nfl_week,
+    has_kicked_off,
     now_eastern_naive,
     resolve_nfl_season,
+    started_by_date,
 )
 from app.services.etl.wnba._db_upsert import upsert_many
 
@@ -155,11 +157,50 @@ def build_upsert_row(
     }
 
 
-def _is_played(game_date: Any, today: date) -> bool:
-    """True when the row's game day is before today (Eastern)."""
-    if isinstance(game_date, datetime):
-        game_date = game_date.date()
-    return isinstance(game_date, date) and game_date < today
+def _row_kickoff(features: Any) -> datetime | None:
+    """Kickoff stored in ``features['kickoff']`` (naive Eastern ISO string or
+    datetime), else None."""
+    raw = (features or {}).get("kickoff")
+    if isinstance(raw, str):
+        try:
+            raw = datetime.fromisoformat(raw)
+        except ValueError:
+            raw = None
+    return raw if isinstance(raw, datetime) else None
+
+
+def _is_played(
+    game_date: Any, features: Any, now: datetime, stored_features: Any = None
+) -> bool:
+    """True once this row's game has kicked off (Eastern).
+
+    Frozen if EITHER the row's own or the already stored row's kickoff has
+    passed (a later run whose schedule lost ``gametime`` must not unfreeze).
+    With no kickoff known at all, fall back on the date: past dates stay
+    frozen, today's game counts as started from the earliest NFL kickoff.
+    """
+    kickoffs = [k for k in map(_row_kickoff, (features, stored_features)) if k]
+    if kickoffs:
+        return any(has_kicked_off(k, now=now) for k in kickoffs)
+    return started_by_date(game_date, now)
+
+
+def _stored_features(season: int, week: int, player_ids: Iterable[str]) -> dict:
+    """player_id -> stored features, for rows already written this week."""
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(NFLAnytimeTDPredictions)
+            .filter(
+                NFLAnytimeTDPredictions.season == season,
+                NFLAnytimeTDPredictions.week == week,
+                NFLAnytimeTDPredictions.player_id.in_(list(player_ids)),
+            )
+            .all()
+        )
+        return {str(r.player_id): r.features for r in rows}
+    finally:
+        db.close()
 
 
 def delete_stale_week_predictions(
@@ -175,8 +216,9 @@ def delete_stale_week_predictions(
     Upsert alone leaves prior-run players (wrong TEAM after trades/depth
     changes) on the board because conflict keys are (season, week, player_id).
     Only call after a successful non-empty project for that season/week.
-    ``on_or_after`` limits the purge to games on or after that date, so rows
-    for games already played are never removed.
+    ``on_or_after`` limits the purge to games on or after that date and also
+    spares any game that has already kicked off (a 13:00 game on a 16:25
+    Sunday run), so rows for games already started are never removed.
     """
     keep = {str(pid) for pid in keep_player_ids if pid}
     if not keep:
@@ -186,10 +228,17 @@ def delete_stale_week_predictions(
         NFLAnytimeTDPredictions.week == week,
         NFLAnytimeTDPredictions.player_id.notin_(keep),
     )
-    if on_or_after is not None:
-        query = query.filter(NFLAnytimeTDPredictions.game_date >= on_or_after)
-    deleted = query.delete(synchronize_session=False)
-    return int(deleted or 0)
+    if on_or_after is None:
+        return int(query.delete(synchronize_session=False) or 0)
+    query = query.filter(NFLAnytimeTDPredictions.game_date >= on_or_after)
+    now = now_eastern_naive()
+    deleted = 0
+    for row in query.all():
+        if _is_played(row.game_date, row.features, now):
+            continue
+        db.delete(row)
+        deleted += 1
+    return deleted
 
 
 def _try_build_feature_rows(season: int, week: int) -> list[dict[str, Any]]:
@@ -273,16 +322,32 @@ def run(
     # The week only rolls over on Thursday, so Monday-Wednesday runs rebuild a
     # week whose games are over. Those rows are what the picks are graded on:
     # leave them exactly as they were at kickoff.
-    today = now_eastern_naive().date()
-    frozen = (
-        [r for r in upsert_rows if _is_played(r.get("game_date"), today)]
+    # Frozen per game at kickoff, not per date: on Sunday 15:30 the 13:00
+    # games are locked and the 16:25 games still update.
+    now_et = now_eastern_naive()
+    today = now_et.date()
+
+    stored = (
+        _stored_features(
+            resolved_season,
+            resolved_week,
+            [r["player_id"] for r in upsert_rows if r.get("player_id")],
+        )
         if freeze_played
-        else []
+        else {}
     )
+
+    def played(r: dict[str, Any]) -> bool:
+        return _is_played(
+            r.get("game_date"),
+            r.get("features"),
+            now_et,
+            stored.get(str(r.get("player_id"))),
+        )
+
+    frozen = [r for r in upsert_rows if played(r)] if freeze_played else []
     if frozen:
-        upsert_rows = [
-            r for r in upsert_rows if not _is_played(r.get("game_date"), today)
-        ]
+        upsert_rows = [r for r in upsert_rows if not played(r)]
     if not upsert_rows:
         return {
             "status": "ok",

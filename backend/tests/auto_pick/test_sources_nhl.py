@@ -86,7 +86,13 @@ def _method(method, full_name="Full Name"):
 def test_goalie_saves_method_gate_and_full_name(sqlite_db, monkeypatch):
     monkeypatch.delenv("NHL_GOALIE_PROBABLE_PICKS", raising=False)
     _goalie(sqlite_db, 1, features_used=_method("confirmed", "Dylan Garand"))
-    _goalie(sqlite_db, 2, features_used=_method("probable"), starter_confirmed=False)
+    _goalie(
+        sqlite_db,
+        2,
+        team_id=7,  # one live row per team per date
+        features_used=_method("probable"),
+        starter_confirmed=False,
+    )
     src = NHLGoalieSavesSource(sqlite_db)
     (r,) = run(src.get_todays_projections(DR))
     assert r["player"] == "Dylan Garand"  # full name, not "Goalie 1"
@@ -104,13 +110,16 @@ def test_goalie_saves_legacy_row_without_method_uses_flag(sqlite_db):
 
 
 def test_goalie_saves_skips(sqlite_db):
-    _goalie(sqlite_db, 1, starter_confirmed=False)
-    _goalie(sqlite_db, 2, opponent_team_id=999)  # unresolvable team
-    _goalie(sqlite_db, 3, betting_recommendation="PASS")
-    _goalie(sqlite_db, 4, over_odds=None)
-    _goalie(sqlite_db, 5, game_date=date(2026, 1, 16))
-    _goalie(sqlite_db, 6, saves_line=None)
-    _goalie(sqlite_db, 8, betting_recommendation="UNDER 27.5", under_odds=None)
+    # One live row per team per date, so each case gets its own team.
+    _goalie(sqlite_db, 1, team_id=7, starter_confirmed=False)
+    _goalie(sqlite_db, 2, team_id=8, opponent_team_id=999)  # unresolvable team
+    _goalie(sqlite_db, 3, team_id=9, betting_recommendation="PASS")
+    _goalie(sqlite_db, 4, team_id=10, over_odds=None)
+    _goalie(sqlite_db, 5, team_id=13, game_date=date(2026, 1, 16))
+    _goalie(sqlite_db, 6, team_id=12, saves_line=None)
+    _goalie(
+        sqlite_db, 8, team_id=14, betting_recommendation="UNDER 27.5", under_odds=None
+    )
     assert run(NHLGoalieSavesSource(sqlite_db).get_todays_projections(DR)) == []
 
 

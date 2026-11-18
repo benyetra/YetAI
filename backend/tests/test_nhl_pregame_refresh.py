@@ -11,7 +11,9 @@ from app.tasks import etl_pipeline as ep
 def test_beat_entry_at_1645():
     entry = celery_app.conf.beat_schedule["nhl-pregame-refresh"]
     assert entry["task"] == ep.run_nhl_pregame_refresh.name
-    assert (entry["schedule"].hour, entry["schedule"].minute) == ({16}, {45})
+    # Every 2 h at :45 so matinees get a run; 16:45 stays for the 17:30 auto pick.
+    assert entry["schedule"].minute == {45}
+    assert entry["schedule"].hour == {10, 12, 14, 16, 18, 20}
     assert entry["options"]["expires"] == 3600
     assert "nhl-update-pipeline-daily" in celery_app.conf.beat_schedule
 
@@ -67,10 +69,12 @@ def test_run_goalie_refresh_keeps_only_unstarted_games_and_saves_market():
             }
         ]
     }
-    from datetime import date
+    from datetime import date, datetime, timezone
 
+    NOW = datetime(2026, 11, 13, 21, 0, tzinfo=timezone.utc)  # 16:00 ET
     with (
         patch.object(dp, "now_eastern") as now,
+        patch.object(dp, "_now", return_value=NOW),
         patch.object(dp.NHLAPIClient, "get_schedule", return_value=sched),
         patch.object(dp, "get_nhl_events_from_odds_api", return_value=[]),
         patch.object(dp, "generate_goalie_predictions", return_value=2) as gen,

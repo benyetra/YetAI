@@ -169,8 +169,8 @@ def get_nhl_events_from_odds_api():
             return []
         all_events = response.json()
 
-        # Don't filter by date - return all events
-        # The NHL schedule endpoint already filters to today's games
+        # Don't filter by date - return all events. The schedule endpoint returns a 7-day
+        # gameWeek, so callers filter games to today (ET) before looking events up.
         logging.info(f"Found {len(all_events)} NHL events from Odds API")
 
         # Debug: log first few events

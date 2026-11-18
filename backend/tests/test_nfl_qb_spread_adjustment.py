@@ -189,7 +189,9 @@ def test_current_week_game_receives_qb_out_flags():
     adj = _project_spread_row(
         **_spread_row_kwargs(), home_qb_out=home_out, away_qb_out=away_out
     )
-    assert adj["projected_margin"] == pytest.approx(base["projected_margin"] - 3.5)
+    assert adj["factors"]["model_margin"] == pytest.approx(
+        base["factors"]["model_margin"] - 3.5
+    )
 
 
 def test_next_week_game_does_not_receive_qb_out_flags():
@@ -246,4 +248,6 @@ def test_spread_row_applies_home_qb_out():
         },
         home_qb_out=True,
     )
-    assert adj["projected_margin"] == pytest.approx(base["projected_margin"] - 3.5)
+    assert adj["factors"]["model_margin"] == pytest.approx(
+        base["factors"]["model_margin"] - 3.5
+    )

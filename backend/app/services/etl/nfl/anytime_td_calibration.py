@@ -33,8 +33,10 @@ BACKEND_ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_MODEL_PATH = BACKEND_ROOT / "models" / "nfl" / "anytime_td_residual_gbm.pkl"
 DEFAULT_META_PATH = BACKEND_ROOT / "models" / "nfl" / "anytime_td_residual_gbm.json"
 
-MODEL_VERSION_HIER = "hierarchical_v1"
-MODEL_VERSION_GBM = "hierarchical_v1_gbm_pos"
+# v2: kickoff freeze, no call sides, QB prior aligned to the backtest (2026-11).
+# Column is String(64); the betting stage appends "_mkt".
+MODEL_VERSION_HIER = "hierarchical_v2"
+MODEL_VERSION_GBM = "hierarchical_v2_gbm_pos"
 
 # λ conversion_rate is RZ/GL (priors + PBP), not overall TD/touch. Artifacts
 # must declare this family before inference will blend GBM output.
