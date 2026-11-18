@@ -63,6 +63,182 @@ def _totals_threshold(league: str) -> float:
     return 2.0  # mirrors the inline `abs(edge) > 2` in etl/wnba/totals_projector.py
 
 
+def _best(r, prefix: str = "best_", need_line: bool = True) -> dict | None:
+    """The row's stored best quote, or None when it has none (no consensus was formed)."""
+    side, price = getattr(r, prefix + "side", None), getattr(r, prefix + "price", None)
+    line = getattr(r, prefix + "line", None) if need_line else 0.0
+    if side is None or price is None or line is None:
+        return None
+    return {
+        "side": side,
+        "line": float(line),
+        "odds": int(price),
+        "fair_prob": getattr(r, prefix + "fair_prob", None),
+        "quoted_at": getattr(r, prefix + "quoted_at", None),
+    }
+
+
+def ou_quote(r, proj, line, over_odds, under_odds) -> dict | None:
+    """Over/under quote for a totals or prop row: side, line, odds, fair_prob (+ quoted_at).
+
+    The stored best quote when there is one. Otherwise the side the stored projection
+    sits on, at the stored line and price, with no fair_prob and no quoted_at: it is dropped
+    downstream as ``no_consensus_price``. None when there is nothing to publish."""
+    b = _best(r)
+    if b:
+        return b
+    if proj is None or line is None or proj == line:
+        return None
+    side = "over" if proj > line else "under"
+    odds = over_odds if side == "over" else under_odds
+    if odds is None:
+        return None
+    return {"side": side, "line": float(line), "odds": int(odds), "fair_prob": None}
+
+
+def spread_quote(r, home_odds, away_odds) -> dict | None:
+    """Spread quote: side, ``home_line`` (the HOME point), odds, fair_prob (+ quoted_at)."""
+    b = _best(r)
+    if b:
+        b["home_line"] = b.pop("line") if b["side"] == "home" else -b.pop("line")
+        return b
+    proj, h = r.projected_margin, r.market_spread_home
+    if proj is None or h is None or proj + h == 0:
+        return None
+    side = "home" if proj + h > 0 else "away"
+    odds = home_odds if side == "home" else away_odds
+    if odds is None:
+        return None
+    return {
+        "side": side,
+        "home_line": float(h),
+        "odds": int(odds),
+        "fair_prob": None,
+    }
+
+
+def moneyline_quote(r, home_odds, away_odds) -> dict | None:
+    """Moneyline quote: side, odds, fair_prob (+ quoted_at)."""
+    b = _best(r, "ml_best_", need_line=False)
+    if b:
+        return b
+    proj, h = r.projected_margin, r.market_spread_home
+    if proj is None or h is None or proj == -h:
+        return None
+    side = "home" if proj > -h else "away"
+    odds = home_odds if side == "home" else away_odds
+    if odds is None:
+        return None
+    return {"side": side, "odds": int(odds), "fair_prob": None}
+
+
+def fresh_keys(q: dict, projected_at) -> dict:
+    """Freshness metadata: the row's write time, and the quote time when a quote exists."""
+    out = {"projected_at": projected_at}
+    if "quoted_at" in q:
+        out["quoted_at"] = q["quoted_at"]
+    return out
+
+
+def anchor_md(r, scale: float, with_market: bool = False) -> dict:
+    """Metadata ``ev.game_model_part`` reads; a missing value is left out (model part 0)."""
+    f = r.factors if isinstance(r.factors, dict) else {}
+    a = f.get("anchor")
+    md = {
+        "anchor_k": a.get("k") if isinstance(a, dict) else None,
+        "model_margin": f.get("model_margin"),
+        "margin_scale": scale,
+    }
+    if with_market and r.market_spread_home is not None:
+        md["market_margin"] = -r.market_spread_home
+    return {k: v for k, v in md.items() if v is not None}
+
+
+def _consensus_spread_row(r, gl, base, scale) -> dict | None:
+    q = spread_quote(r, gl.spread_home_odds, gl.spread_away_odds)
+    if q is None or r.projected_margin is None:
+        return None
+    return {
+        **base,
+        "projection_ref": projection_ref(
+            r,
+            game_date=r.game_date,
+            home_team_name=r.home_team_name,
+            away_team_name=r.away_team_name,
+        ),
+        "model_version": getattr(r, "model_version", None),
+        "projected_margin": float(r.projected_margin),
+        "market_spread_home": q["home_line"],
+        "spread_odds": q["odds"],
+        "side": q["side"],
+        "confidence_score": r.confidence_score,
+        "edge": r.edge,
+        "recommendation": r.recommendation,
+        "home_win_prob": r.home_win_prob,
+        "factors": r.factors,
+        "generated_at": r.created_at,
+        "fair_prob": q["fair_prob"],
+        **fresh_keys(q, r.created_at),
+        **anchor_md(r, scale),
+    }
+
+
+def _consensus_totals_row(r, gl, base) -> dict | None:
+    q = ou_quote(r, r.projected_total, r.market_total, gl.over_odds, gl.under_odds)
+    if q is None or r.projected_total is None:
+        return None
+    return {
+        **base,
+        "projection_ref": projection_ref(
+            r,
+            game_date=r.game_date,
+            home_team_name=r.home_team_name,
+            away_team_name=r.away_team_name,
+        ),
+        "model_version": getattr(r, "model_version", None),
+        "projected_total": float(r.projected_total),
+        "market_total": q["line"],
+        "side": q["side"],
+        "line_odds": q["odds"],
+        "confidence_score": r.confidence_score,
+        "edge": r.edge,
+        "recommendation": r.recommendation,
+        "injury_report": r.injury_report,
+        "factors": r.factors,
+        "generated_at": r.created_at,
+        "fair_prob": q["fair_prob"],
+        **fresh_keys(q, r.created_at),
+    }
+
+
+def consensus_moneyline_row(r, gl, base, scale) -> dict | None:
+    """Moneyline candidate row from a spread-projection row (NBA or NFL) and its game line."""
+    q = moneyline_quote(r, gl.moneyline_home, gl.moneyline_away)
+    hwp = r.home_win_prob
+    if q is None or hwp is None:
+        return None
+    home = q["side"] == "home"
+    return {
+        **base,
+        "projection_ref": projection_ref(
+            r,
+            game_date=r.game_date,
+            home_team_name=r.home_team_name,
+            away_team_name=r.away_team_name,
+        ),
+        "model_version": getattr(r, "model_version", None),
+        "home_win_prob": float(hwp),
+        "away_win_prob": 1.0 - float(hwp),
+        "moneyline_home" if home else "moneyline_away": q["odds"],
+        "side": q["side"],
+        "confidence_score": r.confidence_score,
+        "generated_at": r.created_at,
+        "fair_prob": q["fair_prob"],
+        **fresh_keys(q, r.created_at),
+        **anchor_md(r, scale, with_market=True),
+    }
+
+
 def spread_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
     try:
         with db.begin_nested():  # keep a failed query from aborting the run
@@ -78,10 +254,27 @@ def spread_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
     except Exception:
         log.exception("%s spread source: query failed", league)
         return []
+    return spread_rows_from(rows, gls, league)
+
+
+def spread_rows_from(rows, gls, league) -> list[dict]:
+    """Pure: spread projection rows + {(home, away): game line} -> candidate rows."""
     out = []
     for r in rows:
-        side = {"HOME": "home", "AWAY": "away"}.get((r.recommendation or "").upper())
         gl = gls.get((r.home_team_name, r.away_team_name))
+        if hasattr(r, "best_side"):  # consensus path: the EV rule decides, not the rec
+            from app.services.etl._spread_model import NBA_CONFIG
+
+            row = gl and _consensus_spread_row(
+                r,
+                gl,
+                _base(gl, league, r.game_date, r.home_team_name, r.away_team_name),
+                NBA_CONFIG.win_prob_logistic_scale,
+            )
+            if row:
+                out.append(row)
+            continue
+        side = {"HOME": "home", "AWAY": "away"}.get((r.recommendation or "").upper())
         if side is None or gl is None:
             continue
         odds = gl.spread_home_odds if side == "home" else gl.spread_away_odds
@@ -142,10 +335,24 @@ def totals_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
     except Exception:
         log.exception("%s totals source: query failed", league)
         return []
+    return totals_rows_from(rows, gls, league)
+
+
+def totals_rows_from(rows, gls, league) -> list[dict]:
+    """Pure: totals projection rows + {(home, away): game line} -> candidate rows."""
     out = []
     for r in rows:
-        side = {"OVER": "over", "UNDER": "under"}.get((r.recommendation or "").upper())
         gl = gls.get((r.home_team_name, r.away_team_name))
+        if hasattr(r, "best_side"):  # consensus path: the EV rule decides, not the rec
+            row = gl and _consensus_totals_row(
+                r,
+                gl,
+                _base(gl, league, r.game_date, r.home_team_name, r.away_team_name),
+            )
+            if row:
+                out.append(row)
+            continue
+        side = {"OVER": "over", "UNDER": "under"}.get((r.recommendation or "").upper())
         if side is None or gl is None:
             continue
         odds = gl.over_odds if side == "over" else gl.under_odds

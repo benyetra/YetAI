@@ -16,7 +16,7 @@ def test_build_providers_includes_wnba_sources():
     db = MagicMock()
     providers = _build_providers(db)
     names = {type(p.source).__name__ for p in providers}
-    assert len(providers) == 15
+    assert len(providers) == 16
     assert {
         "NHLGoalieSavesSource",
         "WNBAPlayerPropSource",

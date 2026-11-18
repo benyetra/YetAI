@@ -58,13 +58,13 @@ def _gl(db, d=DAY, **kw):
     db.add(NBAGameLines(**vals))
 
 
-def _spread(db, rec="AWAY", d=DAY, **kw):
+def _spread(db, rec="AWAY", d=DAY, margin=2.0, **kw):
     db.add(
         NBASpreadProjections(
             game_date=d,
             home_team_name=HOME,
             away_team_name=AWAY,
-            projected_margin=2.0,
+            projected_margin=margin,
             home_win_prob=kw.pop("hwp", 0.6),
             market_spread_home=-6.5,
             edge=-4.5,
@@ -97,10 +97,15 @@ async def _ret(v):
     return v
 
 
-def test_spread_skips(sqlite_db):
+def test_spread_no_play_still_yields_but_unpriced(sqlite_db):
+    # The projector's NO_PLAY no longer hides a row; with no consensus quote it carries
+    # no fair_prob and no quoted_at, so the EV rule drops it as no_consensus_price.
     _gl(sqlite_db)
     _spread(sqlite_db, rec="NO_PLAY")
-    assert run(NBASpreadSource(sqlite_db).get_todays_projections(RANGE)) == []
+    (r,) = run(NBASpreadSource(sqlite_db).get_todays_projections(RANGE))
+    assert (r["side"], r["spread_odds"]) == ("away", -108)  # 2.0 - 6.5 < 0
+    assert r["fair_prob"] is None and "quoted_at" not in r
+    assert r["projected_at"] == datetime(2026, 1, 15, 15, 0)
 
 
 def _total(db):
@@ -125,46 +130,15 @@ def _total_rows(db):
     return run(NBATotalsSource(db).get_todays_projections(RANGE))
 
 
-def test_moved_line_toward_pick_drops_when_edge_falls_below_threshold(sqlite_db):
-    # Projection: margin 2.0 vs -6.5 (AWAY, edge 4.5). Line now -3.5: edge 1.5 < 2.0.
-    # Total: 231.0 vs 225.5 (OVER). Line now 228.0: edge 3.0 < MIN_EDGE 4.0.
+def test_stored_line_is_used_when_the_live_line_moved(sqlite_db):
+    # No re-derived edge on the consensus path: the stored line and price are published.
     _gl(sqlite_db, spread_home=-3.5, total=228.0)
     _spread(sqlite_db)
     _total(sqlite_db)
-    assert _spread_rows(sqlite_db) == []
-    assert _total_rows(sqlite_db) == []
-
-
-def test_moved_line_that_still_holds_publishes_current_line(sqlite_db):
-    # Spread now -5.5 (AWAY edge 3.5 >= 2.0); total now 226.5 (OVER edge 4.5 >= 4.0).
-    _gl(sqlite_db, spread_home=-5.5, total=226.5)
-    _spread(sqlite_db)
-    _total(sqlite_db)
     (s,) = _spread_rows(sqlite_db)
-    assert s["market_spread_home"] == -5.5 and s["edge"] == -3.5
-    assert s["spread_odds"] == -108  # current away price
-    (c,) = run(
-        SpreadCandidateProvider(NBASpreadSource(sqlite_db)).get_candidates(RANGE)
-    )
-    assert c.market_line == 5.5 and "5.5" in c.selection and "6.5" not in c.selection
+    assert s["market_spread_home"] == -6.5 and s["spread_odds"] == -108
     (t,) = _total_rows(sqlite_db)
-    assert t["market_total"] == 226.5 and t["edge"] == 4.5
-    (tc,) = run(
-        TotalsCandidateProvider(NBATotalsSource(sqlite_db)).get_candidates(RANGE)
-    )
-    assert tc.market_line == 226.5 and "226.5" in tc.selection
-    from app.services.auto_pick.orchestrator import grading_block
-
-    assert grading_block(c)["line"] == 5.5 and grading_block(tc)["line"] == 226.5
-
-
-def test_moved_line_that_flips_the_side_is_dropped(sqlite_db):
-    # Line moved past the projection: margin 2.0 now favours HOME at +1.0; total 235 favours UNDER.
-    _gl(sqlite_db, spread_home=1.0, total=235.0)
-    _spread(sqlite_db)
-    _total(sqlite_db)
-    assert _spread_rows(sqlite_db) == []
-    assert _total_rows(sqlite_db) == []
+    assert t["market_total"] == 225.5 and t["side"] == "over"
 
 
 def test_spread_skips_missing_price_no_line_other_day(sqlite_db):
@@ -181,7 +155,7 @@ def test_totals_over_under_and_no_play(sqlite_db):
         game_date=DAY,
         home_team_name=HOME,
         away_team_name=AWAY,
-        projected_total=231.0,
+        projected_total=220.0,
         market_total=225.5,
     )
     sqlite_db.add(NBATotalsProjections(recommendation="UNDER", **base))
@@ -195,7 +169,7 @@ def test_totals_over_under_and_no_play(sqlite_db):
     assert c.commence_time == TIP_NAIVE and c.market_line == 225.5
 
 
-def test_totals_no_play_skipped(sqlite_db):
+def test_totals_no_play_still_yields(sqlite_db):
     _gl(sqlite_db)
     sqlite_db.add(
         NBATotalsProjections(
@@ -207,25 +181,29 @@ def test_totals_no_play_skipped(sqlite_db):
             recommendation="NO_PLAY",
         )
     )
-    assert run(NBATotalsSource(sqlite_db).get_todays_projections(RANGE)) == []
+    (r,) = run(NBATotalsSource(sqlite_db).get_todays_projections(RANGE))
+    assert r["side"] == "over" and r["fair_prob"] is None
 
 
 def test_moneyline_edge_side(sqlite_db):
-    _gl(sqlite_db)  # no-vig home ~0.644
-    _spread(
-        sqlite_db, rec="NO_PLAY", hwp=0.5, factors={"market_win_prob": 0.644}
-    )  # away: 0.5 > 0.356 -> away
+    _gl(sqlite_db)
+    # margin 2.0 is below the 6.5 the -6.5 spread implies -> away, at the stored price
+    _spread(sqlite_db, rec="NO_PLAY", hwp=0.5)
     rows = run(NBAMoneylineSource(sqlite_db).get_todays_projections(RANGE))
     assert len(rows) == 1
     r = rows[0]
     assert r["side"] == "away"
-    assert (r["moneyline_home"], r["moneyline_away"]) == (-200, 170)
+    assert r["moneyline_away"] == 170 and "moneyline_home" not in r  # no opp_odds
     c = run(
         MoneylineCandidateProvider(
             type("S", (), {"get_todays_projections": lambda s, dr: _ret(rows)})()
         ).get_candidates(RANGE)
     )[0]
     assert c.market_odds == 170 and c.our_projection == 0.5
+    assert (
+        "fair_prob" in c.projection_metadata
+        and "quoted_at" not in c.projection_metadata
+    )
     assert c.game_date == DAY and c.commence_time == TIP_NAIVE
 
 
@@ -238,7 +216,7 @@ def test_moneyline_skips_no_edge_missing_price(sqlite_db):
 
 def test_moneyline_home_edge(sqlite_db):
     _gl(sqlite_db)
-    _spread(sqlite_db, rec="NO_PLAY", hwp=0.8, factors={"market_win_prob": 0.644})
+    _spread(sqlite_db, rec="NO_PLAY", hwp=0.8, margin=9.0)
     rows = run(NBAMoneylineSource(sqlite_db).get_todays_projections(RANGE))
     assert rows[0]["side"] == "home"
 

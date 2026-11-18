@@ -73,7 +73,7 @@ def test_goalie_saves_home_over(sqlite_db):
 
 
 def test_goalie_saves_away_under(sqlite_db):
-    _goalie(sqlite_db, 1, is_home=False, betting_recommendation="UNDER 27.5")
+    _goalie(sqlite_db, 1, is_home=False, predicted_saves=24.0)  # below the 27.5 line
     (r,) = run(NHLGoalieSavesSource(sqlite_db).get_todays_projections(DR))
     assert (r["side"], r["odds"]) == ("under", 100)
     assert (r["home_team_name"], r["away_team_name"]) == (TOR, BOS)
@@ -113,14 +113,15 @@ def test_goalie_saves_skips(sqlite_db):
     # One live row per team per date, so each case gets its own team.
     _goalie(sqlite_db, 1, team_id=7, starter_confirmed=False)
     _goalie(sqlite_db, 2, team_id=8, opponent_team_id=999)  # unresolvable team
-    _goalie(sqlite_db, 3, team_id=9, betting_recommendation="PASS")
     _goalie(sqlite_db, 4, team_id=10, over_odds=None)
     _goalie(sqlite_db, 5, team_id=13, game_date=date(2026, 1, 16))
     _goalie(sqlite_db, 6, team_id=12, saves_line=None)
-    _goalie(
-        sqlite_db, 8, team_id=14, betting_recommendation="UNDER 27.5", under_odds=None
-    )
+    _goalie(sqlite_db, 8, team_id=14, predicted_saves=24.0, under_odds=None)
     assert run(NHLGoalieSavesSource(sqlite_db).get_todays_projections(DR)) == []
+    # the projector's PASS no longer hides a row: the EV rule decides
+    _goalie(sqlite_db, 3, team_id=9, betting_recommendation="PASS")
+    (r,) = run(NHLGoalieSavesSource(sqlite_db).get_todays_projections(DR))
+    assert r["side"] == "over" and r["fair_prob"] is None
 
 
 def _totals(db, **kw):
@@ -161,14 +162,11 @@ def test_totals(sqlite_db):
 
 
 def test_totals_under_price_and_skips(sqlite_db):
-    _totals(sqlite_db, betting_recommendation="UNDER 5.5")
+    _totals(sqlite_db, predicted_total_goals=4.8)  # below the 5.5 line
     (r,) = run(NHLTotalsSource(sqlite_db).get_todays_projections(DR))
     assert (r["side"], r["line_odds"]) == ("under", -105)
     sqlite_db.query(NHLTeamTotalsPredictions).delete()
-    _totals(sqlite_db, betting_recommendation="PASS")
-    _totals(
-        sqlite_db, away_team_id=3, under_odds=None, betting_recommendation="UNDER 5.5"
-    )
+    _totals(sqlite_db, away_team_id=3, under_odds=None, predicted_total_goals=4.8)
     _totals(sqlite_db, away_team_id=4, game_date=date(2026, 1, 16))
     _totals(sqlite_db, away_team_id=5, draftkings_ou_line=None)
     _totals(sqlite_db, away_team_id=999)  # unresolvable team

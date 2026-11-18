@@ -1,9 +1,11 @@
 """
 NFL receiving yards source (RecvYdsPredictions + NFLGameLines for teams/kickoff).
 
-Rows with betting_recommendation other than OVER/UNDER, no ou_line, no price for
-the side, or no matching game line are skipped. ``prediction_date`` is only set
-when a row is created, so ``generated_at`` is None.
+Built from the row's stored consensus quote (``best_*``); without one, the side the
+projection sits on at the stored line and price (dropped later as
+``no_consensus_price``). ``prediction_date`` is only set when a row is created, so
+``generated_at`` is None and ``projected_at`` is the quote time. Rows with no line,
+no price or no matching game line are skipped.
 """
 
 import logging
@@ -12,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models.predictions_models import RecvYdsPredictions
 from app.services.auto_pick.candidate import DateRange, projection_ref, to_naive_utc
+from app.services.auto_pick.sources._basketball import fresh_keys, ou_quote
 from app.services.auto_pick.sources._nfl_lines import (
     find_line,
     line_event_id,
@@ -39,46 +42,52 @@ class NFLReceivingYardsSource:
             log.exception("NFLReceivingYardsSource: DB query failed")
             return []
 
-        out: list[dict] = []
-        for r in rows:
-            if r.ou_line is None or r.predicted_receiving_yards is None:
-                continue
-            rec = (r.betting_recommendation or "").strip().upper()
-            if rec not in ("OVER", "UNDER"):
-                continue
-            side = rec.lower()
-            odds = r.over_odds if side == "over" else r.under_odds
-            if odds is None:
-                continue
-            gl = find_line(lines, r.team_name, r.opponent_team_name)
-            if gl is None:
-                continue
+        return recv_rows_from(rows, lines, day)
 
-            conf = r.confidence_score
-            out.append(
-                {
-                    "event_id": f"{line_event_id(gl)}-{r.player_id}-receiving_yards",
-                    "league": "NFL",
-                    "game_date": day,
-                    "player": r.player_name,
-                    "stat": "receiving_yards",
-                    "projection_ref": projection_ref(
-                        r, game_date=r.game_date, player_id=r.player_id
-                    ),
-                    "model_version": getattr(r, "model_version", None),
-                    "line": float(r.ou_line),
-                    "odds": int(odds),
-                    "projection": float(r.predicted_receiving_yards),
-                    "side": side,
-                    "sample_size": None,
-                    "generated_at": None,
-                    "model_confidence": conf,
-                    "injury_flag": False,
-                    "team": r.team_name,
-                    "opponent": r.opponent_team_name,
-                    "home_team_name": gl.home_team_name,
-                    "away_team_name": gl.away_team_name,
-                    "commence_time": to_naive_utc(gl.game_time),
-                }
-            )
-        return out
+
+def recv_rows_from(rows, lines, day) -> list[dict]:
+    """Pure: receiving rows + the day's NFL game lines -> candidate rows."""
+    out: list[dict] = []
+    for r in rows:
+        if r.predicted_receiving_yards is None:
+            continue
+        q = ou_quote(
+            r, r.predicted_receiving_yards, r.ou_line, r.over_odds, r.under_odds
+        )
+        if q is None:
+            continue
+        gl = find_line(lines, r.team_name, r.opponent_team_name)
+        if gl is None:
+            continue
+        out.append(
+            {
+                "event_id": f"{line_event_id(gl)}-{r.player_id}-receiving_yards",
+                "league": "NFL",
+                "game_date": day,
+                "player": r.player_name,
+                "stat": "receiving_yards",
+                "projection_ref": projection_ref(
+                    r, game_date=r.game_date, player_id=r.player_id
+                ),
+                "model_version": getattr(r, "model_version", None),
+                "line": q["line"],
+                "odds": q["odds"],
+                "projection": float(r.predicted_receiving_yards),
+                "side": q["side"],
+                "sample_size": None,
+                "generated_at": None,
+                "model_confidence": r.confidence_score,
+                "injury_flag": False,
+                "team": r.team_name,
+                "opponent": r.opponent_team_name,
+                "home_team_name": gl.home_team_name,
+                "away_team_name": gl.away_team_name,
+                "commence_time": to_naive_utc(gl.game_time),
+                "fair_prob": q["fair_prob"],
+            }
+        )
+        # No refresh stamp on these rows: freshness is the quote's. A row without a
+        # quote has no consensus price either and is dropped on that.
+        if "quoted_at" in q:
+            out[-1].update(fresh_keys(q, q["quoted_at"]))
+    return out

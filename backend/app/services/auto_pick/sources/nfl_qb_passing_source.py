@@ -8,8 +8,9 @@ the row) and joins pred_nfl_game_lines for both team names, event id and kickoff
 placeholder when the schedule is unknown), so the slate filter is the ET day.
 ``opponent_team_name`` is an abbreviation; the game is matched on ``team_name``.
 
-Rows with no OVER/UNDER recommendation, no line, no price for the side, or no
-matching game line are skipped.
+Built from the row's stored consensus quote (``best_*``); without one, the side the
+projection sits on at the stored line and price (dropped later as
+``no_consensus_price``). Rows with no line, no price or no matching game line are skipped.
 """
 
 import logging
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.models.predictions_models import QBPredictions
 from app.services.auto_pick.candidate import DateRange, projection_ref, to_naive_utc
+from app.services.auto_pick.sources._basketball import fresh_keys, ou_quote
 from app.services.auto_pick.sources._nfl_lines import (
     find_line,
     line_event_id,
@@ -52,54 +54,53 @@ class NFLQBPassingSource:
             log.exception("NFLQBPassingSource: DB query failed")
             return []
 
-        out: list[dict] = []
-        for r in rows:
-            if r.predicted_passing_yards is None or r.ou_line is None:
-                continue
+        return qb_rows_from(rows, lines, day)
 
-            rec = (r.betting_recommendation or "").strip().upper()
-            if rec not in ("OVER", "UNDER"):
-                continue
-            side = rec.lower()
-            odds = r.over_odds if side == "over" else r.under_odds
-            if odds is None:
-                continue
 
-            gl = find_line(lines, r.team_name)
-            if gl is None:
-                log.debug("NFLQBPassingSource: no game line for %s", r.qb_player_name)
-                continue
-
-            out.append(
-                {
-                    "event_id": f"{line_event_id(gl)}-{r.qb_player_id}-passing_yards",
-                    "league": "NFL",
-                    "game_date": day,
-                    "player": r.qb_player_name,
-                    "stat": "passing_yards",
-                    "projection_ref": projection_ref(
-                        r, game_date=r.game_date, qb_player_id=r.qb_player_id
-                    ),
-                    "model_version": getattr(r, "model_version", None),
-                    "line": float(r.ou_line),
-                    "odds": int(odds),
-                    "projection": float(r.predicted_passing_yards),
-                    "side": side,
-                    "sample_size": None,
-                    # prediction_date is refreshed by the ETL on every re-run.
-                    "generated_at": r.prediction_date,
-                    "model_confidence": r.model_confidence,
-                    "injury_flag": False,
-                    "team": r.team_name,
-                    "opponent": (
-                        gl.away_team_name
-                        if r.team_name == gl.home_team_name
-                        else gl.home_team_name
-                    ),
-                    "home_team_name": gl.home_team_name,
-                    "away_team_name": gl.away_team_name,
-                    "commence_time": to_naive_utc(gl.game_time),
-                }
-            )
-
-        return out
+def qb_rows_from(rows, lines, day) -> list[dict]:
+    """Pure: QB rows + the day's NFL game lines -> candidate rows (stored consensus quote)."""
+    out: list[dict] = []
+    for r in rows:
+        if r.predicted_passing_yards is None:
+            continue
+        q = ou_quote(r, r.predicted_passing_yards, r.ou_line, r.over_odds, r.under_odds)
+        if q is None:
+            continue
+        gl = find_line(lines, r.team_name)
+        if gl is None:
+            log.debug("NFLQBPassingSource: no game line for %s", r.qb_player_name)
+            continue
+        out.append(
+            {
+                "event_id": f"{line_event_id(gl)}-{r.qb_player_id}-passing_yards",
+                "league": "NFL",
+                "game_date": day,
+                "player": r.qb_player_name,
+                "stat": "passing_yards",
+                "projection_ref": projection_ref(
+                    r, game_date=r.game_date, qb_player_id=r.qb_player_id
+                ),
+                "model_version": getattr(r, "model_version", None),
+                "line": q["line"],
+                "odds": q["odds"],
+                "projection": float(r.predicted_passing_yards),
+                "side": q["side"],
+                "sample_size": None,
+                # prediction_date is refreshed by the ETL on every re-run.
+                "generated_at": r.prediction_date,
+                "model_confidence": r.model_confidence,
+                "injury_flag": False,
+                "team": r.team_name,
+                "opponent": (
+                    gl.away_team_name
+                    if r.team_name == gl.home_team_name
+                    else gl.home_team_name
+                ),
+                "home_team_name": gl.home_team_name,
+                "away_team_name": gl.away_team_name,
+                "commence_time": to_naive_utc(gl.game_time),
+                "fair_prob": q["fair_prob"],
+                **fresh_keys(q, r.prediction_date),
+            }
+        )
+    return out

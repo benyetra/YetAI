@@ -18,6 +18,7 @@ Audit findings:
 import logging
 
 from app.services.auto_pick.candidate import BetCandidate, DateRange, MarketType
+from app.services.auto_pick.providers.spread_provider import CONSENSUS_MD_KEYS
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,17 @@ class MoneylineCandidateProvider:
                         else 1.0 - float(r["home_win_prob"])
                     )
                 selection = f"{team} ML"
+                md = {
+                    "confidence_score": r.get("confidence_score"),
+                    "home_win_prob": r.get("home_win_prob"),
+                    "generated_at": r.get("generated_at"),
+                    "side": side,
+                    "projection_ref": r.get("projection_ref"),
+                    "model_version": r.get("model_version"),
+                    "opp_odds": int(opp_odds) if opp_odds is not None else None,
+                    "model_confidence": r.get("model_confidence"),
+                }
+                md.update({k: r[k] for k in CONSENSUS_MD_KEYS if k in r})
                 out.append(
                     BetCandidate(
                         market_type=MarketType.MONEYLINE,
@@ -65,18 +77,7 @@ class MoneylineCandidateProvider:
                         home_team=r.get("home_team_name"),
                         commence_time=r.get("commence_time"),
                         game_date=r.get("game_date"),
-                        projection_metadata={
-                            "confidence_score": r.get("confidence_score"),
-                            "home_win_prob": r.get("home_win_prob"),
-                            "generated_at": r.get("generated_at"),
-                            "side": side,
-                            "projection_ref": r.get("projection_ref"),
-                            "model_version": r.get("model_version"),
-                            "opp_odds": (
-                                int(opp_odds) if opp_odds is not None else None
-                            ),
-                            "model_confidence": r.get("model_confidence"),
-                        },
+                        projection_metadata=md,
                     )
                 )
             except Exception as e:

@@ -8,9 +8,10 @@ betting_recommendation — no separate game_lines join required.
 The writer (etl/nhl/daily_predictions.py) writes a row per starter it can name,
 pregame included, with ``features_used["starter_confirmation"]`` =
 {method: confirmed|probable, full_name, ...}; confirmed rows are written at
-confidence 95, probable at 70. Rows are skipped unless ``saves_line``,
-``predicted_saves``, an "OVER x" / "UNDER x" recommendation and a price for that
-side are set, and the starter method is "confirmed" (legacy rows: ``starter_confirmed``
+confidence 95, probable at 70. The candidate is the row's stored consensus quote (``best_*``); without one, the side
+the projection sits on at the stored line and price (dropped later as
+``no_consensus_price``). Rows are skipped unless ``saves_line``, ``predicted_saves`` and
+a price are set, and the starter method is "confirmed" (legacy rows: ``starter_confirmed``
 True with no method). "probable" is allowed only when env NHL_GOALIE_PROBABLE_PICKS
 is 1/true/yes (read per call). ``player`` is the roster full name (what the grader
 matches against ESPN), falling back to ``goalie_name``.
@@ -32,6 +33,7 @@ from app.services.auto_pick.candidate import (
     eastern_naive_to_utc,
     projection_ref,
 )
+from app.services.auto_pick.sources._basketball import fresh_keys, ou_quote
 from app.services.auto_pick.sources._nhl_teams import nhl_full_name
 
 log = logging.getLogger(__name__)
@@ -73,71 +75,66 @@ class NHLGoalieSavesSource:
             "true",
             "yes",
         )
-        out: list[dict] = []
-        for r in rows:
-            if r.predicted_saves is None:
-                continue
-            # A superseded starter's row stays on record (ETL flags it), never a pick.
-            if r.was_scratch:
-                continue
+        return goalie_rows_from(rows, day, allow_probable)
 
-            if r.saves_line is None:
-                continue
-            if not _starter_ok(r, allow_probable):
-                continue
 
-            rec = (r.betting_recommendation or "").strip().upper()
-            if rec.startswith("OVER"):
-                side, odds = "over", r.over_odds
-            elif rec.startswith("UNDER"):
-                side, odds = "under", r.under_odds
-            else:
-                continue
-            if odds is None or r.is_home is None:
-                continue
+def goalie_rows_from(rows, day, allow_probable: bool = False) -> list[dict]:
+    """Pure: NHL goalie rows -> candidate rows (stored consensus quote)."""
+    out: list[dict] = []
+    for r in rows:
+        if r.predicted_saves is None:
+            continue
+        # A superseded starter's row stays on record (ETL flags it), never a pick.
+        if r.was_scratch:
+            continue
+        if not _starter_ok(r, allow_probable):
+            continue
+        q = ou_quote(r, r.predicted_saves, r.saves_line, r.over_odds, r.under_odds)
+        if q is None or r.is_home is None:
+            continue
 
-            team, opponent = nhl_full_name(r.team_id), nhl_full_name(r.opponent_team_id)
-            if team is None or opponent is None:
-                continue
+        team, opponent = nhl_full_name(r.team_id), nhl_full_name(r.opponent_team_id)
+        if team is None or opponent is None:
+            continue
 
-            event_id = f"nhl-prop-{r.game_date}-{r.goalie_id}-saves"
-            if r.is_home:
-                away_team_name, home_team_name = opponent, team
-            else:
-                away_team_name, home_team_name = team, opponent
+        if r.is_home:
+            away_team_name, home_team_name = opponent, team
+        else:
+            away_team_name, home_team_name = team, opponent
 
-            out.append(
-                {
-                    "event_id": event_id,
-                    "league": "NHL",
-                    "game_date": day,
-                    "player": (
-                        (r.features_used or {}).get("starter_confirmation") or {}
-                    ).get("full_name")
-                    or r.goalie_name,
-                    "stat": "saves",
-                    "projection_ref": projection_ref(
-                        r, game_date=r.game_date, goalie_id=r.goalie_id
-                    ),
-                    "model_version": getattr(r, "model_version", None),
-                    "line": float(r.saves_line),
-                    "odds": int(odds),
-                    "projection": float(r.predicted_saves),
-                    "side": side,
-                    "sample_size": None,
-                    "generated_at": r.prediction_date,
-                    "model_confidence": (
-                        r.confidence / 100.0 if r.confidence is not None else None
-                    ),
-                    "injury_flag": (
-                        bool(r.was_scratch) if r.was_scratch is not None else False
-                    ),
-                    "team": team,
-                    "opponent": opponent,
-                    "away_team_name": away_team_name,
-                    "home_team_name": home_team_name,
-                    "commence_time": eastern_naive_to_utc(r.game_time),
-                }
-            )
-
-        return out
+        out.append(
+            {
+                "event_id": f"nhl-prop-{r.game_date}-{r.goalie_id}-saves",
+                "league": "NHL",
+                "game_date": day,
+                "player": (
+                    (r.features_used or {}).get("starter_confirmation") or {}
+                ).get("full_name")
+                or r.goalie_name,
+                "stat": "saves",
+                "projection_ref": projection_ref(
+                    r, game_date=r.game_date, goalie_id=r.goalie_id
+                ),
+                "model_version": getattr(r, "model_version", None),
+                "line": q["line"],
+                "odds": q["odds"],
+                "projection": float(r.predicted_saves),
+                "side": q["side"],
+                "sample_size": None,
+                "generated_at": r.prediction_date,
+                "model_confidence": (
+                    r.confidence / 100.0 if r.confidence is not None else None
+                ),
+                "injury_flag": (
+                    bool(r.was_scratch) if r.was_scratch is not None else False
+                ),
+                "team": team,
+                "opponent": opponent,
+                "away_team_name": away_team_name,
+                "home_team_name": home_team_name,
+                "commence_time": eastern_naive_to_utc(r.game_time),
+                "fair_prob": q["fair_prob"],
+                **fresh_keys(q, r.prediction_date),
+            }
+        )
+    return out

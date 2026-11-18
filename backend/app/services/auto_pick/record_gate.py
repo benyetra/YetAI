@@ -617,6 +617,7 @@ def emitted_keys() -> dict[str, set[RecordKey]]:
         "NFLQBPassingSource": {("NFL", "player_prop", "passing_yards")},
         "NFLReceivingYardsSource": {("NFL", "player_prop", "receiving_yards")},
         "NFLSpreadSource": {("NFL", "spread", None)},
+        "NFLMoneylineSource": {("NFL", "moneyline", None)},
         "NFLTotalsSource": {("NFL", "total", None)},
         "WNBAPlayerPropSource": _prop_keys("WNBA", _WNBA_STAT_SPECS),
         "WNBASpreadSource": {("WNBA", "spread", None)},
