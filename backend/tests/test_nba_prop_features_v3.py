@@ -315,6 +315,19 @@ def test_pra_mean_is_the_sum_of_its_parts():
     assert pra.CORRELATION_ADJUSTMENT == 1.0
 
 
+def test_pra_skips_a_player_with_under_five_games_this_season(db):
+    # 0 games this season, 30 last season: last season would fill the window, but PRA has
+    # no low_sample flag, so the row is not written (it could otherwise be picked).
+    for i in range(30):
+        db.add(RecentGames(player_id=7, opponent_team_id=1, game_date=date(2026, 2, 1) + timedelta(days=i), points=20.0, rebounds=5.0, assists=4.0, minutes=30.0))  # fmt: skip
+    db.commit()
+    assert pra._short_current_sample(db, 7, TODAY)
+    for i in range(5):
+        db.add(RecentGames(player_id=7, opponent_team_id=1, game_date=TODAY - timedelta(days=2 + i), points=20.0, rebounds=5.0, assists=4.0, minutes=30.0))  # fmt: skip
+    db.commit()
+    assert not pra._short_current_sample(db, 7, TODAY)
+
+
 # ---- a player ruled out after the overnight run ---------------------------------
 
 

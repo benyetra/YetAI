@@ -229,13 +229,11 @@ def test_live_board_endpoint_withholds_and_past_slate_does_not(sqlite_db, monkey
     kw = dict(tz="UTC", limit=50, _user={}, db=sqlite_db)
     live = api.nhl_predictions(target_date=today, **kw)
     assert live["team_totals"][0]["betting_recommendation"] is None
-    called = []
-    monkeypatch.setattr(
-        api, "_withhold_unproven_picks", lambda *a, **k: called.append(1) or a[0]
-    )
+    # A past slate keeps the graded call of a past game...
     monkeypatch.setattr(api, "_merge_past_results", lambda p, *a: p)
-    api.nhl_predictions(target_date=date(2026, 1, 1), **kw)
-    assert called == []
+    monkeypatch.setattr(api, "eastern_today", lambda: today + timedelta(days=1))
+    past = api.nhl_predictions(target_date=today, **kw)
+    assert past["team_totals"][0]["betting_recommendation"] == "OVER 5.5"
 
 
 def test_nba_board_strips_labels_for_new_steals_and_blocks_lines(

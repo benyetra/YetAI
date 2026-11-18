@@ -1,7 +1,7 @@
 """One rule for every live board: a market the record gate withholds (or never
 measures) carries no pick, side, strength or edge; projections and lines stay."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 import pytest
 
@@ -176,7 +176,10 @@ def test_gate_failure_withholds_everything(sqlite_db, monkeypatch):
 
 def test_past_slates_keep_graded_calls(sqlite_db):
     past = api.eastern_today().replace(year=2020)
-    out = api._withhold_board_picks(_payload("nba"), sqlite_db, "nba", past)
+    payload = {
+        g: [{**r, "date": past} for r in rows] for g, rows in _payload("nba").items()
+    }
+    out = api._withhold_board_picks(payload, sqlite_db, "nba", past)
     assert out["points"][0]["edge"] == 2.0
 
 
@@ -267,3 +270,50 @@ def test_nhl_endpoint_runs_the_real_gate(sqlite_db):
     assert row["edge"] is None and row["betting_recommendation"] is None
     assert row["pick_withheld"] == "unproven_record"
     assert row["predicted_total_goals"] == 6.5
+
+
+def test_past_date_keeps_past_games_and_withholds_unplayed_rows(sqlite_db, monkeypatch):
+    # A past-date request can carry rows of games not yet played (the NFL week fallback
+    # serves the whole week): those are withheld like today's; past games keep their call.
+    _gate_says(monkeypatch, {("NFL", "spread", None): "unproven_record"})
+    monkeypatch.setattr(api, "eastern_today", lambda: date(2026, 11, 18))
+    rows = [
+        {"id": 1, "game_date": "2026-11-16", "recommendation": "HOME", "edge": 3.0},
+        {
+            "id": 2,
+            "game_date": date(2026, 11, 22),
+            "recommendation": "AWAY",
+            "edge": 4.0,
+        },
+        {"id": 3, "recommendation": "AWAY", "edge": 4.0},  # no date: withheld
+    ]
+    out = api._withhold_board_picks(
+        {"spreads": rows}, sqlite_db, "nfl", date(2026, 11, 17)
+    )
+    played, unplayed, undated = out["spreads"]
+    assert played["recommendation"] == "HOME" and played["edge"] == 3.0
+    for r in (unplayed, undated):
+        assert r["pick_withheld"] == "unproven_record"
+        assert r["recommendation"] is None and r["edge"] is None
+
+
+def test_best_quote_fields_are_stripped_with_the_pick(sqlite_db, monkeypatch):
+    _gate_says(monkeypatch, {("NBA", "player_prop", "points"): "unproven_record"})
+    row = {
+        "id": 1,
+        "fanduel_line": 24.5,
+        "fanduel_over_under": "o",
+        "fanduel_price": -110,
+        "best_book": "dk",
+        "best_line": 24.5,
+        "best_price": 100,
+        "best_fair_prob": 0.55,
+        "best_ev": 0.07,
+        "best_quoted_at": "2026-11-18T17:00:00",
+    }
+    (r,) = api._withhold_board_picks({"points": [row]}, sqlite_db, "nba", None)[
+        "points"
+    ]
+    assert r["fanduel_line"] == 24.5  # the line stays
+    for f in ("fanduel_price", "best_book", "best_line", "best_price", "best_fair_prob", "best_ev", "best_quoted_at"):  # fmt: skip
+        assert r[f] is None, f

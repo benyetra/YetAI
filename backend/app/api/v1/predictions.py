@@ -177,6 +177,15 @@ _PICK_FIELDS = frozenset(
         "best_over_book",
         "best_under_book",
         "fanduel_over_under",
+        "fanduel_price",
+        # the best quote is the quote for the stored side: its book, line, price, fair
+        # probability and EV give the withheld side away
+        "best_book",
+        "best_line",
+        "best_price",
+        "best_fair_prob",
+        "best_ev",
+        "best_quoted_at",
         "value_tier",
         "edge_category",
         "pick_confidence",
@@ -347,17 +356,42 @@ def _withhold_board_picks(
     id/time for games), except anytime-TD rows, which the SQL ranks by edge and are
     re-sorted by td_probability desc here.
     """
-    if _is_past_date(target_date):
-        return payload
     out = _withhold_unproven_picks(
         payload, db, _BOARD_MARKETS[sport], loaders=_BOARD_LOADERS[sport]
     )
+    if _is_past_date(target_date):
+        # Past slates keep the calls they were graded on, row by row: a past-date request
+        # can still carry rows of games not yet played (the NFL week fallback serves the
+        # whole week), and those are withheld like today's.
+        today = eastern_today()
+        out = {
+            group: (
+                [o if _row_is_before(o, today) else w for o, w in zip(rows, out[group])]
+                if isinstance(rows, list) and rows is not out.get(group)
+                else rows
+            )
+            for group, rows in payload.items()
+        }
     if sport == "nfl" and out.get("anytime_td_predictions"):
         out["anytime_td_predictions"] = sorted(
             out["anytime_td_predictions"],
             key=lambda r: -float(r.get("td_probability") or 0.0),
         )
     return out
+
+
+def _row_is_before(row: Any, today: date_type) -> bool:
+    """True when the row's game date (``game_date`` or ``date``) is before ``today``;
+    a row with no readable date is not (it is withheld like a live row)."""
+    raw = (row.get("game_date") or row.get("date")) if isinstance(row, dict) else None
+    if isinstance(raw, datetime):
+        raw = raw.date()
+    elif isinstance(raw, str):
+        try:
+            raw = date_type.fromisoformat(raw[:10])
+        except ValueError:
+            return False
+    return isinstance(raw, date_type) and raw < today
 
 
 def _is_past_date(target_date: date_type | None) -> bool:

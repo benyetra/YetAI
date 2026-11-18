@@ -137,7 +137,8 @@ def test_nfl_predictions_includes_anytime_td_key(monkeypatch):
         return []
 
     def fake_anytime_td(db, target_date, limit):
-        return [{"player_id": "p1", "td_probability": 0.42}]
+        # a graded past row (it has a past game date), so its fields stay as stored
+        return [{"player_id": "p1", "td_probability": 0.42, "game_date": "2026-09-07"}]
 
     monkeypatch.setattr(
         predictions_module,
@@ -171,5 +172,5 @@ def test_nfl_predictions_includes_anytime_td_key(monkeypatch):
 
     assert "anytime_td_predictions" in result
     assert result["anytime_td_predictions"] == [
-        {"player_id": "p1", "td_probability": 0.42}
+        {"player_id": "p1", "td_probability": 0.42, "game_date": "2026-09-07"}
     ]

@@ -19,7 +19,8 @@ from app.models.predictions_models import (
 )
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba._fanduel_lines import apply_fanduel_to_projection
-from app.services.etl.nba._samples import player_games
+from app.services.etl.nba._last10 import _MIN_GAMES as MIN_SAMPLE_GAMES
+from app.services.etl.nba._samples import current_season_games, player_games
 from app.services.etl.nba._stale_rows import (
     active_players_not_started,
     mark_projection_out,
@@ -103,6 +104,13 @@ def _get_component(
     return _weighted_stat(recent_games, recent_attr)
 
 
+def _short_current_sample(db, player_id: int, today) -> bool:
+    """Fewer than MIN_SAMPLE_GAMES this season: the component rows are flagged
+    low_sample and never picked, and PRA (no low_sample column) is not written at all,
+    even when last season's games would fill the 30-game window."""
+    return current_season_games(db, player_id, today) < MIN_SAMPLE_GAMES
+
+
 def run() -> dict:
     today = now_eastern().date()
     created = 0
@@ -144,6 +152,9 @@ def run() -> dict:
                     skipped += 1
                     continue
 
+                if _short_current_sample(db, player.player_id, today):
+                    skipped += 1
+                    continue
                 recent = player_games(db, player.player_id, today, 30)
                 if not recent:
                     skipped += 1
