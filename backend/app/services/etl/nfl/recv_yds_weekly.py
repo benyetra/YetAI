@@ -6,7 +6,8 @@ from typing import Any, Callable
 
 
 def attach_best_quotes(session, feature_rows, all_lines) -> int:
-    """Set best_* (consensus price, None when none) on this run's lined rows.
+    """Set best_* (consensus price, None when none) on this run's lined rows; returns how
+    many got a consensus price.
 
     The projector writes the row; this prices its published yards against the stored
     ou_line. Rows whose game has kicked off stay frozen."""
@@ -38,7 +39,7 @@ def attach_best_quotes(session, feature_rows, all_lines) -> int:
         )
         for key, value in quote.items():
             setattr(row, key, value)
-        n += 1
+        n += quote.get("best_book") is not None  # rows that got a consensus price
     return n
 
 

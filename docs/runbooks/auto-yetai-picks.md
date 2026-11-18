@@ -237,8 +237,10 @@ recommendation, the moved-line re-derivation and the moneyline model-edge floor 
 the EV rule and the record gate decide.
 
 **The rule.**
-- A book's quote counts only if it was seen in the last **30 minutes** and its update is within 30 minutes
-  of the freshest book.
+- A book's quote counts in the consensus only if it was seen in the last **30 minutes** and its update is
+  within 30 minutes of the freshest book. The **best** book must be live: seen by the newest fetch (within
+  2 minutes) and updated within 5 minutes of the freshest book, so a book that pulled or lags its market
+  is never the price we publish or grade.
 - **Same line only, at least 3 other books.** The best bettable book for our side is priced against the
   no-vig fair probability of the OTHER books quoting exactly the same line (spread: the same home point;
   total or prop: the same number). A book at another line is never converted. Fewer than 3 others at the
