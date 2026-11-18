@@ -24,6 +24,7 @@ from app.models.predictions_models import (
     QBPredictions,
 )
 from app.services.etl import _spread_model as _sm
+from app.services.etl._consensus_attach import moneyline_fields, spread_fields
 from app.services.etl._game_start import not_started
 from app.services.etl._spread_model import (
     NFL_CONFIG,
@@ -320,6 +321,19 @@ def run() -> dict:
                     "created_at": datetime.utcnow(),
                     "model_version": SPREAD_MODEL_VERSION,
                     **projection,
+                    # best book / same-line consensus price (None when no consensus)
+                    **spread_fields(
+                        db,
+                        event_id=g.odds_api_event_id,
+                        margin=projection["projected_margin"],
+                        spread_home=g.spread_home,
+                    ),
+                    **moneyline_fields(
+                        db,
+                        event_id=g.odds_api_event_id,
+                        margin=projection["projected_margin"],
+                        spread_home=g.spread_home,
+                    ),
                 }
             )
 

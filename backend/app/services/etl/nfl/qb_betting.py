@@ -12,6 +12,11 @@ from typing import Dict, List, Optional
 import requests
 
 from app.models.predictions_models import QBPredictions
+from app.services.etl._consensus_attach import (
+    LEGACY_NFL_PROP_BOOKS,
+    nfl_prop_fields,
+)
+from app.services.etl.nba._fanduel_lines import PROP_BOOKS
 from app.services.etl.nfl._db import db_session
 from app.services.etl.nfl.nfl_common import (
     get_current_nfl_week,
@@ -68,7 +73,10 @@ def get_nfl_games_and_lines():
                 "regions": "us",
                 "markets": "player_pass_yds",
                 "oddsFormat": "american",
-                "bookmakers": "fanduel,draftkings,betmgm",
+                # All 10 books (1 region, same credits): the extra books are only
+                # recorded as snapshots for the consensus price. The stored lines
+                # below read the three legacy books by key, as before.
+                "bookmakers": PROP_BOOKS,
             }
 
             odds_response = sync_odds_get(
@@ -81,6 +89,8 @@ def get_nfl_games_and_lines():
                 odds_data = odds_response.json()
 
                 for bookmaker in odds_data.get("bookmakers", []):
+                    if bookmaker.get("key") not in LEGACY_NFL_PROP_BOOKS:
+                        continue
                     bookmaker_name = bookmaker["title"]
 
                     for market in bookmaker.get("markets", []):
@@ -404,6 +414,16 @@ def _run_qb_betting_core():
                 qb.bet_size = recommendation["bet_size"]
                 qb.edge_percentage = recommendation["edge_percentage"]
                 qb.recommendation_reason = recommendation["reason"]
+                # Best book + same-line consensus price (all None when no consensus).
+                for key, value in nfl_prop_fields(
+                    db_session,
+                    qb,
+                    market="player_pass_yds",
+                    projection=qb.predicted_passing_yards,
+                    line=ou_line,
+                    player=qb_name,
+                ).items():
+                    setattr(qb, key, value)
                 if over_prob is not None:
                     fi = (
                         dict(qb.feature_importance)
