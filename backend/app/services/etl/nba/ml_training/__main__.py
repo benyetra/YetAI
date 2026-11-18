@@ -9,6 +9,7 @@ from datetime import date
 
 from app.services.etl.nba.ml_training.config import NBA_ML_CONFIG
 from app.services.etl.nba.ml_training.run_train_props import run
+from app.services.ml.promote_gate import exit_code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -49,15 +50,12 @@ def main(argv: list[str] | None = None) -> int:
             dry_run=args.dry_run,
             cache=args.cache,
         )
-    except ValueError as exc:
+    except Exception as exc:  # noqa: BLE001 - one JSON error line, exit 1
         print(json.dumps({"status": "error", "error": str(exc)}), file=sys.stderr)
         return 1
 
     print(json.dumps(result, indent=2, default=str))
-    status = result.get("status")
-    if status in ("ok", "dry_run"):
-        return 0
-    return 1
+    return exit_code(result.get("status"))
 
 
 if __name__ == "__main__":

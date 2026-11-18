@@ -166,6 +166,7 @@ def upload_gated_pickle(
     metric_name: str = "holdout_mae",
     line_gate: dict | None = None,
     manifest_extra: dict[str, Any] | None = None,
+    version_prefix: str = "xgb",
 ) -> dict:
     """``upload_gated`` for a model with its own key (``<name>.pkl`` +
     ``<name>_metadata.json``), e.g. the totals residual models."""
@@ -186,6 +187,7 @@ def upload_gated_pickle(
             **(manifest_extra or {}),
         },
         line_gate=line_gate,
+        version_prefix=version_prefix,
     )
     if not out["status"].startswith("rejected_by"):
         out["metadata_key"] = meta_key

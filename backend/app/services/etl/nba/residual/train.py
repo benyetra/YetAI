@@ -1,8 +1,8 @@
-"""Train the NBA line-residual model, apply the hard beats-the-line gate, upload.
+"""Train the NBA line-residual model, apply the shared promote gate, upload.
 
 ``train`` fits on all but the last 20% of dates, gates the holdout predictions
-against the stored line (``gate.beats_line_gate``), then refits on every row. A
-model that fails the gate is never uploaded, with or without ``upload``.
+(``promote_gate``: line evidence, beat the line, beat the live model), then refits on
+every row. A model that fails the gate is never uploaded, with or without ``upload``.
 """
 
 from __future__ import annotations
@@ -23,14 +23,13 @@ from app.services.etl.nba.residual.dataset import (
     feature_columns,
     load_inputs,
 )
-from app.services.etl.nba.residual.gate import beats_line_gate
-from app.services.ml import model_store, upload_to_s3
+from app.services.etl.nba.residual.gate import MIN_SLOPE_T
+from app.services.ml import model_store, promote_gate, upload_to_s3
 
 logger = logging.getLogger(__name__)
 
 MIN_ROWS = 300
 HOLDOUT_FRAC = 0.2
-MIN_CHAMPION_ROWS = 50
 DEFAULT_KIND = inspect.signature(residual_model.fit).parameters["kind"].default
 
 
@@ -58,26 +57,25 @@ def split_holdout(rows: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     return rows[rows["date"] < cut], rows[rows["date"] >= cut]
 
 
-def score_champion(stat: str, hold: pd.DataFrame, s3=None):
-    """``score_champion`` for gated upload: live model's MAE on holdout rows dated
-    after its own train_end; ``inf`` (no comparable evidence) below 50 rows."""
+def champion_predictions(stat: str, hold: pd.DataFrame, s3=None):
+    """The live model's predicted values (line + residual) per holdout row, NaN for
+    rows dated on or before its own train_end (it saw those). None when there is no
+    live model or no metadata to date it."""
+    import boto3
 
-    def score(live_body: bytes) -> float:
-        import boto3
-
-        client = s3 or boto3.client("s3")
-        raw = model_store.get_bytes(client, upload_to_s3.S3_BUCKET, _meta_key(stat))
-        if raw is None:
-            return float("inf")
-        train_end = pd.Timestamp(json.loads(raw)["train_end"])
-        later = hold[pd.to_datetime(hold["date"]) > train_end]
-        if len(later) < MIN_CHAMPION_ROWS:
-            return float("inf")
-        live = pickle.loads(live_body)  # nosec B301 - our own private bucket
-        pred, _ = live.predict(later)
-        return float(np.mean(np.abs(later["resid"].to_numpy() - pred)))
-
-    return score
+    client = s3 or boto3.client("s3")
+    body = model_store.get_bytes(client, upload_to_s3.S3_BUCKET, model_key(stat))
+    raw = model_store.get_bytes(client, upload_to_s3.S3_BUCKET, _meta_key(stat))
+    if body is None or raw is None:
+        return None
+    train_end = pd.Timestamp(json.loads(raw)["train_end"])
+    out = np.full(len(hold), np.nan)
+    later = (pd.to_datetime(hold["date"]) > train_end).to_numpy()
+    if later.any():
+        live = pickle.loads(body)  # nosec B301 - our own private bucket
+        pred, _ = live.predict(hold[later])
+        out[later] = hold.loc[later, "line"].to_numpy(dtype=float) + pred
+    return out
 
 
 def _save_local(dirpath, stat: str, mdl, metadata: dict) -> dict:
@@ -112,7 +110,16 @@ def train(
     holdout_fit = residual_model.fit(fit_df, feats, kind, stat=stat)
     pred, _ = holdout_fit.predict(hold)
     line = hold["line"].to_numpy(dtype=float)
-    gate = beats_line_gate(pred, line + hold["resid"].to_numpy(dtype=float), line)
+    champ = champion_predictions(stat, hold, s3) if upload else None
+    gate = promote_gate.promote_gate(
+        line + pred,
+        line + hold["resid"].to_numpy(dtype=float),
+        line,
+        dates=hold["date"].to_numpy(),
+        champion_pred=champ,
+        min_slope_t=MIN_SLOPE_T,
+    )
+    logger.info(promote_gate.format_gate_line(f"NBA residual {stat}", gate))
     holdout_mae = float(np.mean(np.abs(hold["resid"].to_numpy() - pred)))
     line_mae = float(np.mean(np.abs(hold["resid"].to_numpy())))
 
@@ -133,7 +140,7 @@ def train(
         "gate_passed": bool(gate["passes"]),
     }
     if not gate["passes"]:
-        metadata["status"] = "gate_failed"
+        metadata["status"] = gate["status"]
     result = {
         "status": "dry",
         "stat": stat,
@@ -147,29 +154,44 @@ def train(
     if save_local:
         result["saved"] = _save_local(save_local, stat, final, metadata)
     if not gate["passes"]:
-        result["status"] = "gate_failed"
+        result["status"] = gate["status"]
         result["note"] = (
-            "line gate failed: nothing uploaded"
+            f"promote gate failed ({gate['reason']}): nothing uploaded"
             if upload
-            else "line gate failed: --upload would not upload"
+            else f"promote gate failed ({gate['reason']}): --upload would not upload"
         )
-        return result
-    if not upload:
+    if upload:
+        promote_gate.record_outcome(
+            model_key(stat),
+            gate,
+            extra={
+                "stat": stat,
+                "kind": kind,
+                "candidate_version": final.version,
+                "data_window": metadata["data_window"],
+            },
+            s3=s3,
+        )
+    if not gate["passes"] or not upload:
         return result
 
+    # Same rows for both sides, so gated_upload's strict check agrees with the gate.
+    cb = gate["champion"]
+    comparable = bool(cb and cb["comparable"])
     out = upload_to_s3.upload_gated_pickle(
         model_key(stat),
         final,
         metadata,
-        candidate_metric=holdout_mae,
-        score_champion=score_champion(stat, hold, s3),
+        candidate_metric=cb["candidate_mae"] if comparable else holdout_mae,
+        score_champion=lambda _body: cb["champion_mae"] if comparable else float("inf"),
         line_gate=gate,
+        version_prefix=kind.replace("_", ""),  # "ridgecv-2026...", not "xgb-"
     )
     result["upload"] = out
     result["status"] = (
         "ok" if out["status"] in ("first_upload", "uploaded") else out["status"]
     )
-    if out.get("champion_metric") == float("inf"):
+    if not comparable:
         result["note"] = (
             "champion not comparable (<50 post-train_end rows); line gate is the bar"
         )

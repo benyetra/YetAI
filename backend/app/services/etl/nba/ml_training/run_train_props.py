@@ -1,4 +1,4 @@
-"""End-to-end NBA prop XGB retrain: dataset → train → MAE gate → champion-gated S3 upload."""
+"""End-to-end NBA prop XGB retrain: dataset → train → MAE gate → promote gate → S3 upload."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import pandas as pd
 
 from app.core import database
 from app.services.etl.nba.residual import dataset as residual_dataset
-from app.services.etl.nba.residual.gate import line_comparison
 from app.services.etl.nba.ml_training import (
     build_training_dataset,
     train_model,
@@ -21,7 +20,8 @@ from app.services.etl.nba.ml_training import (
 from app.services.etl.nba._feature_engineering import FEATURES_VERSION
 from app.services.etl.nba.ml_training.config import NBA_ML_CONFIG
 from app.services.etl.nba.prop_calibration import fit_time_ordered
-from app.services.ml import dataset_cache
+from app.services.ml import dataset_cache, promote_gate
+from app.services.ml import upload_to_s3 as ml_upload
 from app.services.ml.train_model import split
 from app.services.ml_model_version import model_version_from_metadata
 
@@ -65,32 +65,25 @@ def _load_lines(stat_col: str, start, end):
         return residual_dataset.load_lines(conn, stat_col, start, end)
 
 
-def holdout_line_comparison(stat_col: str, keys, preds, actuals) -> dict:
-    """Model vs the stored betting line on the holdout rows that have one.
-    Reported only; never raises (no keys / no lines -> ``{"n": 0, ...}``)."""
+def holdout_lines(stat_col: str, keys, n_hold: int):
+    """Per-holdout-row stored line (NaN when none) and game date, aligned with the
+    last ``n_hold`` rows. Never raises: a loading error gives all-NaN lines and the
+    error text, which the gate turns into ``no_line_evidence``."""
+    keys = list(keys or [])[-n_hold:] if n_hold else []
+    if len(keys) != n_hold:  # builder gave no (player_id, game_date) keys
+        return np.full(n_hold, np.nan), None, "builder returned no keys for the holdout"
+    k = pd.DataFrame(keys, columns=["player_id", "date"])
+    k["date"] = pd.to_datetime(k["date"])
     try:
-        if not keys:
-            raise ValueError("builder returned no (player_id, game_date) keys")
-        k = pd.DataFrame(keys, columns=["player_id", "date"])
-        k["date"] = pd.to_datetime(k["date"])
-        k["pred"], k["actual"] = np.asarray(preds, float), np.asarray(actuals, float)
         lines = _load_lines(stat_col, k["date"].min(), k["date"].max())
         lines = lines.assign(player_id=lines["player_id"].astype(k["player_id"].dtype))
         m = k.merge(
-            lines[["player_id", "date", "line"]],
-            on=["player_id", "date"],
-            how="left",
+            lines[["player_id", "date", "line"]], on=["player_id", "date"], how="left"
         )
-        out = line_comparison(m["pred"], m["actual"], m["line"])
-        out["holdout_rows"] = len(k)
-        return out
+        return m["line"].to_numpy(dtype=float), k["date"].to_numpy(), None
     except Exception as exc:
-        logger.warning("NBA %s line comparison unavailable: %s", stat_col, exc)
-        return {
-            **line_comparison([], [], []),
-            "holdout_rows": len(keys or []),
-            "error": str(exc),
-        }
+        logger.warning("NBA %s lines unavailable: %s", stat_col, exc)
+        return np.full(n_hold, np.nan), k["date"].to_numpy(), str(exc)
 
 
 def _enrich_metadata(stat_col: str, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -178,17 +171,15 @@ def run(
     _, X_hold, _, y_hold = split(features_df, target, chronological=True)
     holdout_preds = model.predict(X_hold)
     holdout_actuals = y_hold.values
-    # Reported, not gating: how the holdout predictions compare with the stored line.
     keys = features_df.attrs.get("keys") or []
-    metadata["line_comparison"] = holdout_line_comparison(
-        stat_col, keys[len(features_df) - len(X_hold) :], holdout_preds, holdout_actuals
-    )
-    logger.info("NBA %s line comparison: %s", stat_col, metadata["line_comparison"])
-    holdout_lines = np.round(holdout_actuals.astype(float) * 2) / 2
+    line, hold_dates, line_error = holdout_lines(stat_col, keys, len(X_hold))
+    if line_error:
+        metadata["line_error"] = line_error
+    rounded_lines = np.round(holdout_actuals.astype(float) * 2) / 2
     # Fit on the earlier holdout rows, gate on the later ones (not served yet:
     # NBA_PROP_CALIBRATION_ENABLED stays off).
     cal_params, cal_info = fit_time_ordered(
-        stat_col, holdout_preds, holdout_actuals, holdout_lines
+        stat_col, holdout_preds, holdout_actuals, rounded_lines
     )
     metadata["prop_calibration"] = cal_params.to_dict()
     metadata["prop_calibration_eval"] = cal_info
@@ -248,6 +239,31 @@ def run(
             "validation": validation,
         }
 
+    # Promote gate: stored-line evidence, no worse than the line, and (with upload)
+    # a real gain over the live model on the same rows.
+    live_key = f"{NBA_ML_CONFIG.s3_prefix}/xgb_{stat_col}.pkl"
+    champ = (
+        ml_upload.live_prop_predictions(NBA_ML_CONFIG, stat_col, X_hold)
+        if upload
+        else None
+    )  # None: no live model (first upload) or not uploading; a failure raises
+    gate = promote_gate.promote_gate(
+        holdout_preds, holdout_actuals, line, dates=hold_dates, champion_pred=champ
+    )
+    metadata["promote_gate"] = gate
+    metadata["line_comparison"] = gate["lined"]
+    logger.info(promote_gate.format_gate_line("NBA " + stat_col, gate))
+    if upload:
+        promote_gate.record_outcome(
+            live_key,
+            gate,
+            extra={
+                "stat": stat_col,
+                "candidate_version": metadata.get("model_version"),
+                "data_window": metadata["data_window"],
+            },
+        )
+
     result: dict[str, Any] = {
         "status": "ok",
         "stat": stat_col,
@@ -256,24 +272,40 @@ def run(
         "validation": validation,
         "upload": upload,
     }
+    if not gate["passes"]:
+        result["status"] = gate["status"]
+        result["reason"] = gate["reason"]
+        return result
 
     if upload:
-        # Only replace the live model if it is not worse on this same holdout.
+        # Same rows for both sides, so gated_upload's strict check agrees with the gate.
+        cb = gate["champion"]
+        comparable = bool(cb and cb["comparable"])
+
+        def score_champion(_body: bytes) -> float:
+            if not comparable:
+                raise ValueError("champion not comparable on the lined holdout rows")
+            return cb["champion_mae"]
+
         out = upload_to_s3.upload_gated(
             stat_col,
             model,
             metadata,
-            candidate_metric=validation["mae"],
-            score_champion=upload_to_s3.live_scorer(stat_col, X_hold, y_hold),
-            manifest_extra={"line_comparison": metadata["line_comparison"]},
+            candidate_metric=(
+                cb["candidate_mae"] if comparable else gate["lined"]["model_mae"]
+            ),
+            score_champion=score_champion,
+            line_gate=gate,
+            manifest_extra={"line_comparison": gate["lined"]},
         )
         result["gate"] = out
         if out["status"] == "rejected_by_champion":
             logger.warning(
-                "NBA %s candidate rejected: holdout MAE %.3f vs live %.3f",
+                "NBA %s candidate rejected: holdout MAE %.3f vs live %s (%s)",
                 stat_col,
                 out["candidate_metric"],
-                out["champion_metric"],
+                out.get("champion_metric"),
+                out.get("reason"),
             )
             result["status"] = "rejected_by_champion"
         else:
