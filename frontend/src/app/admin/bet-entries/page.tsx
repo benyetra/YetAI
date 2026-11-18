@@ -1119,7 +1119,7 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
               {/* Game Selector */}
               <div className="mb-6">
                 <label className="block text-sm font-medium muted mb-2">
-                  Select Game from Today's Schedule
+                  Select Game from Today&apos;s Schedule
                   {loadingTodaysGames && <span className="text-xs text-blue-600 ml-2">(Loading...)</span>}
                 </label>
 
@@ -1129,7 +1129,7 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
                     onChange={(e) => handleGameSelectionForFeatured(e.target.value)}
                     className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="">Select a game from today's schedule...</option>
+                    <option value="">Select a game from today&apos;s schedule...</option>
                     {availableTodaysGames.map((game) => (
                       <option key={game.id} value={game.id}>
                         {game.sport_name} - {game.away_team} @ {game.home_team} ({new Date(game.commence_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
@@ -1139,7 +1139,7 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
                 ) : loadingTodaysGames ? (
                   <div className="flex items-center justify-center py-4 dim">
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div>
-                    Loading today's games...
+                    Loading today&apos;s games...
                   </div>
                 ) : (
                   <div className="text-center py-4 dim bg-gray-100 rounded-lg">
@@ -1305,7 +1305,7 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
 
             {!selectedGameForFeatured && (
               <p className="text-sm muted text-right mt-2">
-                Select a game from today's schedule to continue
+                Select a game from today&apos;s schedule to continue
               </p>
             )}
             {selectedGameForFeatured && !newFeaturedGame.explanation.trim() && (

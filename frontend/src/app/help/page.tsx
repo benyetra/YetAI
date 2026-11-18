@@ -217,7 +217,7 @@ ${user.first_name || user.username || 'User'}`);
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
           <h3 className="font-semibold text-lg mb-2">Still need help?</h3>
           <p className="text-gray-600 mb-4">
-            Can't find what you're looking for? Our support team is here to help you 24/7.
+            Can&apos;t find what you&apos;re looking for? Our support team is here to help you 24/7.
           </p>
           <div className="flex space-x-4">
             <button 

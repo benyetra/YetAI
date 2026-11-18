@@ -35,7 +35,7 @@ export default function PrivacyPolicy() {
           <section>
             <h2 className="text-2xl font-bold text-gray-900 mb-4">1. Introduction</h2>
             <p className="text-gray-700 leading-relaxed">
-              YetAI ("we," "our," or "us") is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our Platform. Please read this policy carefully to understand our practices regarding your personal data.
+              YetAI (&quot;we,&quot; &quot;our,&quot; or &quot;us&quot;) is committed to protecting your privacy. This Privacy Policy explains how we collect, use, disclose, and safeguard your information when you use our Platform. Please read this policy carefully to understand our practices regarding your personal data.
             </p>
           </section>
 
@@ -185,7 +185,7 @@ export default function PrivacyPolicy() {
           </section>
 
           <section>
-            <h2 className="text-2xl font-bold text-gray-900 mb-4">10. Children's Privacy</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">10. Children&apos;s Privacy</h2>
             <p className="text-gray-700 leading-relaxed">
               YetAI is not intended for individuals under 21 years of age (or the legal gambling age in your jurisdiction). We do not knowingly collect information from minors. If we discover that we have collected information from a minor, we will delete it immediately.
             </p>
@@ -208,7 +208,7 @@ export default function PrivacyPolicy() {
           <section>
             <h2 className="text-2xl font-bold text-gray-900 mb-4">13. Changes to This Privacy Policy</h2>
             <p className="text-gray-700 leading-relaxed">
-              We may update this Privacy Policy from time to time. We will notify you of material changes via email or Platform notification. The "Last Updated" date at the top indicates when the policy was last revised. Continued use of the Platform after changes constitutes acceptance of the updated policy.
+              We may update this Privacy Policy from time to time. We will notify you of material changes via email or Platform notification. The &quot;Last Updated&quot; date at the top indicates when the policy was last revised. Continued use of the Platform after changes constitutes acceptance of the updated policy.
             </p>
           </section>
 
@@ -218,7 +218,7 @@ export default function PrivacyPolicy() {
               If you are a California resident, you have additional rights under the California Consumer Privacy Act:
             </p>
             <ul className="list-disc list-inside text-gray-700 space-y-2 ml-4">
-              <li>Right to know what personal information we collect and how it's used</li>
+              <li>Right to know what personal information we collect and how it&apos;s used</li>
               <li>Right to delete your personal information</li>
               <li>Right to opt-out of the sale of personal information (we do not sell your data)</li>
               <li>Right to non-discrimination for exercising your privacy rights</li>
