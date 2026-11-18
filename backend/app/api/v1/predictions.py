@@ -173,6 +173,9 @@ _PICK_FIELDS = frozenset(
     {
         "recommendation",
         "betting_recommendation",
+        "bet_size",
+        "best_over_book",
+        "best_under_book",
         "fanduel_over_under",
         "value_tier",
         "edge_category",
@@ -319,15 +322,24 @@ def _withhold_unproven_picks(
 
 
 def _strip_row(row: dict[str, Any], entries: tuple, reasons: list) -> dict[str, Any]:
-    """Null the fields of each withheld market on ``row``; flag it with the reason."""
+    """Null the fields of each withheld market on ``row``; flag it with the reason.
+
+    A one-market row gets ``pick_withheld``. A multi-market row (MLB games) gets one flag
+    per withheld market, named after its pick field (``ml_recommendation`` ->
+    ``ml_pick_withheld``), so an open market on the same row keeps its pick.
+    """
     out = dict(row)
     for (_key, fields), reason in zip(entries, reasons):
         if not reason:
             continue
         if fields is _ALL:  # recommendation/edge are always reported, present or not
-            fields = (_PICK_FIELDS & out.keys()) | {"recommendation", "edge"}
+            out.update(
+                dict.fromkeys((_PICK_FIELDS & out.keys()) | {"recommendation", "edge"})
+            )
+            out["pick_withheld"] = out.get("pick_withheld") or reason
+            continue
         out.update(dict.fromkeys(fields))
-        out["pick_withheld"] = out.get("pick_withheld") or reason
+        out[fields[0].split("_")[0] + "_pick_withheld"] = reason
     return out
 
 

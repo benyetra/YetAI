@@ -76,7 +76,9 @@ def test_every_sport_withholds_what_the_gate_withholds(sport, sqlite_db, monkeyp
     for group, entries in spec.items():
         (row,) = out[group]
         if len(entries) > 1:  # MLB game row: three markets, each owns its fields
-            assert row["pick_withheld"] == "losing_record"
+            assert row["ml_pick_withheld"] == "losing_record"
+            assert row["ml_recommendation"] is None
+            assert "pick_withheld" not in row
             continue
         key = entries[0][0]
         _assert_stripped(row, "losing_record" if key in emitted else "no_record_check")
@@ -130,7 +132,18 @@ def test_mlb_game_row_strips_only_the_withheld_market(sqlite_db, monkeypatch):
     assert r["spread_recommendation"] is None and r["total_recommendation"] is None
     assert r["edge_vs_market_total"] is None and r["value_rating"] is None
     assert r["market_total"] == 8.5
-    assert r["pick_withheld"] == "no_record_check"
+    # Per-market flags: the open moneyline is not hidden by its withheld neighbours.
+    assert r["spread_pick_withheld"] == r["total_pick_withheld"] == "no_record_check"
+    assert "ml_pick_withheld" not in r and "pick_withheld" not in r
+
+
+def test_stake_and_book_fields_are_stripped(sqlite_db, monkeypatch):
+    _gate_says(monkeypatch, {("NFL", "player_prop", "passing_yards"): "losing_record"})
+    row = {**PICKY, "bet_size": 1.5, "best_over_book": "dk", "best_under_book": "fd"}
+    out = api._withhold_board_picks({"qb_predictions": [row]}, sqlite_db, "nfl", None)
+    (r,) = out["qb_predictions"]
+    assert r["bet_size"] is None and r["best_over_book"] is None
+    assert r["best_under_book"] is None
 
 
 def test_gate_failure_withholds_everything(sqlite_db, monkeypatch):
@@ -142,12 +155,11 @@ def test_gate_failure_withholds_everything(sqlite_db, monkeypatch):
         out = api._withhold_board_picks(_payload(sport), sqlite_db, sport, None)
         for group, entries in api._BOARD_MARKETS[sport].items():
             (row,) = out[group]
+            if len(entries) > 1:  # MLB game row: the gated moneyline fails closed
+                assert row["ml_pick_withheld"] == "record_unavailable"
+                continue
             assert row["pick_withheld"] in ("record_unavailable", "no_record_check")
-            assert (
-                row.get("edge") is None
-                and row["recommendation"] is None
-                or (len(entries) > 1)
-            )
+            assert row.get("edge") is None and row["recommendation"] is None
 
 
 def test_past_slates_keep_graded_calls(sqlite_db):
