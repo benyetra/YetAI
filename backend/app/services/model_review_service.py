@@ -13,6 +13,7 @@ counters, and the NBA projectors (version records, market anchor fit).
 
 import html
 import logging
+import os
 import re
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
@@ -611,17 +612,6 @@ def _pf(b) -> dict:
     return pf if isinstance(pf, dict) else {}
 
 
-def _is_shadow(b) -> bool:
-    """Never-shown rows are not bets. ponytail: the picks-gate branch's own shadow
-    marker is unknown here; these three cover status, a shadow flag and shown=False."""
-    pf = _pf(b)
-    return (
-        str(b.status or "").startswith("shadow")
-        or bool(pf.get("shadow"))
-        or pf.get("shown") is False
-    )
-
-
 def _game_date(b) -> Optional[date]:
     """ET date of the game: commence_time, else the slate date, else settled_at."""
     if b.commence_time:
@@ -652,9 +642,7 @@ def _settled_bets(db: Session, today: date, days: int) -> list:
     return [
         b
         for b in rows
-        if not _is_shadow(b)
-        and (_game_date(b) or date.min) >= lo
-        and (_game_date(b) or date.max) <= hi
+        if (_game_date(b) or date.min) >= lo and (_game_date(b) or date.max) <= hi
     ]
 
 
@@ -927,30 +915,76 @@ def _totals_history(tp, db: Session, today: date):
 
 
 def _gate_row(r: dict) -> dict:
-    """One gate-table row from either ``all_key_rows`` or ``gate_report`` (fields
-    read defensively: the two shapes differ)."""
-    state = str(r.get("state") or ("WITHHELD" if r.get("withheld") else "open"))
-    return {
-        "key": r.get("key"),
-        "state": state,
-        "withheld": bool(r.get("withheld")) or state.upper().startswith("WITHHELD"),
-        "n": r.get("n", r.get("proj_n")),
-        "hits": r.get("hits", r.get("proj_hits")),
-        "units": r.get("units", r.get("proj_units")),
-        "n_eff": r.get("n_eff"),
-        "shrunk_roi": r.get("shrunk_roi"),
-        "version": r.get("version"),
-        "bet_n": r.get("bet_n"),
-        "bet_units": r.get("bet_units"),
+    """One gate-table row from ``record_gate.all_key_rows``."""
+    return {**r, "withheld": r.get("state") != "open"}
+
+
+# The serving NBA prop models whose promote-gate record (training area) the review reads.
+MODEL_GATE_STATS = ("points", "rebounds", "assists")
+MODEL_GATE_STALE_DAYS = 14  # older than two weekly retrains: "unknown", not "fine"
+
+
+def _model_vs_line(stat: str, today: date, read=None) -> dict:
+    """What the last promote-gate record says about the SERVING ``stat`` model.
+
+    A missing, unreadable or stale record is "unknown". A promoted candidate is within
+    0.5% of the line by construction; otherwise the champion kept serving and
+    ``champion_below_line`` describes it.
+    """
+    from app.services.ml import promote_gate
+
+    if read is None and not os.getenv("AWS_ACCESS_KEY_ID"):
+        return {"state": "unknown", "note": "no S3 credentials in this runner"}
+    try:
+        rec = (read or promote_gate.read_outcome)(f"nba/ml_models/xgb_{stat}.pkl")
+    except Exception as e:
+        return {
+            "state": "unknown",
+            "note": f"gate record unreadable ({type(e).__name__})",
+        }
+    if not rec:
+        return {"state": "unknown", "note": "no gate record yet"}
+    when = str(rec.get("recorded_at") or "")[:10]
+    try:
+        stale = (today - date.fromisoformat(when)).days > MODEL_GATE_STALE_DAYS
+    except ValueError:
+        stale = True
+    if stale:
+        return {"state": "unknown", "note": f"gate record from {when or '?'} is stale"}
+    champ = rec.get("champion") or {}
+    out = {
+        "recorded": when,
+        "status": rec.get("status"),
+        "model_mae": champ.get("champion_mae"),
+        "line_mae": champ.get("line_mae"),
     }
+    if rec.get("status") == "pass" and rec.get("upload_status") in (
+        "uploaded",
+        "first_upload",
+    ):
+        lined = rec.get("lined") or {}
+        out.update(
+            state="not below line",
+            note="new model promoted",
+            model_mae=lined.get("model_mae"),
+            line_mae=lined.get("line_mae"),
+        )
+    elif rec.get("champion_below_line") is True:
+        out.update(
+            state="model below line", note=f"champion kept ({rec.get('status')})"
+        )
+    elif rec.get("champion_below_line") is False:
+        out.update(state="not below line", note=f"champion kept ({rec.get('status')})")
+    else:
+        out.update(state="unknown", note=f"no line evidence ({rec.get('status')})")
+    return out
 
 
 def _gate_section(db: Session, today: date) -> dict:
     from app.services.etl.nba import totals_baseline as tb
 
     now = _day_start_utc(today) + timedelta(hours=12)  # same ET date for the gate
-    all_rows = getattr(record_gate, "all_key_rows", None)
-    keys = [_gate_row(r) for r in (all_rows or record_gate.gate_report)(db, now)]
+    keys = [_gate_row(r) for r in record_gate.all_key_rows(db, now)]
     keys.sort(key=lambda k: (not k["withheld"], k["key"]))  # withheld first
     withheld = [k for k in keys if k["withheld"]]
     out: dict[str, Any] = {
@@ -959,6 +993,7 @@ def _gate_section(db: Session, today: date) -> dict:
         "keys": keys,
         "withheld": withheld[:WITHHELD_LIMIT],
         "withheld_count": len(withheld),
+        "model_vs_line": {st: _model_vs_line(st, today) for st in MODEL_GATE_STATS},
     }
     from app.services.etl.nba import _season
     from app.services.etl.nba import market_anchor as ma
@@ -1181,9 +1216,10 @@ def _versions_section(db: Session, today: date) -> dict:
         .all()
     )
     bets: dict = defaultdict(int)
-    for r in counted:  # shown bets only, never shadow rows
-        if not _is_shadow(r):
-            bets[r.model_version] += 1
+    # Every YetAIBet row is a shown bet: auto picks write no shadow bets. The gate's
+    # shadow record is the priced NBA prop projection rows (record_gate._nba_props).
+    for r in counted:
+        bets[r.model_version] += 1
     tables: dict[str, dict] = {}
     day0 = today - timedelta(days=MODEL_WINDOW_DAYS)
     for name in dir(pm):
@@ -1645,6 +1681,13 @@ def _attention_section(
                 f"odds_line_snapshots last seen {latest:%Y-%m-%d %H:%M} UTC "
                 f"(> 24h old) and there are games today"
             )
+    if isinstance(gate, dict):
+        for stat, m in (gate.get("model_vs_line") or {}).items():
+            if m.get("state") == "model below line":
+                out.append(
+                    f"NBA {stat}: the serving model is worse than the line "
+                    f"(promote gate {m.get('recorded')})"
+                )
     extra = len(out) - ATTENTION_LIMIT
     return {"lines": out[:ATTENTION_LIMIT], "more": max(extra, 0)}
 
@@ -1873,21 +1916,30 @@ def render_text(review: dict) -> str:
             f"  gate {'on' if g['enabled'] else 'OFF'}, {g['keys_tracked']} keys tracked, "
             f"{g.get('withheld_count', len(g['withheld']))} withheld"
         )
-        L.append("  key | state | n | hits | units | n_eff | shrunk ROI | version")
+        L.append(
+            "  key | state | n | hits | units | n_eff | shrunk ROI | dates | unpriced"
+            " | version | selection | reason"
+        )
         f = lambda v, fmt: "n/a" if v is None else format(v, fmt)  # noqa: E731
         for k in g["keys"]:
-            state = (
-                (k["state"].removeprefix("WITHHELD").strip() or "withheld")
-                if k["withheld"]
-                else k["state"]
-            )
+            roi = k.get("shrunk_roi")
             L.append(
-                f"  {'WITHHELD ' if k['withheld'] else ''}{k['key']} | {state} | "
-                f"{f(k['n'], 'd')} | {f(k['hits'], 'd')} | {f(k['units'], '+.2f')} | "
-                f"{f(k['n_eff'], '.1f')} | "
-                f"{'n/a' if k['shrunk_roi'] is None else format(k['shrunk_roi'] * 100, '+.1f') + '%'}"
-                f" | {k['version'] or 'n/a'}"
+                f"  {'WITHHELD ' if k['withheld'] else ''}{k['key']} | {k['state']} | "
+                f"{f(k.get('n'), 'd')} | {f(k.get('hits'), 'd')} | "
+                f"{f(k.get('units'), '+.2f')} | {f(k.get('n_eff'), '.1f')} | "
+                f"{'n/a' if roi is None else format(roi * 100, '+.1f') + '%'} | "
+                f"{f(k.get('dates'), 'd')} | {f(k.get('unpriced_n'), 'd')} | "
+                f"{k.get('version') or 'n/a'} | {k.get('selection_version') or 'n/a'} | "
+                f"{k.get('reason') or '-'}"
             )
+        for stat, m in (g.get("model_vs_line") or {}).items():
+            mae = (
+                f", model MAE {m['model_mae']:.2f} vs line {m['line_mae']:.2f}"
+                if m.get("model_mae") is not None and m.get("line_mae") is not None
+                else ""
+            )
+            when = f", recorded {m['recorded']}" if m.get("recorded") else ""
+            L.append(f"  NBA {stat} model: {m['state']} ({m['note']}{mae}{when})")
         for name, label in (("nba_totals", "totals"), ("nba_spread", "spread")):
             t = g.get(name, {})
             if "unavailable" in t:

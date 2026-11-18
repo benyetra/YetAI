@@ -44,7 +44,7 @@ def _record(text_review, days="7"):
     return text_review["bets"]["windows"][days]
 
 
-def test_bets_record_is_auto_picks_by_game_date_and_never_shadow(sqlite_db):
+def test_bets_record_is_auto_picks_by_game_date(sqlite_db):
     db = sqlite_db
     old_game = GAME - timedelta(days=20)
     # manual + legacy: game 20 days ago, settled yesterday -> not in 7d, not auto
@@ -52,10 +52,8 @@ def test_bets_record_is_auto_picks_by_game_date_and_never_shadow(sqlite_db):
     _bet(db, "leg", source=BetSource.MANUAL, commence=None, settled_at=GAME)
     # auto bet for yesterday's game settled today -> in 7d
     _bet(db, "auto", "won")
-    # never-shown rows: three markers
-    _bet(db, "sh1", "won", pf={"shadow": True})
-    _bet(db, "sh2", "won", pf={"shown": False})
-    _bet(db, "sh3", "shadow_won")
+    # a status outside won/lost/pushed is not a graded bet
+    _bet(db, "void", "void")
     db.commit()
     b = ms._bets_section(db, TODAY)
     w7, w30 = b["windows"]["7"], b["windows"]["30"]
@@ -132,41 +130,33 @@ def test_disagreement_uses_the_bets_own_line_not_the_overwritten_row(sqlite_db):
     assert "over at 20.5 grades won" in text and "current row line 30.5" in text
 
 
-def test_versions_count_only_shown_auto_bets(sqlite_db):
+def test_versions_count_only_auto_bets(sqlite_db):
     db = sqlite_db
     _bet(db, "a", "won")
-    _bet(db, "sh", "won", pf={"shadow": True})
     _bet(db, "m", "won", source=BetSource.MANUAL)
     db.commit()
     assert ms._versions_section(db, TODAY)["bets_30d"] == {"v-test": 1}
 
 
-_ROWS = [
-    {
-        "key": "NBA/player_prop/points",
-        "state": "WITHHELD losing",
-        "withheld": True,
-        "bet_n": 2,
-        "bet_units": -1.0,
-        "proj_n": 40,
-        "proj_hits": 10,
-        "proj_units": -12.0,
-        "n_eff": 30.0,
-        "shrunk_roi": -0.2,
-    },
-    {
-        "key": "NHL/total",
-        "state": "open",
-        "withheld": False,
+def _key_row(key, state, **kw):
+    """One row as record_gate.all_key_rows returns it."""
+    row = {
+        "key": key,
+        "n": 0,
+        "hits": 0,
+        "units": 0.0,
+        "n_eff": 0.0,
+        "shrunk_roi": 0.0,
+        "version": None,
+        "selection_version": "ev-v1",
+        "unpriced_n": 0,
         "bet_n": 0,
-        "bet_units": 0.0,
-        "proj_n": 12,
-        "proj_hits": 7,
-        "proj_units": None,
-        "n_eff": 12.0,
-        "shrunk_roi": 0.01,
-    },
-]
+        "dates": 0,
+        "state": state,
+        "reason": None if state == "open" else "unproven_record",
+    }
+    row.update(kw)
+    return row
 
 
 def _gate_text(db):
@@ -175,34 +165,34 @@ def _gate_text(db):
     return text[text.index("== Record gate ==") :]
 
 
-def test_gate_table_prints_every_key_from_all_key_rows(sqlite_db, monkeypatch):
+def test_gate_table_prints_every_key_with_its_record_fields(sqlite_db, monkeypatch):
     rows = [
-        {
-            **_ROWS[1],
-            "key": "NFL/spread",
-            "n": 5,
-            "hits": 3,
-            "units": 0.4,
-            "version": "v9",
-        },
-        _ROWS[0],
+        _key_row("NFL/spread", "open", n=5, hits=3, units=0.4, version="v9"),
+        _key_row(
+            "NBA/player_prop/points",
+            "withheld-losing",
+            n=40,
+            hits=10,
+            units=-12.0,
+            n_eff=40.0,
+            shrunk_roi=-0.2,
+            dates=12,
+            version="xgb-11-14",
+            reason="losing_record",
+        ),
+        _key_row("NHL/total", "withheld-unproven", unpriced_n=12),
     ]
-    monkeypatch.setattr(
-        record_gate, "all_key_rows", lambda db, now: rows, raising=False
+    monkeypatch.setattr(record_gate, "all_key_rows", lambda db, now: rows)
+    text = _gate_text(sqlite_db)
+    assert "| dates | unpriced | version | selection | reason" in text
+    assert (
+        "WITHHELD NBA/player_prop/points | withheld-losing | 40 | 10 | -12.00 | 40.0 |"
+        " -20.0% | 12 | 0 | xgb-11-14 | ev-v1 | losing_record" in text
     )
-    text = _gate_text(sqlite_db)
-    assert "key | state | n | hits | units | n_eff | shrunk ROI | version" in text
-    assert "WITHHELD NBA/player_prop/points" in text
-    assert "NFL/spread | open | 5 | 3 | +0.40" in text and "| v9" in text
+    assert "NFL/spread | open | 5 | 3 | +0.40" in text and "| v9 | ev-v1 | -" in text
+    assert "WITHHELD NHL/total | withheld-unproven | 0 | 0 |" in text
+    assert "| 0 | 12 | n/a | ev-v1 | unproven_record" in text
     assert text.index("WITHHELD NBA") < text.index("NFL/spread")  # withheld first
-
-
-def test_gate_table_falls_back_to_gate_report_with_open_keys(sqlite_db, monkeypatch):
-    monkeypatch.delattr(record_gate, "all_key_rows", raising=False)
-    monkeypatch.setattr(record_gate, "gate_report", lambda db, now: _ROWS)
-    text = _gate_text(sqlite_db)
-    assert "WITHHELD NBA/player_prop/points | losing | 40 | 10" in text
-    assert "NHL/total | open | 12 | 7 | n/a" in text
 
 
 def test_credits_without_redis_say_so_instead_of_zeros(sqlite_db, monkeypatch):
@@ -312,3 +302,60 @@ def test_spread_bets_are_still_compared_on_the_stored_call(sqlite_db):
     sqlite_db.commit()
     d = ms._disagreements_section(sqlite_db, TODAY, cur)
     assert (d["checked"], d["disagreements"], d["without_snapshot"]) == (1, 1, 0)
+
+
+def _gate_file(**kw):
+    rec = {
+        "status": "rejected_by_line_gate",
+        "recorded_at": "2026-11-16T12:00:00+00:00",
+        "champion_below_line": True,
+        "champion": {"champion_mae": 5.34, "line_mae": 4.97},
+        "lined": {"model_mae": 5.30, "line_mae": 4.97},
+    }
+    rec.update(kw)
+    return lambda key: rec
+
+
+def test_model_vs_line_reads_the_promote_gate_record():
+    below = ms._model_vs_line("points", TODAY, read=_gate_file())
+    assert below["state"] == "model below line" and below["model_mae"] == 5.34
+    ok = ms._model_vs_line("points", TODAY, read=_gate_file(champion_below_line=False))
+    assert ok["state"] == "not below line"
+    promoted = ms._model_vs_line(
+        "points", TODAY, read=_gate_file(status="pass", upload_status="uploaded")
+    )
+    assert promoted["state"] == "not below line" and promoted["model_mae"] == 5.30
+    # missing, stale, unreadable and no-line-evidence records are "unknown", never "fine"
+    assert ms._model_vs_line("points", TODAY, read=lambda k: None)["state"] == "unknown"
+    stale = _gate_file(recorded_at="2026-10-01T00:00:00+00:00")
+    assert ms._model_vs_line("points", TODAY, read=stale)["state"] == "unknown"
+
+    def boom(key):
+        raise RuntimeError("s3 down")
+
+    assert ms._model_vs_line("points", TODAY, read=boom)["state"] == "unknown"
+    none = _gate_file(status="no_line_evidence", champion_below_line=None)
+    assert ms._model_vs_line("points", TODAY, read=none)["state"] == "unknown"
+
+
+def test_model_vs_line_without_s3_credentials_is_unknown(monkeypatch):
+    monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
+    m = ms._model_vs_line("rebounds", TODAY)
+    assert m == {"state": "unknown", "note": "no S3 credentials in this runner"}
+
+
+def test_review_shows_model_below_line_per_stat(sqlite_db, monkeypatch):
+    monkeypatch.setattr(record_gate, "all_key_rows", lambda db, now: [])
+    from app.services.ml import promote_gate
+
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "x")
+    monkeypatch.setattr(promote_gate, "read_outcome", _gate_file())
+    gate = ms._gate_section(sqlite_db, TODAY)
+    text = ms.render_text({**_empty_review(), "gate": gate})
+    assert "NBA points model: model below line (champion kept" in text
+    assert "model MAE 5.34 vs line 4.97, recorded 2026-11-16" in text
+    att = ms._attention_section(sqlite_db, TODAY, {}, {}, None, gate)
+    assert any(
+        "NBA rebounds: the serving model is worse than the line" in x
+        for x in att["lines"]
+    )
