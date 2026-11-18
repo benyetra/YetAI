@@ -246,7 +246,7 @@ export default function GameProjectionsGrid({
         <StatChip
           label="Strong picks"
           value={String(strong)}
-          sub={strong === 0 ? 'no picks today' : `${strong} ${strong === 1 ? 'pick' : 'picks'} with edge`}
+          sub={strong === 0 ? 'no strong picks' : `${strong} ${strong === 1 ? 'pick' : 'picks'} with edge`}
           muted={strong === 0}
         />
       </div>

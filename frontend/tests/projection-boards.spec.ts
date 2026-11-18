@@ -9,7 +9,7 @@ const EMPTY_BEST_EDGES = 'No picks today: no market on this board has proved its
 /** Only the NBA board has a Best edges strip (and so Gamble It). */
 const HAS_BEST_EDGES: Record<BoardSport, boolean> = { nba: true, nfl: false, nhl: false };
 const GAMBLE = 'a[title="Build a one-click betslip on Gambly"]';
-const SCREENS = process.env.BOARD_SCREENS_DIR || '/Users/byetz/Development/YetAI/YetAI/.factory/frontend-checks/artifacts/screens';
+const SCREENS = process.env.BOARD_SCREENS_DIR || 'test-results/board-screens';
 
 function authToken(): string {
   const enc = (v: object) => Buffer.from(JSON.stringify(v)).toString('base64url');
@@ -84,7 +84,7 @@ for (const sport of SPORTS) {
   });
 }
 
-// Screenshots: BOARD_SCREENS=1 [BOARD_SHOTS_SUBDIR=before|after] npx playwright test tests/projection-boards.spec.ts
+// Screenshots: BOARD_SCREENS=1 [BOARD_SCREENS_DIR=<dir>, default test-results/board-screens] [BOARD_SHOTS_SUBDIR=before|after] npx playwright test tests/projection-boards.spec.ts -g screenshots
 test.describe('board screenshots', () => {
   test.skip(!process.env.BOARD_SCREENS, 'set BOARD_SCREENS=1 to capture');
   const dir = `${SCREENS}/${process.env.BOARD_SHOTS_SUBDIR || 'after'}`;
