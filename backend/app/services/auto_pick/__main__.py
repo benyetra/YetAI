@@ -5,27 +5,27 @@ CLI entry point:
   python -m app.services.auto_pick gate [--now ISO]
 
 ``dry-run`` prints what would be published against whatever DATABASE_URL is set.
-``gate`` prints the record gate's decision per (league, market, stat) key: bet record,
-projection prior, combined shrunk ROI, withheld or open. Both never write (the session
-is rolled back).
+``gate`` prints the record gate's decision per (league, market, stat) key:
+every field of ``all_key_rows`` (priced record, unpriced count, versions, state). Both
+never write (the session is rolled back).
 """
 
 import argparse
 import asyncio
 import json
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, timezone
 
 from app.core.database import SessionLocal
 from app.services.auto_pick.backtest import run_backtest
-from app.services.auto_pick.candidate import EASTERN, to_naive_utc
+from app.services.auto_pick.candidate import EASTERN, MORNING_RUN_ET, to_naive_utc
 from app.services.auto_pick.orchestrator import AutoPickOrchestrator, grading_block
-from app.services.auto_pick.record_gate import gate_report
+from app.services.auto_pick.record_gate import all_key_rows
 
 
 def dry_run(db, slate_date: date, now: datetime | None = None, providers=None) -> dict:
-    """Would-publish picks + drop summary for ``slate_date`` (default now = 11:00 ET)."""
+    """Would-publish picks + drop summary for ``slate_date`` (default now = the morning run, 13:30 ET)."""
     if now is None:
-        now = to_naive_utc(datetime.combine(slate_date, time(11, 0), tzinfo=EASTERN))
+        now = to_naive_utc(datetime.combine(slate_date, MORNING_RUN_ET, tzinfo=EASTERN))
     if providers is None:
         from app.tasks.auto_pick import _build_providers
 
@@ -42,6 +42,7 @@ def dry_run(db, slate_date: date, now: datetime | None = None, providers=None) -
                 "market": p.candidate.market_type.value,
                 "odds": p.candidate.market_odds,
                 "score": p.score.total,
+                "ev": round(p.ev.ev, 4) if p.ev else None,
                 "tier": p.tier.value if p.tier else None,
                 "commence_time": (
                     p.candidate.commence_time.isoformat()
@@ -58,17 +59,16 @@ def dry_run(db, slate_date: date, now: datetime | None = None, providers=None) -
 
 def print_gate_report(rows: list[dict]) -> None:
     print(
-        f"{'key':34} {'bets':>5} {'units':>7} {'prior':>9} {'hit%':>6} "
-        f"{'n_eff':>6} {'ROI':>8} {'min_edge':>8}  gate"
+        f"{'key':34} {'n':>5} {'hits':>5} {'units':>7} {'n_eff':>6} {'ROI':>8} "
+        f"{'unpriced':>8} {'bets':>5} {'version':>10} {'selection':>9}  state"
     )
     for r in rows:
-        hit = "-" if r["prior_hit_rate"] is None else f"{r['prior_hit_rate']:.1%}"
-        prior = f"{r['proj_hits']}/{r['proj_n']}"
-        qe = "-" if r["qualifying_edge"] is None else f"{r['qualifying_edge']:.2f}"
+        why = f" ({r['reason']})" if r["reason"] else ""
         print(
-            f"{r['key']:34} {r['bet_n']:>5} {r['bet_units']:>7} {prior:>9} {hit:>6} "
-            f"{r['n_eff']:>6} {r['shrunk_roi']:>8.2%} {qe:>8}  "
-            f"{r['state']}"
+            f"{r['key']:34} {r['n']:>5} {r['hits']:>5} {r['units']:>7} "
+            f"{r['n_eff']:>6} {r['shrunk_roi']:>8.2%} {r['unpriced_n']:>8} "
+            f"{r['bet_n']:>5} {str(r['version']):>10} {r['selection_version']:>9}  "
+            f"{r['state']}{why}"
         )
 
 
@@ -89,7 +89,7 @@ def main() -> None:
     try:
         if args.cmd == "gate":
             now = args.now or datetime.now(timezone.utc).replace(tzinfo=None)
-            print_gate_report(gate_report(db, now))
+            print_gate_report(all_key_rows(db, now))
             return
         if args.cmd == "backtest":
             result = run_backtest(args.start, args.end, db)

@@ -1,8 +1,11 @@
-"""Record gate: (league, market, stat) keys with a losing shrunk record are withheld."""
+"""Record gate: keys whose record at real prices is losing are withheld; unproven keys wait.
 
-from datetime import timedelta
+Every graded call in a record is priced (best_price) and passed the selector's EV rule;
+nothing is valued at -110.
+"""
 
 import itertools
+from datetime import date, timedelta
 
 import pytest
 
@@ -13,6 +16,7 @@ from app.models.predictions_models import (
     ReboundsActuals,
     ReboundsProjections,
 )
+from app.services.auto_pick import ev
 from app.services.auto_pick import record_gate as rg
 from app.services.auto_pick.candidate import BetCandidate, MarketType
 from app.services.auto_pick.orchestrator import AutoPickOrchestrator
@@ -21,6 +25,9 @@ from tests.auto_pick.test_orchestrator import NOW, _bets, _cand, _provider
 
 POINTS = ("NBA", "player_prop", "points")
 REBOUNDS = ("NBA", "player_prop", "rebounds")
+PRA = ("NBA", "player_prop", "pra")
+# At -125 a win pays 0.8u. fair 0.58 clears both EV gates (consensus EV +0.044).
+PRICE, FAIR = -125, 0.58
 
 
 @pytest.fixture(autouse=True)
@@ -28,10 +35,10 @@ def _env(monkeypatch):
     for k in (
         "AUTO_PICK_RECORD_GATE_ENABLED",
         "AUTO_PICK_REQUIRE_PROVEN_RECORD",
+        "AUTO_PICK_PROVE_IN_KEYS",
         "AUTO_PICK_RECORD_MIN_PICKS",
         "AUTO_PICK_RECORD_WINDOW_DAYS",
         "AUTO_PICK_RECORD_MIN_ROI",
-        "AUTO_PICK_RECORD_PRIOR_MAX_PICKS",
         "AUTO_PICK_RECORD_SHRINK_PICKS",
         "AUTO_YETAI_PICKS_AUTO_PUBLISH",
         "AUTO_YETAI_PICKS_MIN_SCORE",
@@ -42,26 +49,19 @@ def _env(monkeypatch):
     monkeypatch.setattr(orch_mod, "_can_grade", lambda league, market, stat: True)
 
 
-def _seed_points(db, n, hit_rate, *, offset=1, first_id=0, edge=9.5):
-    """n graded NBA points O/U calls (line 20.5, over); ``offset`` days before NOW."""
-    _seed(
-        db, PointsProjections, PointsActuals, "points", n, hit_rate, offset, first_id,
-        edge,
-    )  # fmt: skip
+def _seed_points(db, n, hit_rate, *, offset=1, first_id=0, **kw):
+    _seed(db, PointsProjections, PointsActuals, "points", n, hit_rate, offset, first_id, **kw)  # fmt: skip
 
 
-def _seed_rebounds(db, n, hit_rate, *, first_id=0, edge=9.5):
-    _seed(
-        db, ReboundsProjections, ReboundsActuals, "rebounds", n, hit_rate, 1, first_id,
-        edge,
-    )  # fmt: skip
+def _seed_rebounds(db, n, hit_rate, *, first_id=0, **kw):
+    _seed(db, ReboundsProjections, ReboundsActuals, "rebounds", n, hit_rate, 1, first_id, **kw)  # fmt: skip
 
 
-def _seed(db, proj, act, stat, n, hit_rate, offset, first_id, edge=9.5, price=None):
-    """``edge`` = projected - line on the over call; ``hit_rate`` is the share of overs."""
+def _seed(db, proj, act, stat, n, hit_rate, offset, first_id, price=PRICE, fair=FAIR):
+    """n graded over calls (line 20.5, projection 30); ``hit_rate`` is the share that hit.
+    ``price`` / ``fair`` None = the row's last write had no fresh quote (unpriced)."""
     day = NOW.date() - timedelta(days=offset)
     hits = round(n * hit_rate)
-    projected = 20.5 + edge
     for i in range(first_id, first_id + n):
         extra = {"player_name": f"P{i}"}
         if stat == "rebounds":
@@ -70,10 +70,12 @@ def _seed(db, proj, act, stat, n, hit_rate, offset, first_id, edge=9.5, price=No
             proj(
                 date=day,
                 player_id=i,
-                **{f"projected_{stat}": projected},
+                **{f"projected_{stat}": 30.0},
                 fanduel_line=20.5,
                 fanduel_over_under="over",
-                fanduel_price=price,
+                best_line=20.5 if price else None,
+                best_price=price,
+                best_fair_prob=fair,
                 **extra,
             )
         )
@@ -82,7 +84,7 @@ def _seed(db, proj, act, stat, n, hit_rate, offset, first_id, edge=9.5, price=No
                 date=day,
                 player_id=i,
                 **{f"actual_{stat}": 25.0 if i - first_id < hits else 10.0},
-                **{f"projected_{stat}": projected},
+                **{f"projected_{stat}": 30.0},
                 **extra,
             )
         )
@@ -92,7 +94,7 @@ def _seed(db, proj, act, stat, n, hit_rate, offset, first_id, edge=9.5, price=No
 _ids = itertools.count()
 
 
-def _bet(db, won, odds, settled, league="NBA", stat="points"):
+def _bet(db, won, odds, settled, league="NBA", stat="points", sv=ev.SELECTION_VERSION):
     db.add(
         YetAIBet(
             id=f"b{next(_ids)}",
@@ -106,7 +108,8 @@ def _bet(db, won, odds, settled, league="NBA", stat="points"):
             sport="basketball_nba",
             settled_at=settled,
             prediction_factors={
-                "grading": {"league": league, "market": "player_prop", "stat": stat}
+                "selection_version": sv,
+                "grading": {"league": league, "market": "player_prop", "stat": stat},
             },
         )
     )
@@ -118,148 +121,108 @@ def _prop(n, stat):
     return c
 
 
+def _fake_rows(monkeypatch, part, rows):
+    """Feed ``rows`` (dicts) to the NBA prop loader as the merged rows of ``part``."""
+    monkeypatch.setattr(
+        "app.services.nba_accuracy_service._nba_season_window_rows",
+        lambda db, start, end: [(part, "x", rows, {})],
+    )
+
+
+def _row(i, hit, *, stat="points", price=PRICE, fair=FAIR, version="v1", day=1, **kw):
+    """A stored over call: projection 30 vs line 20.5, graded hit or miss."""
+    r = {
+        "id": i,
+        "date": NOW.date() - timedelta(days=day),
+        "model_version": version,
+        f"projected_{stat}": 30.0,
+        "fanduel_over_under": "over",
+        "best_line": 20.5,
+        "best_price": price,
+        "best_fair_prob": fair,
+        f"actual_{stat}": 25.0 if hit else 10.0,
+    }
+    r.update(kw)
+    return r
+
+
+def _state(db, key):
+    return {r["key"]: r for r in rg.all_key_rows(db, NOW)}[rg.key_label(key)]
+
+
 async def _run(db, cands):
     return await AutoPickOrchestrator(
         db=db, providers=[_provider(cands)], now=NOW
     ).run()
 
 
-# Prod scorecard shapes (NBA, prior window). Rebounds' qualifying edge is
-# player_prop_projection_display.EDGE_THRESHOLDS["rebounds"] (0.5): ``edge=1.0`` qualifies,
-# ``edge=0.2`` does not.
+# ---------- the arithmetic ----------
 
 
-@pytest.mark.asyncio
-async def test_points_losing_at_every_edge_is_withheld_rebounds_in_subset_open(
-    sqlite_db,
+def test_even_split_at_minus_125_over_200_priced_rows_is_withheld_losing(
+    sqlite_db, monkeypatch
 ):
-    # points: 47.6% over at low and high edge alike -> no subset rescues it
-    _seed_points(sqlite_db, 250, 0.476, edge=0.2)
-    _seed_points(sqlite_db, 250, 0.476, edge=2.0, first_id=1000)
-    # rebounds: 51.8% over all calls, 57.8% in the qualifying subset
-    _seed_rebounds(sqlite_db, 275, 0.469, edge=0.2, first_id=0)
-    _seed_rebounds(sqlite_db, 225, 0.578, edge=1.0, first_id=1000)
-
-    result = await _run(sqlite_db, [_prop(1, "points"), _prop(2, "rebounds")])
-
-    (bet,) = _bets(sqlite_db)
-    assert bet.prediction_factors["grading"]["stat"] == "rebounds"
-    d = result.dropped_reasons
-    assert d["counts"]["losing_record"] == 1
-    assert list(d["withheld_keys"]) == ["NBA/player_prop/points"]
-    w = d["withheld_keys"]["NBA/player_prop/points"]
-    assert w["proj_n"] == 250 and w["bet_n"] == 0 and w["shrunk_roi"] < 0
-    reb = load_records(sqlite_db, NOW)[REBOUNDS]
-    assert (reb.proj_n, reb.proj_hits) == (225, 130) and not reb.withheld
-    assert reb.shrunk_roi > 0
+    # 100 of 200 hit at -125: -20u, shrunk ROI -9%. At -110 this would be +4.5u: open.
+    _fake_rows(monkeypatch, "points_ou", [_row(i, i < 100) for i in range(200)])
+    rec = load_records(sqlite_db, NOW, ("nba_props",))[POINTS]
+    assert (rec.proj_n, rec.proj_hits) == (200, 100)
+    assert rec.proj_units == pytest.approx(-20.0)
+    assert rec.withheld and rg.drop_reason(rec) == "losing_record"
+    assert _state(sqlite_db, POINTS)["state"] == "withheld-losing"
 
 
-def test_production_shapes_points_withheld_rebounds_open_low_edge_ignored(sqlite_db):
-    # points 50.6% over 476 qualifying calls; sub-floor calls (edge 1.0 < 1.25) are ignored
-    _seed_points(sqlite_db, 476, 0.506, edge=2.0)
-    _seed_points(sqlite_db, 300, 0.60, edge=1.0, first_id=1000)
-    # rebounds 56.7% over 171 qualifying; 300 calls at 49% between 0.5 and 0.78 do not count
-    _seed_rebounds(sqlite_db, 171, 0.567, edge=1.0)
-    _seed_rebounds(sqlite_db, 300, 0.49, edge=0.6, first_id=1000)
-    recs = load_records(sqlite_db, NOW)
-    assert (recs[POINTS].proj_n, recs[POINTS].withheld) == (476, True)
-    assert (recs[REBOUNDS].proj_n, recs[REBOUNDS].withheld) == (171, False)
+def test_large_sample_slightly_negative_is_withheld_no_cap(sqlite_db, monkeypatch):
+    # 935 of 1700 at -125 = -17u, ROI about -1%: inside the -2% dead band, but past
+    # LARGE_SAMPLE the cut is 0. The old code capped the record at 60 calls: open.
+    _fake_rows(monkeypatch, "points_ou", [_row(i, i < 935) for i in range(1700)])
+    rec = load_records(sqlite_db, NOW, ("nba_props",))[POINTS]
+    assert rec.n_eff == 1700 and -0.02 < rec.shrunk_roi < 0
+    assert rec.withheld
+    # the same ROI on a small sample sits in the dead band and is open
+    assert not combine(POINTS, proj_n=200, proj_hits=100, proj_units=-3.0).withheld
 
 
-def test_rebounds_overall_record_would_withhold_but_subset_is_what_counts(sqlite_db):
-    _seed_rebounds(sqlite_db, 400, 0.50, edge=0.2)
-    _seed_rebounds(sqlite_db, 100, 0.578, edge=1.0, first_id=1000)
-    rec = load_records(sqlite_db, NOW)[REBOUNDS]
-    assert rec.proj_n == 100 and not rec.withheld  # low-edge rows are not graded
+def test_small_sample_shrink_holds():
+    # 30 calls at raw ROI -2.5% (-0.75u): shrunk ROI -1.5%, above the -2% cut
+    rec = combine(POINTS, proj_n=30, proj_hits=16, proj_units=-0.75)
+    assert rec.shrunk_roi == pytest.approx(-0.75 / 50)
+    assert not rec.withheld
+    # under min_picks never withheld, however bad
+    assert not combine(POINTS, proj_n=29, proj_hits=0, proj_units=-29.0).withheld
+    assert combine(POINTS, proj_n=30, proj_hits=0, proj_units=-30.0).withheld
 
 
-def test_key_at_exact_breakeven_is_open():
-    # 110/210 = 52.38% over at -110 is zero ROI.
-    rec = combine(POINTS, proj_n=210, proj_hits=110)
-    assert rec.shrunk_roi == 0 and not rec.withheld
+def test_key_at_exact_breakeven_is_open_and_dead_band_does_not_flip():
+    assert not combine(POINTS, proj_n=210, proj_hits=105, proj_units=0.0).withheld
     # a hair under breakeven sits in the dead band: still open
-    assert not combine(POINTS, proj_n=210, proj_hits=109).withheld
-
-
-def test_fill_floor_edges_come_from_the_scorer():
-    # neutral other sub-scores total 42.5, so the edge score must be 31.25
-    f = rg.fill_floor_edge
-    assert f("points") == pytest.approx(1.25)
-    assert f("rebounds") == pytest.approx(0.78125)
-    assert f("assists") == pytest.approx(0.625)
-    assert f("threes") == pytest.approx(0.375)
-    assert f("steals") == pytest.approx(0.25)
-
-
-def test_key_walking_around_breakeven_does_not_flip():
-    # hits 108..112 of 210 straddle breakeven (110); the old zero-ROI cut flipped here
     states = [
-        combine(POINTS, proj_n=210, proj_hits=h).withheld
-        for h in (110, 109, 110, 108, 109, 110, 109, 112)
+        combine(POINTS, proj_n=210, proj_hits=105, proj_units=u).withheld
+        for u in (0.0, -1.0, 0.5, -3.0, -4.0)
     ]
-    assert states == [False] * len(states)
-    assert combine(POINTS, proj_n=210, proj_hits=100).withheld  # real losers still go
+    assert states == [False] * 5
+    assert combine(POINTS, proj_n=210, proj_hits=90, proj_units=-30.0).withheld
 
 
-def test_no_data_means_no_record_and_open_gate(sqlite_db):
-    recs = load_records(sqlite_db, NOW)
-    assert all(r.n_eff == 0 and not r.withheld for r in recs.values())
-    assert not combine(POINTS).withheld
-
-
-def test_thin_sample_is_not_withheld():
-    rec = combine(POINTS, proj_n=20, proj_hits=6)  # 30% but n_eff 20 < 30
-    assert rec.shrunk_roi < 0 and not rec.withheld
-
-
-def test_withheld_is_strict_and_needs_n_eff():
-    assert combine(POINTS, proj_n=60, proj_hits=26).withheld
-    assert not combine(POINTS, proj_n=60, proj_hits=40).withheld
-
-
-def test_prior_is_capped_and_shrunk_toward_breakeven():
-    rec = combine(POINTS, proj_n=400, proj_hits=192, bet_n=5, bet_units=-5.0)
-    scale = 60 / 400
-    proj_units = 192 * (100 / 110) - 208
-    assert rec.n_eff == pytest.approx(400 * scale + 5)
-    # the shrink pseudo-picks carry zero ROI (breakeven), not a 50% hit rate at -110
-    assert rec.shrunk_roi == pytest.approx(
-        (proj_units * scale - 5.0) / (400 * scale + 5 + 20)
+def test_there_is_no_prior_cap_and_no_minus_110(monkeypatch):
+    rec = combine(
+        POINTS, proj_n=400, proj_hits=192, proj_units=-30.0, bet_n=5, bet_units=-5.0
     )
-
-
-def test_recovery_when_projection_record_turns_winning(sqlite_db):
-    _seed_points(sqlite_db, 400, 0.48)
-    assert load_records(sqlite_db, NOW)[POINTS].withheld
-    # A later run: the key kept being graded and now wins.
-    _seed_points(sqlite_db, 400, 0.70, offset=2, first_id=1000)
-    assert not load_records(sqlite_db, NOW)[POINTS].withheld
-
-
-def test_bet_units_use_stored_odds(sqlite_db):
-    settled = NOW - timedelta(days=3)
-    for _ in range(10):
-        _bet(sqlite_db, True, 150, settled, stat="points")
-        _bet(sqlite_db, False, 150, settled, stat="points")
-    for i in range(12):
-        _bet(sqlite_db, True, -200, settled, stat="rebounds")
-    for i in range(8):
-        _bet(sqlite_db, False, -200, settled, stat="rebounds")
-    sqlite_db.commit()
-    recs = load_records(sqlite_db, NOW)
-    assert recs[POINTS].bet_units == pytest.approx(5.0) and recs[POINTS].shrunk_roi > 0
-    assert recs[REBOUNDS].bet_units == pytest.approx(-2.0)
-    assert recs[REBOUNDS].shrunk_roi < 0
+    assert rec.n_eff == 405  # no cap: all 400 count
+    assert rec.shrunk_roi == pytest.approx(-35.0 / (405 + 20))
+    assert not hasattr(rg, "prior_max_picks") and not hasattr(rg, "BREAKEVEN_ODDS")
+    # hits alone are never valued: without units a key has no value
+    assert combine(POINTS, proj_n=100, proj_hits=55).shrunk_roi == 0
 
 
 def test_kill_switch_and_env_overrides(monkeypatch):
-    losing = dict(proj_n=400, proj_hits=192)
+    losing = dict(proj_n=100, proj_hits=40, proj_units=-30.0)
     assert combine(POINTS, **losing).withheld
     monkeypatch.setenv("AUTO_PICK_RECORD_GATE_ENABLED", "false")
     assert not combine(POINTS, **losing).withheld
+    assert rg.drop_reason(None, POINTS) is None
     monkeypatch.setenv("AUTO_PICK_RECORD_GATE_ENABLED", "true")
-    monkeypatch.setenv("AUTO_PICK_RECORD_MIN_PICKS", "100")
-    assert not combine(POINTS, **losing).withheld  # n_eff 60 < 100
+    monkeypatch.setenv("AUTO_PICK_RECORD_MIN_PICKS", "200")
+    assert not combine(POINTS, **losing).withheld
     monkeypatch.setenv("AUTO_PICK_RECORD_MIN_PICKS", "abc")
     assert rg.min_picks() == 30 and combine(POINTS, **losing).withheld
     monkeypatch.setenv("AUTO_PICK_RECORD_MIN_ROI", "-0.5")
@@ -268,16 +231,325 @@ def test_kill_switch_and_env_overrides(monkeypatch):
     assert rg.window_days() == 7
 
 
-def test_no_leak_of_today_or_future_results(sqlite_db):
-    _seed_points(sqlite_db, 50, 0.0, offset=0)  # today's slate: ignored
-    settled_later = NOW + timedelta(hours=1)
+# ---------- what goes into the record ----------
+
+
+def test_unpriced_rows_contribute_nothing(sqlite_db):
+    # last write had no fresh quote: no best_price / best_fair_prob
+    _seed_points(sqlite_db, 100, 0.3, price=None, fair=None)
+    _seed_points(sqlite_db, 50, 0.3, fair=None, first_id=500)  # price but no fair prob
+    rec = load_records(sqlite_db, NOW, ("nba_props",))[POINTS]
+    assert (rec.proj_n, rec.n_eff, rec.proj_units, rec.withheld) == (0, 0, 0.0, False)
+
+
+def test_priced_rows_are_valued_at_best_price_through_the_real_loader(sqlite_db):
+    _seed_points(sqlite_db, 100, 0.55)  # 55 hits at -125
+    rec = load_records(sqlite_db, NOW, ("nba_props",))[POINTS]
+    assert (rec.proj_n, rec.proj_hits) == (100, 55)
+    assert rec.proj_units == pytest.approx(55 * 0.8 - 45)
+
+
+def test_rows_of_an_older_model_version_are_excluded(sqlite_db, monkeypatch):
+    old = [_row(i, True, version="v1", day=3) for i in range(80)]
+    new = [_row(100 + i, i < 2, version="v2", day=1) for i in range(40)]
+    _fake_rows(monkeypatch, "points_ou", old + new)
+    rec = load_records(sqlite_db, NOW, ("nba_props",))[POINTS]
+    assert rec.version == "v2" and (rec.proj_n, rec.proj_hits) == (40, 2)
+    # None is a version too: legacy unversioned rows are the current model while they are latest
+    legacy = [_row(i, True, version=None, day=1) for i in range(10)]
+    _fake_rows(monkeypatch, "points_ou", old + legacy)
+    rec = load_records(sqlite_db, NOW, ("nba_props",))[POINTS]
+    assert rec.version is None and rec.proj_n == 10
+
+
+def test_current_version_rows_ties_break_on_projected_at_then_id():
+    from datetime import datetime
+
+    d = date(2026, 5, 1)
+    rows = [
+        {"date": d, "id": 9, "model_version": "a"},
+        {"date": d, "id": 1, "model_version": "b", "projected_at": datetime(2026, 5, 1, 9)},
+        {"date": d, "id": 2, "model_version": "c", "projected_at": datetime(2026, 5, 1, 8)},
+    ]  # fmt: skip
+    assert rg.current_version_rows(rows, "date")[0] == "b"
+    assert rg.current_version_rows(rows[:1] + rows[2:], "date")[0] == "c"
+    assert rg.current_version_rows([], "date") == (None, [])
+
+
+def test_only_rows_the_selector_would_consider_are_graded(sqlite_db, monkeypatch):
+    rows = [
+        _row(1, True),  # qualifies: graded at -125 -> +0.8u
+        _row(2, True, fair=0.50),  # consensus EV negative at -125
+        _row(3, True, fair=0.56, projected_points=20.5),  # EV 0.008 <= MIN_EV
+        _row(4, True, best_price=None),
+        _row(5, True, best_fair_prob=None),
+        _row(6, True, fanduel_over_under=None),
+    ]
+    _fake_rows(monkeypatch, "points_ou", rows)
+    rec = load_records(sqlite_db, NOW, ("nba_props",))[POINTS]
+    assert (rec.proj_n, rec.proj_hits) == (1, 1)
+    assert rec.proj_units == pytest.approx(0.8)
+    # the rule is ev.py's own
+    assert ev.gate_reason(ev.prop_ev("points", "o", 30.0, 20.5, -125, 0.50)) is not None
+
+
+def test_fill_floor_edge_is_gone():
+    assert not hasattr(rg, "fill_floor_edge")
+
+
+def test_pra_has_a_record_and_must_prove_in(sqlite_db, monkeypatch):
+    _fake_rows(
+        monkeypatch,
+        "pra_ou",
+        [_row(i, i < 40, stat="pra") for i in range(60)],
+    )
+    rec = load_records(sqlite_db, NOW, ("nba_props",))[PRA]
+    assert rec.proj_n == 60 and rec.shrunk_roi > 0 and not rec.withheld
+    assert rg.drop_reason(rec) == "unproven_record"  # 60 < 100 qualifying rows
+    assert rg.withheld_keys(sqlite_db, NOW, {PRA}, ("nba_props",)) == {
+        PRA: "unproven_record"
+    }
+    assert "NBA/player_prop/pra" in rg.DEFAULT_PROVE_IN_KEYS
+
+
+def test_no_leak_of_today_or_future_results(sqlite_db, monkeypatch):
+    seen = {}
+
+    def loader(db, start, end):
+        seen["window"] = (start, end)
+        return {}
+
+    monkeypatch.setitem(rg.PROJECTION_LOADERS, "nba_props", loader)
+    rg.load_projection_records(sqlite_db, NOW)
+    assert seen["window"][1] == NOW.date() - timedelta(days=1)
     for _ in range(40):
-        _bet(sqlite_db, False, -110, settled_later)
+        _bet(sqlite_db, False, -110, NOW + timedelta(hours=1), stat="blocks")
+    sqlite_db.commit()
+    assert ("NBA", "player_prop", "blocks") not in rg.load_bet_records(sqlite_db, NOW)
+
+
+def test_recovery_when_projection_record_turns_winning(sqlite_db):
+    _seed_points(sqlite_db, 120, 0.40)
+    assert load_records(sqlite_db, NOW)[POINTS].withheld
+    _seed_points(sqlite_db, 400, 0.80, offset=2, first_id=1000)
+    assert not load_records(sqlite_db, NOW)[POINTS].withheld
+
+
+# ---------- bet record ----------
+
+
+def test_bet_units_use_stored_odds_for_keys_without_a_projection_record(sqlite_db):
+    settled = NOW - timedelta(days=3)
+    for _ in range(10):
+        _bet(sqlite_db, True, 150, settled, league="WNBA", stat="points")
+        _bet(sqlite_db, False, 150, settled, league="WNBA", stat="points")
+    for _ in range(12):
+        _bet(sqlite_db, True, -200, settled, league="WNBA", stat="rebounds")
+    for _ in range(8):
+        _bet(sqlite_db, False, -200, settled, league="WNBA", stat="rebounds")
+    sqlite_db.commit()
+    recs = load_records(sqlite_db, NOW)
+    wp, wr = ("WNBA", "player_prop", "points"), ("WNBA", "player_prop", "rebounds")
+    assert recs[wp].bet_units == pytest.approx(5.0) and recs[wp].shrunk_roi > 0
+    assert recs[wr].bet_units == pytest.approx(-2.0) and recs[wr].bet_hits == 12
+    assert recs[wr].n_eff == 20
+
+
+def test_bets_of_another_selection_version_are_ignored(sqlite_db):
+    settled = NOW - timedelta(days=3)
+    for _ in range(40):
+        _bet(sqlite_db, False, -110, settled, league="WNBA", sv="ev-v0")
+        _bet(sqlite_db, False, -110, settled, league="WNBA", sv=None)
+    sqlite_db.commit()
+    assert ("WNBA", "player_prop", "points") not in load_records(sqlite_db, NOW)
+    for _ in range(30):
+        _bet(sqlite_db, False, -110, settled, league="WNBA")
+    sqlite_db.commit()
+    assert load_records(sqlite_db, NOW)[("WNBA", "player_prop", "points")].bet_n == 30
+
+
+def test_bets_on_a_key_with_a_projection_record_are_not_double_counted(sqlite_db):
+    _seed_points(sqlite_db, 100, 0.60)
+    for _ in range(10):
+        _bet(sqlite_db, False, -110, NOW - timedelta(days=3), stat="points")
     sqlite_db.commit()
     rec = load_records(sqlite_db, NOW)[POINTS]
-    assert (rec.proj_n, rec.bet_n) == (0, 0)
-    _seed_points(sqlite_db, 50, 0.0, offset=1, first_id=500)  # yesterday: counted
-    assert load_records(sqlite_db, NOW)[POINTS].proj_n == 50
+    assert (rec.bet_n, rec.proj_n, rec.n_eff) == (0, 100, 100)
+
+
+# ---------- prove-in ----------
+
+
+def test_require_proven_record_defaults_true_and_false_turns_it_off(monkeypatch):
+    assert rg.require_proven_record()
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
+    assert not rg.require_proven_record()
+    # off: a non-prove-in key with no record is open, a prove-in key is not
+    assert rg.drop_reason(None, POINTS) is None
+    assert rg.drop_reason(None, ("MLB", "moneyline", None)) == "unproven_record"
+
+
+def test_unproven_below_100_calls_or_below_breakeven():
+    assert rg.drop_reason(None, POINTS) == "unproven_record"
+    thin = combine(POINTS, proj_n=60, proj_hits=40, proj_units=20.0)
+    assert rg.drop_reason(thin) == "unproven_record"  # 60 < 100
+    flat = combine(POINTS, proj_n=100, proj_hits=50, proj_units=-1.0)
+    assert rg.drop_reason(flat) == "unproven_record"  # shrunk ROI < 0, not losing
+    ok = combine(POINTS, proj_n=100, proj_hits=60, proj_units=12.0)
+    assert rg.drop_reason(ok) is None
+    bad = combine(POINTS, proj_n=100, proj_hits=40, proj_units=-30.0)
+    assert rg.drop_reason(bad) == "losing_record"  # losing is reported first
+
+
+def test_nba_moneyline_mlb_wnba_withheld_unproven_with_no_record(sqlite_db):
+    for key in (("NBA", "moneyline", None), ("MLB", "moneyline", None),
+                ("MLB", "player_prop", "strikeouts"), ("WNBA", "spread", None),
+                ("WNBA", "player_prop", "points")):  # fmt: skip
+        assert rg.drop_reason(None, key) == "unproven_record", key
+        assert rg.prove_in_required(key), key
+    assert rg.withheld_keys(
+        sqlite_db, NOW, {("NBA", "moneyline", None), ("MLB", "moneyline", None)}, ()
+    ) == {
+        ("NBA", "moneyline", None): "unproven_record",
+        ("MLB", "moneyline", None): "unproven_record",
+    }
+
+
+def test_steals_blocks_pra_nhl_must_prove_in(monkeypatch):
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
+    for stat in ("steals", "blocks", "pra"):
+        key = ("NBA", "player_prop", stat)
+        assert rg.drop_reason(None, key) == "unproven_record"
+        assert (
+            rg.drop_reason(combine(key, proj_n=10, proj_hits=9, proj_units=5.0))
+            == "unproven_record"
+        )
+    assert rg.drop_reason(None, ("NHL", "total", None)) == "unproven_record"
+    assert rg.drop_reason(None, POINTS) is None
+
+
+# ---------- loaders without a stored price ----------
+
+
+def test_unpriced_loader_rows_count_only_as_unpriced_n(sqlite_db):
+    from app.models.predictions_models import NBASpreadActuals, NBASpreadProjections
+    from app.services.etl.nba.spread_projector import SPREAD_MODEL_VERSION
+
+    day = NOW.date() - timedelta(days=2)
+    for i in range(100):
+        sqlite_db.add(
+            NBASpreadProjections(
+                game_date=day,
+                home_team_name=f"H{i}",
+                away_team_name=f"A{i}",
+                projected_margin=8.0,
+                home_win_prob=0.7,
+                market_spread_home=-3.5,
+                recommendation="NO_PLAY",
+                model_version=SPREAD_MODEL_VERSION,
+            )
+        )
+        margin = 10 if i < 40 else 1  # home covers -3.5 in 40 of 100
+        sqlite_db.add(
+            NBASpreadActuals(
+                game_date=day,
+                home_team_name=f"H{i}",
+                away_team_name=f"A{i}",
+                home_score=100 + margin,
+                away_score=100,
+                actual_margin=margin,
+                home_won=True,
+            )
+        )
+    sqlite_db.commit()
+    rec = load_records(sqlite_db, NOW)[("NBA", "spread", None)]
+    assert rec.unpriced_n == 100 and rec.proj_n == 0 and rec.n_eff == 0
+    assert rec.proj_units == 0 and not rec.withheld
+    assert rec.version == SPREAD_MODEL_VERSION
+
+
+def test_nba_totals_record_counts_only_current_version(sqlite_db):
+    from app.models.predictions_models import NBASpreadActuals, NBATotalsProjections
+    from app.services.etl.nba.totals_projector import MODEL_VERSION
+
+    day = NOW.date() - timedelta(days=2)
+    for i in range(30):
+        cur = i < 10
+        sqlite_db.add(
+            NBATotalsProjections(
+                game_date=day,
+                home_team_name=f"H{i}",
+                away_team_name=f"A{i}",
+                projected_total=230.0,
+                market_total=225.0,
+                recommendation="NO_PLAY",
+                model_version=MODEL_VERSION if cur else None,
+            )
+        )
+        sqlite_db.add(
+            NBASpreadActuals(
+                game_date=day,
+                home_team_name=f"H{i}",
+                away_team_name=f"A{i}",
+                home_score=120,
+                away_score=110 if cur else 90,
+                actual_margin=10 if cur else 30,
+                home_won=True,
+            )
+        )
+    sqlite_db.commit()
+    assert load_records(sqlite_db, NOW)[("NBA", "total", None)].unpriced_n == 10
+
+
+# ---------- reporting and wiring ----------
+
+
+def test_all_key_rows_lists_every_emitted_key_with_state(
+    sqlite_db, monkeypatch, capsys
+):
+    from app.services.auto_pick import __main__ as cli
+
+    _fake_rows(monkeypatch, "points_ou", [_row(i, i < 100) for i in range(200)])
+    bets_before = sqlite_db.query(YetAIBet).count()
+    rows = rg.all_key_rows(sqlite_db, NOW)
+    assert rows == sorted(rows, key=lambda r: r["key"])
+    by_key = {r["key"]: r for r in rows}
+    emitted = {rg.key_label(k) for ks in rg.emitted_keys().values() for k in ks}
+    assert emitted <= set(by_key)
+    fields = {"key", "n", "hits", "units", "n_eff", "shrunk_roi", "version",
+              "selection_version", "unpriced_n", "bet_n", "state", "reason"}  # fmt: skip
+    assert all(set(r) == fields for r in rows)
+    assert {r["state"] for r in rows} <= {
+        "open",
+        "withheld-losing",
+        "withheld-unproven",
+    }
+    pts = by_key["NBA/player_prop/points"]
+    assert (pts["n"], pts["hits"], pts["units"], pts["version"]) == (
+        200,
+        100,
+        -20.0,
+        "v1",
+    )
+    assert (pts["state"], pts["reason"]) == ("withheld-losing", "losing_record")
+    assert pts["selection_version"] == ev.SELECTION_VERSION
+    assert by_key["NBA/moneyline"]["state"] == "withheld-unproven"
+    assert rg.gate_report is rg.all_key_rows
+    cli.print_gate_report(rows)
+    out = capsys.readouterr().out
+    assert "NBA/player_prop/points" in out and "withheld-losing" in out
+    assert "unpriced" in out and "selection" in out
+    assert sqlite_db.query(YetAIBet).count() == bets_before
+
+
+@pytest.mark.asyncio
+async def test_losing_points_key_is_withheld_in_the_orchestrator(sqlite_db):
+    _seed_points(sqlite_db, 150, 0.40)  # priced, losing
+    _seed_rebounds(sqlite_db, 150, 0.70)  # priced, winning
+    result = await _run(sqlite_db, [_prop(1, "points")])
+    assert not [b for b in _bets(sqlite_db)]
+    w = result.dropped_reasons["withheld_keys"]["NBA/player_prop/points"]
+    assert w["reason"] == "losing_record" and w["proj_n"] == 150
 
 
 def test_record_key_for_game_market_has_no_stat():
@@ -303,115 +575,20 @@ def test_historical_sub_score_uses_key_record_else_old_hit_rate():
         weights=ScoringWeights(),
         score_threshold=65.0,
         historical_hit_rates={("player_prop", "NBA"): 0.65},
-        records={POINTS: combine(POINTS, proj_n=400, proj_hits=192)},
+        records={POINTS: combine(POINTS, proj_n=400, proj_hits=192, proj_units=-30.0)},
     )
-    assert historical_sub_score(c, ctx) < 40  # losing key, not the 100 of the old rate
-    ctx.records = {POINTS: combine(POINTS, proj_n=10, proj_hits=1)}  # thin: fall back
-    assert historical_sub_score(c, ctx) == 100.0
+    assert historical_sub_score(c, ctx) < 50  # losing key, not the 100 of the old rate
+    ctx.records = {POINTS: combine(POINTS, proj_n=10, proj_hits=1, proj_units=-8.0)}
+    assert historical_sub_score(c, ctx) == 100.0  # thin: fall back
 
 
-def test_nba_spread_projection_record_feeds_the_gate(sqlite_db):
-    from app.models.predictions_models import NBASpreadActuals, NBASpreadProjections
-    from app.services.etl.nba.spread_projector import SPREAD_MODEL_VERSION
-
-    day = NOW.date() - timedelta(days=2)
-    for i in range(100):
-        home, away = f"H{i}", f"A{i}"
-        sqlite_db.add(
-            NBASpreadProjections(
-                game_date=day,
-                home_team_name=home,
-                away_team_name=away,
-                projected_margin=8.0,
-                home_win_prob=0.7,
-                market_spread_home=-3.5,
-                recommendation="NO_PLAY",  # withheld: the record counts would-be calls
-                model_version=SPREAD_MODEL_VERSION,
-            )
-        )
-        margin = 10 if i < 40 else 1  # home covers -3.5 in 40 of 100
-        sqlite_db.add(
-            NBASpreadActuals(
-                game_date=day,
-                home_team_name=home,
-                away_team_name=away,
-                home_score=100 + margin,
-                away_score=100,
-                actual_margin=margin,
-                home_won=True,
-            )
-        )
-    sqlite_db.commit()
-
-    rec = load_records(sqlite_db, NOW)[("NBA", "spread", None)]
-    assert (rec.proj_hits, rec.proj_n) == (40, 100)
-    assert rec.withheld
-
-
-def test_gate_report_prints_each_key_and_writes_nothing(sqlite_db, capsys):
-    from app.models.database_models import YetAIBet
-    from app.services.auto_pick import __main__ as cli
-
-    _seed_points(sqlite_db, 250, 0.476, edge=2.0)
-    _seed_rebounds(sqlite_db, 225, 0.578, edge=1.0)
-    for _ in range(3):
-        _bet(sqlite_db, True, -110, NOW - timedelta(days=3), stat="rebounds")
-    sqlite_db.commit()
-    bets_before = sqlite_db.query(YetAIBet).count()
-
-    rows = rg.gate_report(sqlite_db, NOW)
-    by_key = {r["key"]: r for r in rows}
-    pts, reb = by_key["NBA/player_prop/points"], by_key["NBA/player_prop/rebounds"]
-    assert (pts["proj_n"], pts["proj_hits"], pts["withheld"]) == (250, 119, True)
-    assert (reb["bet_n"], reb["proj_n"], reb["proj_hits"]) == (3, 225, 130)
-    assert reb["withheld"] is False and reb["shrunk_roi"] > 0
-    assert reb["qualifying_edge"] == pytest.approx(0.781, abs=1e-3)
-    assert pts["qualifying_edge"] == pytest.approx(1.25)
-    assert reb["prior_hit_rate"] == pytest.approx(130 / 225)
-
-    cli.print_gate_report(rows)
-    out = capsys.readouterr().out
-    assert "NBA/player_prop/points" in out and "WITHHELD" in out
-    assert "min_edge" in out and "1.25" in out
-    assert sqlite_db.query(YetAIBet).count() == bets_before
-
-
-def test_prove_in_mode_off_leaves_thin_and_missing_keys_open():
-    assert rg.drop_reason(None) is None
-    assert rg.drop_reason(combine(POINTS, proj_n=10, proj_hits=6)) is None
-
-
-def test_prove_in_mode_on_withholds_unproven_keys(monkeypatch):
-    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "true")
-    assert rg.drop_reason(None) == "unproven_record"
-    assert rg.drop_reason(combine(POINTS, proj_n=10, proj_hits=6)) == "unproven_record"
-    assert rg.drop_reason(combine(POINTS, proj_n=60, proj_hits=40)) is None
-    assert rg.drop_reason(combine(POINTS, proj_n=60, proj_hits=26)) == "losing_record"
-    monkeypatch.setenv("AUTO_PICK_RECORD_GATE_ENABLED", "false")
-    assert rg.drop_reason(None) is None
-
-
-def test_orchestrator_drops_unproven_key_with_reason(sqlite_db, monkeypatch):
-    from app.services.auto_pick.selector import SelectorConfig
-
-    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "true")
-    o = AutoPickOrchestrator(db=sqlite_db, providers=[], now=NOW)
-    o._records = {}
-    sc = type("S", (), {"candidate": _cand(1, league="NBA")})()
-    assert o._gate(sc, SelectorConfig(), set()) == "unproven_record"
-    assert o._summarize_drops([], {})["withheld_keys"] == {}
-
-
-def test_gate_report_lists_no_data_keys_with_state(sqlite_db, monkeypatch, capsys):
-    from app.services.auto_pick import __main__ as cli
-
-    rows = {r["key"]: r for r in rg.gate_report(sqlite_db, NOW)}
-    assert rows["NBA/moneyline"]["state"].startswith("unproven (would be")
-    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "true")
-    rows = {r["key"]: r for r in rg.gate_report(sqlite_db, NOW)}
-    assert rows["NBA/moneyline"]["state"] == "WITHHELD unproven"
-    cli.print_gate_report(list(rows.values()))
-    assert "WITHHELD unproven" in capsys.readouterr().out
+def test_no_data_means_no_record_and_every_key_open_with_prove_in_off(
+    sqlite_db, monkeypatch
+):
+    monkeypatch.setenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false")
+    recs = load_records(sqlite_db, NOW)
+    assert all(r.n_eff == 0 and not r.withheld for r in recs.values())
+    assert not combine(POINTS).withheld
 
 
 def test_every_registered_source_declares_its_keys():
@@ -422,76 +599,22 @@ def test_every_registered_source_declares_its_keys():
     assert names <= set(declared), names - set(declared)
 
 
-def test_nba_totals_record_counts_only_current_version(sqlite_db):
-    from app.models.predictions_models import NBASpreadActuals, NBATotalsProjections
-    from app.services.etl.nba.totals_projector import MODEL_VERSION
-
-    day = NOW.date() - timedelta(days=2)
-    for i in range(30):
-        cur = i < 10  # 10 current-version rows, all would-be OVER hits
-        sqlite_db.add(
-            NBATotalsProjections(
-                game_date=day,
-                home_team_name=f"H{i}",
-                away_team_name=f"A{i}",
-                projected_total=230.0,
-                market_total=225.0,
-                recommendation="NO_PLAY",
-                model_version=MODEL_VERSION if cur else None,
-            )
-        )
-        sqlite_db.add(
-            NBASpreadActuals(
-                game_date=day,
-                home_team_name=f"H{i}",
-                away_team_name=f"A{i}",
-                home_score=120,
-                away_score=110 if cur else 90,  # old rows would be misses
-                actual_margin=10 if cur else 30,
-                home_won=True,
-            )
-        )
-    sqlite_db.commit()
-    rec = load_records(sqlite_db, NOW)[("NBA", "total", None)]
-    assert (rec.proj_hits, rec.proj_n) == (10, 10)
-
-
-def test_stored_price_drives_projection_units():
-    # 55 of 100 calls hit. At -130 that is -2.692u; at -110 it is +5u.
-    at_130 = combine(POINTS, proj_n=100, proj_hits=55, proj_units=55 * 100 / 130 - 45)
-    # scale 60/100, n_eff 60, shrink 20: hand-computed shrunk ROI
-    assert at_130.shrunk_roi == pytest.approx((55 * 100 / 130 - 45) * 0.6 / 80)
-    assert at_130.shrunk_roi < rg.min_roi() and at_130.withheld
-    assert at_130.proj_units == pytest.approx(55 * 100 / 130 - 45)
-    at_110 = combine(POINTS, proj_n=100, proj_hits=55)
-    assert at_110.shrunk_roi == pytest.approx(5 * 0.6 / 80) and not at_110.withheld
-    assert at_110.proj_units is None
-
-
-def test_nba_prop_loader_values_rows_at_stored_price(sqlite_db):
-    # 55/100 overs at -130 are a losing key; rows with no price keep the -110 value.
-    _seed(sqlite_db, PointsProjections, PointsActuals, "points", 100, 0.55, 1, 0,
-          price=-130.0)  # fmt: skip
-    _seed(sqlite_db, ReboundsProjections, ReboundsActuals, "rebounds", 100, 0.55, 1, 0)
-    recs = load_records(sqlite_db, NOW)
-    assert recs[POINTS].withheld and recs[POINTS].proj_units == pytest.approx(
-        55 * 100 / 130 - 45
-    )
-    assert not recs[REBOUNDS].withheld
-    assert recs[REBOUNDS].proj_units == pytest.approx(5.0)
-    rows = {r["key"]: r for r in rg.gate_report(sqlite_db, NOW)}
-    assert rows["NBA/player_prop/points"]["proj_units"] == pytest.approx(
-        -2.69, abs=0.01
-    )
-
-
-def test_steals_and_blocks_must_prove_in_nhl_still_does():
-    assert (
-        rg.DEFAULT_PROVE_IN_KEYS == "NHL,NBA/player_prop/steals,NBA/player_prop/blocks"
-    )
-    for stat in ("steals", "blocks"):
-        key = ("NBA", "player_prop", stat)
-        assert rg.drop_reason(None, key) == "unproven_record"
-        assert rg.drop_reason(combine(key, proj_n=10, proj_hits=9)) == "unproven_record"
-    assert rg.drop_reason(None, ("NHL", "total", None)) == "unproven_record"
-    assert rg.drop_reason(None, ("NBA", "player_prop", "points")) is None
+def test_threes_shadow_rows_read_the_threes_projection_field(sqlite_db, monkeypatch):
+    # The threes table's projection column is projected_three_pt_made, not projected_threes.
+    rows = [
+        {
+            "id": i,
+            "date": NOW.date() - timedelta(days=1),
+            "model_version": "v1",
+            "projected_three_pt_made": 5.0,
+            "fanduel_over_under": "o",
+            "best_line": 2.5,
+            "best_price": PRICE,
+            "best_fair_prob": FAIR,
+            "actual_three_pt_made": 4.0 if i < 20 else 1.0,
+        }
+        for i in range(40)
+    ]
+    _fake_rows(monkeypatch, "three_pt_ou", rows)
+    rec = load_records(sqlite_db, NOW, ("nba_props",))[("NBA", "player_prop", "threes")]
+    assert (rec.proj_n, rec.proj_hits) == (40, 20)
