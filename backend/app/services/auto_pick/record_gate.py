@@ -339,14 +339,17 @@ def current_version_rows(rows, date_field: str):
 
 
 def _priced_shadow_rows(stat: str, proj_field: str, rows):
-    """Rows the selector would have considered: priced, with a side, a positive edge at the
-    best line, inside the default odds bounds, passing the EV gates. Not applied: one pick per
-    game, the daily caps and freshness (the row is its last write of the day)."""
+    """Rows the selector would have considered: priced, not low-sample, with a side, a
+    positive edge at the best line, inside the default odds bounds, passing the EV gates.
+    Not applied: one pick per game, the daily caps and freshness (the row is its last
+    write of the day)."""
     from app.services.auto_pick.selector import SelectorConfig
 
     bounds = SelectorConfig()
     out = []
     for r in rows:
+        if r.get("low_sample") is True:  # prop_rows never offers these as candidates
+            continue
         line, price, fair = (
             r.get("best_line"),
             r.get("best_price"),

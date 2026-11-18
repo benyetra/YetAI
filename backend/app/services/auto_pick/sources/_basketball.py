@@ -216,6 +216,10 @@ def prop_rows(db, specs, lines_model, league, date_range, side_of) -> list[dict]
             log.exception("%s prop source: query failed for %s", league, stat)
             continue
         for r in rows:
+            # A projection from under five current-season games (last season filled in)
+            # is not a candidate; the gate's shadow record skips it too.
+            if getattr(r, "low_sample", None) is True:
+                continue
             proj, line = getattr(r, proj_attr, None), getattr(r, line_attr, None)
             side = side_of(r)
             hit = by_team.get(getattr(r, "opponent_team_name", None))

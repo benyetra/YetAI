@@ -647,3 +647,14 @@ def test_shadow_skips_rows_with_no_edge_at_the_shopped_line(sqlite_db, monkeypat
     rows += [_row(10 + i, True) for i in range(3)]
     _fake_rows(monkeypatch, "points_ou", rows)
     assert load_records(sqlite_db, NOW, ("nba_props",))[POINTS].proj_n == 3
+
+
+def test_shadow_record_skips_low_sample_rows(sqlite_db, monkeypatch):
+    # nba-model flags projections from under five current-season games; the selector never
+    # offers them, so the shadow record must not count them either.
+    rows = [_row(i, True) for i in range(6)]
+    for r in rows[:4]:
+        r["low_sample"] = True
+    rows[4]["low_sample"] = False  # explicit False and missing (None) both count
+    _fake_rows(monkeypatch, "points_ou", rows)
+    assert load_records(sqlite_db, NOW, ("nba_props",))[POINTS].proj_n == 2

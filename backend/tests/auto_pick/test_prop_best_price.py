@@ -248,3 +248,57 @@ def test_fresh_fanduel_line_on_the_other_side_clears_the_old_best_quote(monkeypa
     )
     assert row.fanduel_over_under == "u"
     assert (row.best_price, row.best_fair_prob, row.best_quoted_at) == (None,) * 3
+
+
+def test_low_sample_rows_are_never_candidates():
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from app.services.auto_pick.sources import _basketball as bb
+
+    def prop(pid, low):
+        return SimpleNamespace(
+            date=DAY,
+            opponent_team_name=AWAY,
+            player_id=pid,
+            player_name=str(pid),
+            projected_points=20.0,
+            fanduel_line=18.5,
+            fanduel_price=-110,
+            fanduel_over_under="o",
+            model_version=None,
+            confidence_score=None,
+            low_sample=low,
+        )
+
+    rows = [prop(1, True), prop(2, False), prop(3, None)]
+
+    class _Q:
+        def filter(self, *_):
+            return self
+
+        def all(self):
+            return rows
+
+    db = SimpleNamespace(begin_nested=nullcontext, query=lambda _: _Q())
+
+    class _M:
+        date = DAY
+
+    gl = SimpleNamespace(
+        home_team_name="H", away_team_name=AWAY, odds_api_event_id="e", game_time=None
+    )
+    orig = bb._lines
+    bb._lines = lambda *_: [gl]
+    try:
+        out = bb.prop_rows(
+            db,
+            [(_M, "points", "projected_points", "fanduel_line", None)],
+            object,
+            "NBA",
+            RANGE,
+            lambda r: "over",
+        )
+    finally:
+        bb._lines = orig
+    assert sorted(r["player"] for r in out) == ["2", "3"]
