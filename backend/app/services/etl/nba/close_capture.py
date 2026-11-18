@@ -77,29 +77,32 @@ def run(now: Optional[datetime] = None) -> dict:
             continue
         db = SessionLocal()
         try:
-            done = (
-                db.query(S.id)
+            seen = {
+                m
+                for (m,) in db.query(S.market)
                 .filter(
                     S.event_id == eid,
                     S.market.in_(mkt_list),
                     S.last_seen_at >= start - lead,
                 )
-                .first()
-            )
+                .distinct()
+            }
         finally:
             db.close()
-        if done:
+        # Per market: a market another fetch already saw inside the window has its close;
+        # one the books do not offer is asked again on the next run (at most 2 more calls).
+        ask = [m for m in mkt_list if m not in seen]
+        if not ask:
             out["skipped_already"] += 1
             continue
-        ask = mkt_list
         used = odds_api_budget._usage()  # None: Redis down, the call is not counted
         if used is not None:
             headroom = odds_api_budget.DAILY_CREDIT_BUDGET - used
             if headroom <= 0:
                 out["skipped_budget"] += 1
                 continue
-            if headroom < len(mkt_list):
-                ask = mkt_list[:headroom]
+            if headroom < len(ask):
+                ask = ask[:headroom]
                 out["markets_trimmed"] += 1
         resp = sync_odds_get(
             _URL.format(eid),

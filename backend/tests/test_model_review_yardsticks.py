@@ -23,7 +23,7 @@ def _bet(db, id, status="won", source=BetSource.AUTO, commence=GAME, **kw):
         YetAIBet(
             id=id,
             title=f"Bet {id}",
-            bet_type=BetType.PROP,
+            bet_type=kw.pop("bet_type", BetType.PROP),
             selection="s",
             odds=-110,
             confidence=70,
@@ -282,3 +282,33 @@ def test_full_review_renders_without_redis_or_odds_key(sqlite_db, monkeypatch):
     assert text.index(heads[0]) < text.index("== YetAI Bets record ==")
     credits = text.split("== Odds API credits ==")[1]
     assert "unavailable:" not in credits and "not available in this runner" in credits
+
+
+def test_spread_bets_are_still_compared_on_the_stored_call(sqlite_db):
+    table = "pred_nba_spread_projections"
+    cur = {
+        ("NFL", "spread", None): (
+            "edge",
+            [
+                ms._row(
+                    3.0,
+                    -2.5,
+                    7.0,
+                    "HOME",
+                    (table, YESTERDAY, "Home", "Away"),
+                    "Away @ Home",
+                    correct=True,
+                )
+            ],
+        )
+    }
+    ref = {
+        "table": table,
+        "game_date": YESTERDAY.isoformat(),
+        "home_team_name": "Home",
+        "away_team_name": "Away",
+    }
+    _bet(sqlite_db, "s1", "lost", bet_type=BetType.SPREAD, pf={"projection_ref": ref})
+    sqlite_db.commit()
+    d = ms._disagreements_section(sqlite_db, TODAY, cur)
+    assert (d["checked"], d["disagreements"], d["without_snapshot"]) == (1, 1, 0)

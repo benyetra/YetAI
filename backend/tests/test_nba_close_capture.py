@@ -122,3 +122,15 @@ def test_redis_down_requests_all(env, monkeypatch):
     r = cc.run(NOW)
     assert len(env.calls[0][1]["params"]["markets"].split(",")) == 7
     assert r["markets_trimmed"] == 0
+
+
+def test_market_missing_from_the_close_is_asked_again_alone(env, monkeypatch):
+    _setup_budget(monkeypatch, 0)
+    monkeypatch.setenv(
+        "NBA_CLOSE_CAPTURE_MARKETS", cc.DEFAULT_MARKETS + ",player_double_double"
+    )
+    _one_event(env)
+    cc.run(NOW)
+    assert len(env.calls[0][1]["params"]["markets"].split(",")) == 8
+    cc.run(datetime(2026, 11, 15, 0, 0))  # next beat: only the market no book returned
+    assert env.calls[1][1]["params"]["markets"] == "player_double_double"

@@ -1101,12 +1101,18 @@ def _disagreements_section(db: Session, today: date, cur: Loaded) -> dict:
             unmatched += 1
             continue
         kind, proj = found
-        snap = _bet_snapshot(pf)
-        if snap is None or kind != "ou":
-            no_snap += 1
-            continue
-        line, side = snap
-        res = ou_row_result(line=line, pick=side, actual=proj["actual"])
+        if kind == "edge":
+            # Spread rows: the stored call and its correct flag (side rule unchanged).
+            g = row_grade(kind, proj)
+            res = None if g is None else ("hit" if g else "miss")
+            line, side = proj["line"], proj["pick"]
+        else:
+            snap = _bet_snapshot(pf)
+            if snap is None:
+                no_snap += 1
+                continue
+            line, side = snap
+            res = ou_row_result(line=line, pick=side, actual=proj["actual"])
         if res not in ("hit", "miss"):
             unmatched += 1  # no actual yet, or a push at the bet's line
             continue
