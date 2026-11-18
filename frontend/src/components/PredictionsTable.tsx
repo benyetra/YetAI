@@ -110,6 +110,9 @@ export function comparePredictionRows(
 ): number {
   const va = cellSortValue(a[key], key);
   const vb = cellSortValue(b[key], key);
+  // Empty values (e.g. a null edge on a withheld market) sort after every row that has one,
+  // in both directions; ties keep the existing order (the sort is stable).
+  if ((va === '') !== (vb === '')) return va === '' ? 1 : -1;
   let cmp = 0;
   if (typeof va === 'number' && typeof vb === 'number') {
     cmp = va - vb;

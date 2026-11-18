@@ -165,61 +165,203 @@ def _mark_scratched(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-_NO_PICK = {
-    "betting_recommendation": None,
-    "recommendation": None,
-    "value_tier": None,
-    "edge_category": None,
-}
+# Every pick, side, strength or edge field a board row can carry (models and the
+# enrichers in player_prop_projection_display / mlb_strikeout_pick). Projections
+# (projected_*, predicted_*, td_probability, home_win_prob, prob_over) and lines
+# (fanduel_line, ou_line, market_*, market_implied_prob) are information: they stay.
+_PICK_FIELDS = frozenset(
+    {
+        "recommendation",
+        "betting_recommendation",
+        "bet_size",
+        "best_over_book",
+        "best_under_book",
+        "fanduel_over_under",
+        "value_tier",
+        "edge_category",
+        "pick_confidence",
+        "confidence",
+        "confidence_score",
+        "model_confidence",
+        "edge",
+        "edge_saves",
+        "edge_percentage",
+        "recommendation_reason",
+        "k_edge",
+        "ev_over_under",
+        "yetai_pick",
+        "ev_pick",
+        "pick_edge_pct",
+        "pick_aligned_with_ev",
+        "ml_recommendation",
+        "spread_recommendation",
+        "total_recommendation",
+        "edge_vs_market_ml",
+        "edge_vs_market_total",
+        "value_rating",
+    }
+)
 
-# Board group -> auto-pick record key of its market.
-_NHL_MARKET_KEYS = {
-    "goalie_predictions": ("NHL", "player_prop", "saves"),
-    "player_shots": ("NHL", "player_prop", "shots"),
-    "team_totals": ("NHL", "total", None),
-}
+# Keys the gate has no loader for in this branch, so their record is never measured.
+# PRA is emitted by the auto-pick source but has no key/loader yet; the picks-gate area
+# (.factory/picks-gate/) adds it. Remove the entry once that lands.
+_NOT_YET_MEASURED = frozenset({("NBA", "player_prop", "pra")})
+
+_PROP = "player_prop"
+_ALL = None  # strip every field in _PICK_FIELDS (a one-market row)
 
 
-# NBA prop groups whose lines are new (2026-11-14): no graded record yet, so their side
-# (fanduel_over_under, which the board falls back to as the pick) is stripped too.
-_NBA_NEW_MARKET_KEYS = {
-    "steals": ("NBA", "player_prop", "steals"),
-    "blocks": ("NBA", "player_prop", "blocks"),
+def _one(key):
+    return ((key, _ALL),)
+
+
+# Every list group each live endpoint returns -> ((record key, fields), ...). The key
+# is the group's market in record_gate (None = the gate has no key for it); fields are
+# the row fields that market owns (_ALL = the whole row is one market). A key outside
+# record_gate.emitted_keys(), None, or in _NOT_YET_MEASURED is withheld as
+# "no_record_check"; every other key goes through record_gate.withheld_keys.
+# tests/test_predictions_board_withholding.py fails when a payload group is missing.
+_BOARD_MARKETS: dict[str, dict[str, tuple]] = {
+    "nba": {
+        "totals": _one(("NBA", "total", None)),
+        "spreads": _one(("NBA", "spread", None)),
+        "points": _one(("NBA", _PROP, "points")),
+        "assists": _one(("NBA", _PROP, "assists")),
+        "rebounds": _one(("NBA", _PROP, "rebounds")),
+        "three_point": _one(("NBA", _PROP, "threes")),
+        "steals": _one(("NBA", _PROP, "steals")),
+        "blocks": _one(("NBA", _PROP, "blocks")),
+        "pra": _one(("NBA", _PROP, "pra")),
+    },
+    "nfl": {
+        "spreads": _one(("NFL", "spread", None)),
+        "totals": _one(("NFL", "total", None)),
+        "qb_predictions": _one(("NFL", _PROP, "passing_yards")),
+        "receiving_yards_predictions": _one(("NFL", _PROP, "receiving_yards")),
+        "anytime_td_predictions": _one(None),
+        "kicker_predictions": _one(None),
+    },
+    "nhl": {
+        "goalie_predictions": _one(("NHL", _PROP, "saves")),
+        "player_shots": _one(("NHL", _PROP, "shots")),
+        "team_totals": _one(("NHL", "total", None)),
+    },
+    "mlb": {
+        "strikeout_projections": _one(("MLB", _PROP, "strikeouts")),
+        # One row, three markets: each owns its own fields.
+        "game_projections": (
+            (
+                ("MLB", "moneyline", None),
+                ("ml_recommendation", "edge_vs_market_ml"),
+            ),
+            (None, ("spread_recommendation", "value_rating")),
+            (None, ("total_recommendation", "edge_vs_market_total")),
+        ),
+        "projected_hits": _one(None),
+        "projected_homers": _one(None),
+        "home_run_predictions": _one(None),
+    },
+    "wnba": {
+        "totals": _one(("WNBA", "total", None)),
+        "spreads": _one(("WNBA", "spread", None)),
+        "points": _one(("WNBA", _PROP, "points")),
+        "assists": _one(("WNBA", _PROP, "assists")),
+        "rebounds": _one(("WNBA", _PROP, "rebounds")),
+        "three_point": _one(("WNBA", _PROP, "threes")),
+        "pra": _one(("WNBA", _PROP, "pra")),
+    },
 }
-_NBA_NO_PICK = {**_NO_PICK, "fanduel_over_under": None, "pick_confidence": None}
+# Projection loaders per sport (record_gate.PROJECTION_LOADERS); () = bet records only.
+_BOARD_LOADERS = {
+    "nba": ("nba_props", "nba_totals", "nba_spread"),
+    "nfl": ("nfl",),
+    "nhl": ("nhl",),
+    "mlb": (),
+    "wnba": (),
+}
 
 
 def _withhold_unproven_picks(
     payload: dict[str, Any],
     db: Session,
-    market_keys: dict[str, tuple],
+    spec: dict[str, tuple],
     *,
     loaders: tuple[str, ...] = ("nhl",),
-    no_pick: dict[str, Any] = _NO_PICK,
 ) -> dict[str, Any]:
-    """Strip pick labels and value tiers from groups whose market has no qualifying
-    record: the auto-pick record gate's rule (record_gate.withheld_keys), so the board
-    never labels a pick that auto picks would withhold. Projections and lines stay.
+    """Strip pick labels, sides and edges from every group market the auto-pick record
+    gate withholds (record_gate.withheld_keys), so the board never labels a pick that
+    auto picks would withhold. ``spec`` is one sport's _BOARD_MARKETS entry. Markets
+    with no gate key are withheld as "no_record_check"; a gate error withholds every
+    gated market ("record_unavailable"). Projections and lines stay.
     """
     from app.services.auto_pick import record_gate
 
-    keys = set(market_keys.values())
+    emitted = set().union(*record_gate.emitted_keys().values()) - _NOT_YET_MEASURED
+    gated = {k for entries in spec.values() for k, _ in entries if k and k in emitted}
     try:
         with db.begin_nested():
             withheld = record_gate.withheld_keys(
-                db, datetime.utcnow(), keys, loaders=loaders
+                db, datetime.utcnow(), gated, loaders=loaders
             )
     except Exception:
         logger.exception("record gate failed; withholding every pick label")
-        withheld = dict.fromkeys(keys, "record_unavailable")
+        withheld = dict.fromkeys(gated, "record_unavailable")
     out = dict(payload)
-    for group, key in market_keys.items():
-        reason = withheld.get(key)
-        if reason:
-            out[group] = [
-                {**r, **no_pick, "pick_withheld": reason}
-                for r in payload.get(group) or []
-            ]
+    for group, entries in spec.items():
+        rows = payload.get(group)
+        if not rows:
+            continue
+        reasons = [
+            (withheld.get(key) if key in gated else "no_record_check")
+            for key, _ in entries
+        ]
+        if not any(reasons):
+            continue
+        out[group] = [_strip_row(r, entries, reasons) for r in rows]
+    return out
+
+
+def _strip_row(row: dict[str, Any], entries: tuple, reasons: list) -> dict[str, Any]:
+    """Null the fields of each withheld market on ``row``; flag it with the reason.
+
+    A one-market row gets ``pick_withheld``. A multi-market row (MLB games) gets one flag
+    per withheld market, named after its pick field (``ml_recommendation`` ->
+    ``ml_pick_withheld``), so an open market on the same row keeps its pick.
+    """
+    out = dict(row)
+    for (_key, fields), reason in zip(entries, reasons):
+        if not reason:
+            continue
+        if fields is _ALL:  # recommendation/edge are always reported, present or not
+            out.update(
+                dict.fromkeys((_PICK_FIELDS & out.keys()) | {"recommendation", "edge"})
+            )
+            out["pick_withheld"] = out.get("pick_withheld") or reason
+            continue
+        out.update(dict.fromkeys(fields))
+        out[fields[0].split("_")[0] + "_pick_withheld"] = reason
+    return out
+
+
+def _withhold_board_picks(
+    payload: dict[str, Any], db: Session, sport: str, target_date: date_type | None
+) -> dict[str, Any]:
+    """The one rule for every live board: a row from a market the gate withholds (or
+    that has no gate key) carries no pick, side, strength or edge. Past slates keep the
+    calls they were graded on. Withheld groups keep server order (minutes for props,
+    id/time for games), except anytime-TD rows, which the SQL ranks by edge and are
+    re-sorted by td_probability desc here.
+    """
+    if _is_past_date(target_date):
+        return payload
+    out = _withhold_unproven_picks(
+        payload, db, _BOARD_MARKETS[sport], loaders=_BOARD_LOADERS[sport]
+    )
+    if sport == "nfl" and out.get("anytime_td_predictions"):
+        out["anytime_td_predictions"] = sorted(
+            out["anytime_td_predictions"],
+            key=lambda r: -float(r.get("td_probability") or 0.0),
+        )
     return out
 
 
@@ -816,18 +958,15 @@ def mlb_predictions(
         _query_recent(db, Homer, "game_time", target_date, limit, tz=tz)
     )
 
-    return _merge_past_results(
-        {
-            "strikeout_projections": cleaned_strikeouts,
-            "game_projections": game_rows,
-            "projected_hits": projected_hits,
-            "projected_homers": projected_homers,
-            "home_run_predictions": home_run_predictions,
-        },
-        "mlb",
-        db,
-        target_date,
-    )
+    payload = {
+        "strikeout_projections": cleaned_strikeouts,
+        "game_projections": game_rows,
+        "projected_hits": projected_hits,
+        "projected_homers": projected_homers,
+        "home_run_predictions": home_run_predictions,
+    }
+    payload = _withhold_board_picks(payload, db, "mlb", target_date)
+    return _merge_past_results(payload, "mlb", db, target_date)
 
 
 @router.get("/mlb/accuracy")
@@ -904,14 +1043,7 @@ def nba_predictions(
             for key, (model, stat) in props.items()
         },
     }
-    if not _is_past_date(target_date):
-        payload = _withhold_unproven_picks(
-            payload,
-            db,
-            _NBA_NEW_MARKET_KEYS,
-            loaders=("nba_props",),
-            no_pick=_NBA_NO_PICK,
-        )
+    payload = _withhold_board_picks(payload, db, "nba", target_date)
     return _merge_past_results(payload, "nba", db, target_date)
 
 
@@ -935,57 +1067,54 @@ def nfl_predictions(
     )
     spreads = attach_game_times_from_lines(db, spreads, NFLGameLines)
     totals = attach_game_times_from_lines(db, totals, NFLGameLines)
-    return _merge_past_results(
-        {
-            "qb_predictions": enrich_prop_rows(
-                _query_recent_nfl_with_fallback(
-                    db,
-                    QBPredictions,
-                    "game_date",
-                    target_date,
-                    limit,
-                    tz=tz,
-                    dedupe_keys=("season", "week", "qb_player_id"),
-                ),
-                sport="nfl",
-                stat="passing_yards",
-                db=db,
+    payload = {
+        "qb_predictions": enrich_prop_rows(
+            _query_recent_nfl_with_fallback(
+                db,
+                QBPredictions,
+                "game_date",
+                target_date,
+                limit,
+                tz=tz,
+                dedupe_keys=("season", "week", "qb_player_id"),
             ),
-            "kicker_predictions": attach_team_opponent_fields(
-                _query_recent_nfl_with_fallback(
-                    db,
-                    KickerPredictions,
-                    "game_date",
-                    target_date,
-                    limit,
-                    tz=tz,
-                    latest_dedupe_keys=("kicker_player_id",),
-                )
+            sport="nfl",
+            stat="passing_yards",
+            db=db,
+        ),
+        "kicker_predictions": attach_team_opponent_fields(
+            _query_recent_nfl_with_fallback(
+                db,
+                KickerPredictions,
+                "game_date",
+                target_date,
+                limit,
+                tz=tz,
+                latest_dedupe_keys=("kicker_player_id",),
+            )
+        ),
+        "anytime_td_predictions": _query_nfl_anytime_td_predictions(
+            db, target_date, limit
+        ),
+        "receiving_yards_predictions": enrich_prop_rows(
+            _query_recent_nfl_with_fallback(
+                db,
+                RecvYdsPredictions,
+                "game_date",
+                target_date,
+                limit,
+                tz=tz,
+                dedupe_keys=("season", "week", "player_id"),
             ),
-            "anytime_td_predictions": _query_nfl_anytime_td_predictions(
-                db, target_date, limit
-            ),
-            "receiving_yards_predictions": enrich_prop_rows(
-                _query_recent_nfl_with_fallback(
-                    db,
-                    RecvYdsPredictions,
-                    "game_date",
-                    target_date,
-                    limit,
-                    tz=tz,
-                    dedupe_keys=("season", "week", "player_id"),
-                ),
-                sport="nfl",
-                stat="receiving_yards",
-                db=db,
-            ),
-            "spreads": spreads,
-            "totals": totals,
-        },
-        "nfl",
-        db,
-        target_date,
-    )
+            sport="nfl",
+            stat="receiving_yards",
+            db=db,
+        ),
+        "spreads": spreads,
+        "totals": totals,
+    }
+    payload = _withhold_board_picks(payload, db, "nfl", target_date)
+    return _merge_past_results(payload, "nfl", db, target_date)
 
 
 @router.get("/nba/accuracy")
@@ -1067,10 +1196,7 @@ def nhl_predictions(
             dedupe_keys=("home_team_id", "away_team_id", "game_date"),
         ),
     }
-    # Past slates keep the calls they were graded on; live boards show a pick only
-    # for a market whose record qualifies.
-    if not _is_past_date(target_date):
-        payload = _withhold_unproven_picks(payload, db, _NHL_MARKET_KEYS)
+    payload = _withhold_board_picks(payload, db, "nhl", target_date)
     return _merge_past_results(payload, "nhl", db, target_date)
 
 
@@ -1123,55 +1249,52 @@ def wnba_predictions(
     spreads, totals = enrich_wnba_game_predictions(
         db, spreads, totals, target_date=target_date
     )
-    return _merge_past_results(
-        {
-            "totals": totals,
-            "spreads": spreads,
-            "points": enrich_prop_rows(
-                _query_wnba_props_by_season_minutes(
-                    db, WNBAPointsProjections, target_date, prop_limit, tz=tz
-                ),
-                sport="wnba",
-                stat="points",
-                db=db,
+    payload = {
+        "totals": totals,
+        "spreads": spreads,
+        "points": enrich_prop_rows(
+            _query_wnba_props_by_season_minutes(
+                db, WNBAPointsProjections, target_date, prop_limit, tz=tz
             ),
-            "assists": enrich_prop_rows(
-                _query_wnba_props_by_season_minutes(
-                    db, WNBAAssistsProjections, target_date, prop_limit, tz=tz
-                ),
-                sport="wnba",
-                stat="assists",
-                db=db,
+            sport="wnba",
+            stat="points",
+            db=db,
+        ),
+        "assists": enrich_prop_rows(
+            _query_wnba_props_by_season_minutes(
+                db, WNBAAssistsProjections, target_date, prop_limit, tz=tz
             ),
-            "rebounds": enrich_prop_rows(
-                _query_wnba_props_by_season_minutes(
-                    db, WNBAReboundsProjections, target_date, prop_limit, tz=tz
-                ),
-                sport="wnba",
-                stat="rebounds",
-                db=db,
+            sport="wnba",
+            stat="assists",
+            db=db,
+        ),
+        "rebounds": enrich_prop_rows(
+            _query_wnba_props_by_season_minutes(
+                db, WNBAReboundsProjections, target_date, prop_limit, tz=tz
             ),
-            "three_point": enrich_prop_rows(
-                _query_wnba_props_by_season_minutes(
-                    db, WNBAThreePtMadeProjections, target_date, prop_limit, tz=tz
-                ),
-                sport="wnba",
-                stat="three_pt_made",
-                db=db,
+            sport="wnba",
+            stat="rebounds",
+            db=db,
+        ),
+        "three_point": enrich_prop_rows(
+            _query_wnba_props_by_season_minutes(
+                db, WNBAThreePtMadeProjections, target_date, prop_limit, tz=tz
             ),
-            "pra": enrich_prop_rows(
-                _query_wnba_props_by_season_minutes(
-                    db, WNBAPRAProjections, target_date, prop_limit, tz=tz
-                ),
-                sport="wnba",
-                stat="pra",
-                db=db,
+            sport="wnba",
+            stat="three_pt_made",
+            db=db,
+        ),
+        "pra": enrich_prop_rows(
+            _query_wnba_props_by_season_minutes(
+                db, WNBAPRAProjections, target_date, prop_limit, tz=tz
             ),
-        },
-        "wnba",
-        db,
-        target_date,
-    )
+            sport="wnba",
+            stat="pra",
+            db=db,
+        ),
+    }
+    payload = _withhold_board_picks(payload, db, "wnba", target_date)
+    return _merge_past_results(payload, "wnba", db, target_date)
 
 
 @router.get("/wnba/accuracy")

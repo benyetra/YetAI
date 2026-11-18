@@ -6,6 +6,7 @@ import {
   formatString,
   type ColumnDef,
 } from '@/components/PredictionsTable';
+import { pickCell } from '@/lib/pickWithheld';
 
 const SPREAD_COLUMNS: ColumnDef[] = [
   { key: 'away_team_name', label: 'Away', format: (v) => formatString(v) },
@@ -38,7 +39,7 @@ const SPREAD_COLUMNS: ColumnDef[] = [
     mono: true,
     format: (v) => formatNumber(v, 1),
   },
-  { key: 'recommendation', label: 'Pick', format: (v) => formatString(v) },
+  { key: 'recommendation', label: 'Pick', format: (v, row) => pickCell(row, v) },
   {
     key: 'confidence_score',
     label: 'Conf',

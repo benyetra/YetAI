@@ -1,5 +1,7 @@
 /** Map NHL team totals API rows into unified game projection cards. */
 
+import { isPickWithheld } from '@/lib/pickWithheld';
+
 type Row = Record<string, unknown>;
 
 function num(v: unknown): number | null {
@@ -28,8 +30,11 @@ export function mapNhlTeamTotalsRows(totals: Row[]): Row[] {
     const homeGoals = num(total.predicted_home_goals) ?? 0;
     const awayGoals = num(total.predicted_away_goals) ?? 0;
     const homeWp = winProbFromGoals(homeGoals, awayGoals);
-    const totalRec = String(total.betting_recommendation ?? 'NO_PLAY').toUpperCase();
-    const edge = num(total.edge);
+    const withheld = isPickWithheld(total);
+    const totalRec = withheld
+      ? 'NO_PLAY'
+      : String(total.betting_recommendation ?? 'NO_PLAY').toUpperCase();
+    const edge = withheld ? null : num(total.edge);
     const marketLine = num(total.draftkings_ou_line) ?? num(total.suggested_ou_line);
 
     return {
@@ -48,6 +53,7 @@ export function mapNhlTeamTotalsRows(totals: Row[]): Row[] {
         totalRec === 'OVER' || totalRec === 'UNDER' ? totalRec : 'NO_PLAY',
       model_confidence: num(total.confidence),
       value_rating: deriveValueRating(totalRec, edge),
+      total_pick_withheld: total.pick_withheld ?? null,
       away_pitcher_name: '',
       home_pitcher_name: '',
       actual_home_score: total.actual_home_score,
