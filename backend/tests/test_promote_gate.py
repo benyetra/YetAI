@@ -171,3 +171,16 @@ def test_live_predictions(monkeypatch):
     )
     pred = upload_to_s3.live_predictions("m/x.pkl", "m/x_metadata.json", X)
     assert pred.tolist() == [5.0, 4.0]  # NaN filled with 0
+
+
+def test_a_features_v4_champion_is_scored_with_nan_as_it_is_served(monkeypatch):
+    # v4 models were trained with NaN for unknown inputs; a 0 fill would inflate the
+    # champion's holdout MAE and make a candidate "beat" it more easily.
+    fake = FakeS3()
+    monkeypatch.setattr(model_store.boto3, "client", lambda *a, **k: fake)
+    X = pd.DataFrame({"a": [1.0, 2.0], "b": [3.0, np.nan]})
+    fake.put("m/x.pkl", pickle.dumps(_Linear()), "e1")
+    meta = {"feature_names": ["a", "b"], "features_version": 4}
+    fake.put("m/x_metadata.json", json.dumps(meta).encode(), "e1")
+    pred = upload_to_s3.live_predictions("m/x.pkl", "m/x_metadata.json", X)
+    assert pred[0] == 5.0 and np.isnan(pred[1])

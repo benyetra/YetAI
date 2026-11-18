@@ -97,6 +97,13 @@ def _predict_with(
     feats = meta.get("feature_names") or meta.get("features")
     if not feats:
         raise ValueError("live metadata has no feature list")
+    try:
+        nan_trained = int(meta.get("features_version") or 0) >= 4
+    except (TypeError, ValueError):
+        nan_trained = False
+    if nan_trained:
+        # Scored as it is served (_ml_predict.predict): a features-v4 model keeps NaN.
+        fill = float("nan")
     X = pd.DataFrame(
         {f: X_hold[f] if f in X_hold.columns else fill for f in feats},
         index=X_hold.index,

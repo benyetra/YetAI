@@ -450,12 +450,13 @@ def _graded_dates(rows, *, date_field, line_field, pick_field, actual_field) -> 
 def _priced_calls(rows, version, *, price_field, date_field, **fields):
     """Record of the rows with a stored price for their side, valued at that price; the
     rest are counted as unpriced (6th element) and never valued at an assumed price."""
-    priced = [r for r in rows if r.get(price_field) is not None]
+    # 0 / None is no price (a stored 0 would be valued at -110 downstream).
+    priced = [r for r in rows if r.get(price_field)]
     if not priced:
         return _unpriced(rows, version, **fields)
     hits, n, units, _ = ou_call_graded_record(priced, price_field=price_field, **fields)
     _, unpriced_n = ou_call_graded_counts(
-        [r for r in rows if r.get(price_field) is None], **fields
+        [r for r in rows if not r.get(price_field)], **fields
     )
     dates = _graded_dates(priced, date_field=date_field, **fields)
     return (hits, n, units, version, dates, unpriced_n)

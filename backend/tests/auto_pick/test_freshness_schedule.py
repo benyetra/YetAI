@@ -158,3 +158,19 @@ def test_a_fresh_projection_with_an_old_quote_is_stale():
     assert hard_gate_reason(sc, NOW, -300, 400) is None
     sc.candidate.projection_metadata["quoted_at"] = None  # no best quote at all
     assert hard_gate_reason(sc, NOW, -300, 400) == "stale_line"
+
+
+def test_pending_auto_pick_cannot_be_approved_after_a_newer_refresh():
+    from types import SimpleNamespace
+
+    from app.models.database_models import BetSource
+    from app.services.yetai_bets_service_db import auto_pick_stale_reason
+
+    made = _utc(17, 30)  # the 13:30 ET run
+    pick = SimpleNamespace(source=BetSource.AUTO, created_at=made)
+    assert auto_pick_stale_reason(pick, now=_utc(19, 0)) is None  # 15:00 ET: fine
+    assert auto_pick_stale_reason(pick, now=_utc(21, 5))  # 17:05 ET: 17:00 refresh ran
+    late = SimpleNamespace(source=BetSource.AUTO, created_at=_utc(16, 1))
+    assert auto_pick_stale_reason(late, now=_utc(19, 30))  # over 3 h old
+    manual = SimpleNamespace(source=BetSource.MANUAL, created_at=_utc(10, 0))
+    assert auto_pick_stale_reason(manual, now=_utc(21, 5)) is None
