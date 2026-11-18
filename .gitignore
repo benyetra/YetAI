@@ -98,3 +98,6 @@ backend/scripts/mlb_hr_rebuild_manifest.json
 
 # software-factory working files
 .factory/
+
+# graphify knowledge-graph output (generated locally)
+graphify-out/
