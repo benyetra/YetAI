@@ -439,7 +439,6 @@ function GameCard({
         pick={pick}
         withheld={withheld}
         pickProbPct={(pick?.side === 'HOME' ? homeWp : pick?.side === 'AWAY' ? awayWp : homeFav ? homeWp : awayWp) * 100}
-        favTeam={{ name: favName, abbr: favAbbr }}
         logoLeague={cfg.logoLeague}
         sportKey={cfg.sportKey}
         projectedTotal={total}
@@ -634,7 +633,6 @@ function ModelPickModule({
   pick,
   withheld,
   pickProbPct,
-  favTeam,
   logoLeague,
   sportKey,
   projectedTotal,
@@ -656,7 +654,6 @@ function ModelPickModule({
   pick: PrimaryPick | null;
   withheld: boolean;
   pickProbPct: number;
-  favTeam: { name: string; abbr: string };
   logoLeague: string;
   sportKey: string;
   projectedTotal: number | null;
