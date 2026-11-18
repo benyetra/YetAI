@@ -21,6 +21,7 @@ from app.services.etl.nfl.anytime_td_market_anchor import (
     stamp_market_model_version,
     vig_free_fair_prob,
 )
+from app.services.etl.nfl.anytime_td_projector import _is_played
 from app.services.etl.nfl.nfl_common import (
     get_current_nfl_week,
     now_eastern_naive,
@@ -99,10 +100,7 @@ def recommendation_for_edge(
     ev: float | None = None,
 ) -> str:
     """Backward-compatible wrapper; prefer ``recommendation_for_market_edge``."""
-    if ev is None:
-        # Legacy callers without EV: OVER on edge only (tests / old paths).
-        return "OVER" if edge >= threshold else "NO_PLAY"
-    return recommendation_for_market_edge(edge, ev=ev, threshold=threshold)
+    return recommendation_for_market_edge(edge, ev=ev or 0.0, threshold=threshold)
 
 
 def clear_betting_fields() -> dict[str, Any]:
@@ -136,7 +134,7 @@ def attach_betting_fields(
     p_pub = blend_publish_prob(p_fair, p_model, w)
     edge = compute_edge(p_pub, p_fair)
     ev = american_ev(p_pub, market_odds)
-    rec = recommendation_for_market_edge(edge, ev=ev)
+    rec = recommendation_for_market_edge(edge, ev=ev)  # always NO_PLAY for now
 
     feat["p_model"] = p_model
     feat.setdefault("p_hier", p_model)
@@ -466,7 +464,8 @@ def run(*, season: int | None = None, week: int | None = None) -> dict[str, Any]
         matched = 0
         stale_cleared = 0
         frozen = 0
-        today = now_eastern_naive().date()
+        now_et = now_eastern_naive()
+        today = now_et.date()
 
         for pred in predictions:
             game_day = pred.game_date
@@ -475,7 +474,7 @@ def run(*, season: int | None = None, week: int | None = None) -> dict[str, Any]
             # A played game keeps its closing odds, edge and pick: the feed now
             # only lists next week's games, and a quote under the same name
             # would replace what the pick is graded on.
-            if freeze_played and game_day is not None and game_day < today:
+            if freeze_played and _is_played(pred.game_date, pred.features, now_et):
                 frozen += 1
                 continue
             # On game day a missing quote usually means the market closed at
