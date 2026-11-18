@@ -1,6 +1,6 @@
 """ESPN team-stats hardening for NFL kicker predictions (404 / empty payload)."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -184,7 +184,7 @@ def test_save_kicker_data_binds_plain_python_floats(monkeypatch):
             "team_name": "Ravens",
             "venue_name": "M&T Bank Stadium",
             "opponent_name": "Chiefs",
-            "game_time": datetime(2026, 9, 10, 20, 15, 0),
+            "game_time": datetime.now() + timedelta(days=2),
             "team_red_zone_efficiency": np.float64(61.5),
             "opponent_red_zone_efficiency": np.float64(55.0),
             "third_down_conversion_rate": np.float64(40.2),
