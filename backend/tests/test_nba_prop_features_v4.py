@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 
+import numpy as np
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -26,6 +28,9 @@ TARGET = OPENER + timedelta(days=30)
 OPP = 1610612738  # the team our players face
 OWN = 1610612743  # our players' team
 P, STAR, MID, BENCH = 1, 2, 3, 4  # BENCH never reaches the rotation
+
+# Game-line features: NaN in v4 when no stored line says otherwise.
+LINE_KEYS = ("spread", "total", "is_home", "is_favorite", "blowout_risk")
 
 # v3 keys and values on the fixture in `_v3_fixture`, taken before v4 existed.
 V3_BASELINE = {
@@ -195,8 +200,7 @@ def test_past_and_serving_paths_give_the_same_vector():
     season(serving)
     tonight(serving, out=[STAR])
     a, b = vector(past), vector(serving)
-    assert a.keys() == b.keys()
-    assert a == b
+    assert _nan_equal(a, b)
     assert a["team_out_rotation_players"] == 1.0
     assert a["team_out_min_share"] > 0
 
@@ -221,7 +225,7 @@ def test_target_game_stats_and_later_rows_do_not_leak(db):
             row(pid, TARGET + timedelta(days=i), points=77.0) for pid in (P, STAR, MID)
         )
     db.commit()
-    assert vector(db) == before
+    assert _nan_equal(vector(db), before)
 
 
 # ---- availability weights --------------------------------------------------------
@@ -302,7 +306,11 @@ def test_version_3_is_unchanged_and_version_4_is_a_superset(db):
     v4 = fe.build_features(db, 7, day, OPP, "points")
     assert fe.FEATURES_VERSION == 4
     assert v4.keys() > V3_BASELINE.keys()
-    assert {k: v4[k] for k in V3_BASELINE} == pytest.approx(V3_BASELINE)
+    # v4 differs from v3 only in the game-line features: unknown is NaN, not 0 / 0.15
+    # (train/serve parity, .factory/training/handoffs/training-to-nba-model.md).
+    same = {k: v for k, v in V3_BASELINE.items() if k not in LINE_KEYS}
+    assert {k: v4[k] for k in same} == pytest.approx(same)
+    assert all(math.isnan(v4[k]) for k in LINE_KEYS)
     for k in (
         "team_out_min_share",
         "own_min_share",
@@ -348,7 +356,9 @@ def test_games_since_return_counts_across_a_gap(db):
 def test_is_home_falls_back_to_the_box_row_then_todays_list(db):
     _v3_fixture(db)
     day = date(2026, 11, 20)
-    assert fe.build_features(db, 7, day, OPP, "points")["is_home"] == 0
+    # no box row, no line, no list: unknown is NaN (v4), never 0
+    assert math.isnan(fe.build_features(db, 7, day, OPP, "points")["is_home"])
+    assert fe.build_features(db, 7, day, OPP, "points", version=3)["is_home"] == 0
     db.add(
         TodayActivePlayers(
             player_id=7,
@@ -390,3 +400,122 @@ def test_features_version_falls_back_to_the_feature_list(monkeypatch):
         lambda stat=None: {"features": ["points_avg_5", "team_out_min_share"]},
     )
     assert _ml_predict.features_version("points") == 4
+
+
+# ---- train/serve parity of the game-line features (training AC5) -------------------
+
+
+def _nan_equal(a: dict, b: dict) -> bool:
+    return a.keys() == b.keys() and all(
+        (
+            isinstance(x, float)
+            and isinstance(y, float)
+            and math.isnan(x)
+            and math.isnan(y)
+        )
+        or x == pytest.approx(y)
+        for x, y in ((a[k], b[k]) for k in a)
+    )
+
+
+def _line(db, total=225.5, spread_home=-6.5):
+    db.add(
+        NBAGameLines(
+            game_date=TARGET,
+            home_team_name="Own Home",
+            away_team_name="Opp Away",
+            spread_home=spread_home,
+            spread_away=-spread_home if spread_home is not None else None,
+            total=total,
+        )
+    )
+    db.commit()
+
+
+def _training_vector(db, monkeypatch):
+    """The training path: build_training_dataset._build_chunk with NBA_ML_CONFIG."""
+    from app.services.ml import build_training_dataset as btd
+    from app.services.etl.nba.ml_training.config import NBA_ML_CONFIG
+
+    monkeypatch.setattr(btd, "SessionLocal", lambda: _Shared(db))
+    feats, targets, _keys = btd._build_chunk(
+        NBA_ML_CONFIG, "points", [(P, TARGET, OPP, 21.0)], "t"
+    )
+    assert targets == [21.0]
+    return feats[0]
+
+
+class _Shared:
+    """The fixture session, kept open when the builder closes its own."""
+
+    def __init__(self, db):
+        self._db = db
+
+    def close(self):
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._db, name)
+
+
+def test_training_and_serving_give_the_same_vector_with_a_stored_line(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        fe, "_game_line_vs", lambda db, opp, day: (db.query(NBAGameLines).one(), True)
+    )
+    past, serving = new_db(), new_db()
+    for db in (past, serving):
+        season(db)
+        _line(db)
+    played_target(past, absent=[STAR])
+    tonight(serving, out=[STAR])
+    a = _training_vector(past, monkeypatch)
+    b = fe.build_features(serving, P, TARGET, OPP, "points", version=4)
+    assert _nan_equal(a, b)
+    assert (a["spread"], a["total"], a["is_home"], a["is_favorite"]) == (
+        -6.5,
+        225.5,
+        1,
+        1,
+    )
+
+
+def test_no_stored_line_gives_nan_line_features_and_the_box_is_home(monkeypatch):
+    past = new_db()
+    season(past)
+    played_target(past)
+    past.query(RecentGames).filter_by(player_id=P, game_date=TARGET).update(
+        {"home_game": False}
+    )
+    past.commit()
+    a = _training_vector(past, monkeypatch)
+    assert all(
+        math.isnan(a[k]) for k in ("spread", "total", "is_favorite", "blowout_risk")
+    )
+    assert a["is_home"] == 0  # from the box row, not a 0 fill
+    v3 = fe.build_features(past, P, TARGET, OPP, "points", version=3)
+    assert (v3["spread"], v3["total"], v3["blowout_risk"]) == (0, 0, 0.15)
+
+
+def _stub_model(monkeypatch, version):
+    seen = {}
+
+    class _Model:
+        def predict(self, X):
+            seen["X"] = X
+            return np.array([1.0])
+
+    meta = {"feature_names": ["spread", "points_avg_5"], "features_version": version}
+    monkeypatch.setattr(_ml_predict, "_ensure_loaded", lambda stat: (_Model(), meta))
+    monkeypatch.setattr(_ml_predict, "get_metadata", lambda stat=None: meta)
+    return seen
+
+
+def test_predict_keeps_nan_for_v4_models_and_zero_fills_v3(monkeypatch):
+    seen = _stub_model(monkeypatch, 4)
+    _ml_predict.predict("points", {"spread": float("nan")})
+    assert seen["X"].isna().all().all()  # missing key and NaN both stay NaN
+    seen = _stub_model(monkeypatch, 3)
+    _ml_predict.predict("points", {"spread": float("nan")})
+    assert (seen["X"].to_numpy() == 0).all()

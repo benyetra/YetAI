@@ -208,9 +208,9 @@ def _game_line_vs(db, opponent_team_id: int, game_date: date):
     return line, not opponent_is_home
 
 
-def _home_flag(db, player_id: int, game_date: date) -> int:
-    """Home flag with no game line: the player's own box row for the date,
-    else tonight's active-players row, else 0."""
+def _home_flag(db, player_id: int, game_date: date, line_is_home=None) -> float:
+    """Home flag: the player's own box row for the date, else the game line's side,
+    else tonight's active-players row, else NaN (unknown, never 0)."""
     own = (
         db.query(RecentGames.home_game)
         .filter_by(player_id=player_id, game_date=game_date)
@@ -218,12 +218,36 @@ def _home_flag(db, player_id: int, game_date: date) -> int:
     )
     if own is not None and own[0] is not None:
         return 1 if own[0] else 0
+    if line_is_home is not None:
+        return 1 if line_is_home else 0
     today = (
         db.query(TodayActivePlayers.is_home_game)
         .filter_by(player_id=player_id, game_date=game_date)
         .first()
     )
-    return 1 if today is not None and today[0] else 0
+    if today is not None and today[0] is not None:
+        return 1 if today[0] else 0
+    return float("nan")
+
+
+def _line_features_v4(db, player_id: int, game_date: date, game_line) -> dict:
+    """spread / total / is_favorite / blowout_risk / is_home for version 4: NaN where
+    no stored line (or no stored number) says otherwise; a real 0 spread stays 0."""
+    nan = float("nan")
+    out = dict(spread=nan, total=nan, is_favorite=nan, blowout_risk=nan)
+    line_is_home = None
+    if game_line is not None:
+        line, line_is_home = game_line
+        spread = line.spread_home if line_is_home else line.spread_away
+        if spread is not None:
+            out["spread"] = spread
+            out["is_favorite"] = 1 if spread < 0 else 0
+        if line.total is not None:
+            out["total"] = line.total
+        if line.spread_home is not None:
+            out["blowout_risk"] = line.get_blowout_risk()
+    out["is_home"] = _home_flag(db, player_id, game_date, line_is_home)
+    return out
 
 
 def _games_since_return(games_df: pd.DataFrame, game_date: date) -> int:
@@ -407,7 +431,12 @@ def build_features(
     # table only knows a player's team today, which is the wrong game for
     # anyone traded since.
     game_line = _game_line_vs(db, opponent_team_id, game_date)
-    if game_line is not None:
+    if version >= 4:
+        # Train/serve parity: about half of the training rows have no stored line, and a
+        # 0 fill taught the model "total == 0". Unknown is NaN (XGBoost's missing branch),
+        # and is_home comes from the box row first, which training rows always have.
+        features.update(_line_features_v4(db, player_id, game_date, game_line))
+    elif game_line is not None:
         line, is_home = game_line
         spread = line.spread_home if is_home else line.spread_away
         features["spread"] = spread if spread else 0
@@ -421,8 +450,6 @@ def build_features(
         features["is_home"] = 0
         features["is_favorite"] = 0
         features["blowout_risk"] = 0.15
-        if version >= 4:
-            features["is_home"] = _home_flag(db, player_id, game_date)
 
     # ---- Calendar context.
     features["month"] = game_date.month

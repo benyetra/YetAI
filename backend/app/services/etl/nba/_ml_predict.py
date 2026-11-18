@@ -184,17 +184,22 @@ def predict(stat: str, features: dict) -> float:
     extractor are filled with zeros before model.predict).
     """
     model, metadata = _ensure_loaded(stat)
+    # Version 4 models were trained with NaN for unknown inputs (no stored line):
+    # keep NaN for them. Older champions were trained on 0 fills and keep them.
+    keep_nan = features_version(stat) >= 4
+    missing = float("nan") if keep_nan else 0
 
     feature_names = _feature_order(metadata)
-    row = {name: features.get(name, 0) for name in feature_names}
+    row = {name: features.get(name, missing) for name in feature_names}
     X = pd.DataFrame([row], columns=feature_names)
 
-    # Coerce object dtypes to numeric, then nuke inf/NaN — same defensive
-    # cleanup the original predictor did.
     for col in X.columns:
         if X[col].dtype == "object":
             X[col] = pd.to_numeric(X[col], errors="coerce")
-    X = X.replace([np.inf, -np.inf], 0).fillna(0)
+    if keep_nan:
+        X = X.replace([np.inf, -np.inf], np.nan)
+    else:
+        X = X.replace([np.inf, -np.inf], 0).fillna(0)
 
     prediction = float(model.predict(X)[0])
     return prediction

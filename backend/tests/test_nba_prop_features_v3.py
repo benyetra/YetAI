@@ -227,9 +227,12 @@ def test_line_is_found_through_the_opponent_even_after_a_trade(db):
 
 def test_no_line_leaves_the_market_features_neutral(db):
     add_player_games(db, 7, [20.0] * 6)
-    feats = fe.build_features(db, 7, TODAY, NUGGETS, "points")
+    feats = fe.build_features(db, 7, TODAY, NUGGETS, "points", version=3)
     assert (feats["spread"], feats["total"], feats["is_home"]) == (0, 0, 0)
     assert feats["blowout_risk"] == 0.15
+    # v4: unknown is NaN, so training rows with no stored line match serving (AC5)
+    v4 = fe.build_features(db, 7, TODAY, NUGGETS, "points")
+    assert all(v4[k] != v4[k] for k in ("spread", "total", "blowout_risk"))
 
 
 # ---- recency / rate / volume --------------------------------------------------------
