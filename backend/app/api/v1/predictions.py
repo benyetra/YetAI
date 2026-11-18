@@ -187,6 +187,9 @@ _PICK_FIELDS = frozenset(
         "best_ev",
         "best_quoted_at",
         "best_side",
+        # why a picked game price is good: consensus fair probability and expected value
+        "pick_fair_prob",
+        "pick_ev",
         # the moneyline quote carried on the NBA / NFL spread rows
         "ml_best_book",
         "ml_best_price",
@@ -331,9 +334,7 @@ def _withhold_unproven_picks(
     gated = {k for entries in spec.values() for k, _ in entries if k and k in emitted}
     try:
         with db.begin_nested():
-            withheld = record_gate.withheld_keys(
-                db, datetime.utcnow(), gated, loaders=loaders
-            )
+            withheld = record_gate.withheld_keys(db, _now(), gated, loaders=loaders)
     except Exception:
         logger.exception("record gate failed; withholding every pick label")
         withheld = dict.fromkeys(gated, "record_unavailable")
@@ -438,10 +439,15 @@ def _game_lines(db: Session, league: str, rows: list) -> dict:
     return out
 
 
-def _passes_selector_gates(builder, row: dict, lines: dict) -> bool:
-    """True when the selector would form a candidate from this stored row that passes its
-    clock-free hard gates and the EV gates (consensus EV >= 0, blended EV above MIN_EV).
-    """
+def _now() -> datetime:
+    return datetime.utcnow()
+
+
+def _selector_ev(builder, row: dict, lines: dict, now: datetime):
+    """The selector's EV for this stored row, or None when the selector would not pick it:
+    a candidate from the source's own row function and provider that passes every hard gate
+    at the real clock (fresh refresh, not started, odds bounds from the loaded config) and
+    the EV gates (consensus EV >= 0, blended EV above MIN_EV)."""
     from types import SimpleNamespace
 
     from app.services.auto_pick import record_gate
@@ -452,7 +458,12 @@ def _passes_selector_gates(builder, row: dict, lines: dict) -> bool:
         provider,
         build(SimpleNamespace(**row), lines.get(row.get("game_date"), {}), day),
     )
-    return any(record_gate._passes_gates(c) for c in cands)
+    evs = [e for e in (record_gate._passes_gates(c, now) for c in cands) if e]
+    return evs[0] if evs else None
+
+
+# Projector fields that say the model likes a side: gone on a row picked on price.
+_MODEL_STRENGTH = ("edge", "edge_percentage", "value_tier", "edge_category")
 
 
 def _pick_open_game_markets(
@@ -460,51 +471,65 @@ def _pick_open_game_markets(
 ) -> list:
     """Game markets whose gate key is OPEN: the row's pick is the stored best quote
     (``best_side`` at ``best_line``, ``best_book``, ``best_price``; ``ml_best_*`` for the
-    moneyline on a spread row) when the selector would pick it, else no pick at all (not
-    the "not proved" note). The board shows what auto picks publish. Withheld markets
-    were stripped before this and are left alone."""
+    moneyline on a spread row) when the selector would pick it right now, else no pick at
+    all (not the "not proved" note). The board shows what auto picks publish. A picked row
+    carries ``pick_fair_prob`` / ``pick_ev`` (why the price is good) and loses the
+    projector's edge and strength (the pick is the price, not the model's margin). Any
+    failure fails closed: no pick. Withheld markets were stripped before this."""
     if not markets:
         return out
-    builders = _game_pick_builders()
-    league = markets[0][1][0]
+    from app.services.auto_pick import record_gate
+
+    now = _now()
+    token = record_gate._BOUNDS.set(record_gate.odds_bounds(db))
     try:
-        lines = _game_lines(db, league, rows)
+        builders = _game_pick_builders()
+        lines = _game_lines(db, markets[0][1][0], rows)
     except Exception:
-        logger.exception("game lines failed; open game markets show no pick")
-        lines = {}
-    result = []
-    for orig, row in zip(rows, out):
-        row = dict(row)
-        if row.get("pick_withheld"):  # a withheld row keeps today's behaviour exactly
-            result.append(row)
-            continue
-        # decide every open market on the stored quotes before any field is cleared
-        passed = {}
-        for i, (lg, market) in markets:
-            try:
-                passed[i] = _passes_selector_gates(builders[(lg, market)], orig, lines)
-            except Exception:
-                logger.exception("open game market check failed; showing no pick")
-                passed[i] = False
-        for i, (_league, market) in markets:
-            moneyline = market == "moneyline"
-            side = orig.get(("ml_" if moneyline else "") + "best_side")
-            if moneyline:
-                row.update(dict.fromkeys(_ML_FIELDS) if not passed[i] else {})
-                row["ml_recommendation"] = _SIDE_WORDS.get(side) if passed[i] else None
+        logger.exception("open game markets: setup failed; showing no pick")
+        builders, lines = {}, {}
+    try:
+        result = []
+        for orig, row in zip(rows, out):
+            row = dict(row)
+            if row.get("pick_withheld"):  # a withheld row keeps today's behaviour
+                result.append(row)
                 continue
-            keep = _ML_FIELDS if len(entries) > 1 else ()
-            if passed[i] and side in _SIDE_WORDS:
-                row["recommendation"] = _SIDE_WORDS[side]
-                if "betting_recommendation" in row:  # NHL boards read this one
-                    row["betting_recommendation"] = _SIDE_WORDS[side]
-            else:
-                gone = ((_PICK_FIELDS & row.keys()) | {"recommendation", "edge"}) - set(
-                    keep
-                )
-                row.update(dict.fromkeys(gone))
-        result.append(row)
-    return result
+            # decide every open market on the stored quotes before any field is cleared
+            evs = {}
+            for i, (lg, market) in markets:
+                try:
+                    evs[i] = _selector_ev(builders[(lg, market)], orig, lines, now)
+                except Exception:
+                    logger.exception("open game market check failed; showing no pick")
+                    evs[i] = None
+            for i, (_league, market) in markets:
+                moneyline = market == "moneyline"
+                e = evs[i]
+                side = orig.get(("ml_" if moneyline else "") + "best_side")
+                if moneyline:
+                    if e is None or side not in _SIDE_WORDS:
+                        row.update(dict.fromkeys(_ML_FIELDS))
+                        row["ml_recommendation"] = None
+                    else:
+                        row["ml_recommendation"] = _SIDE_WORDS[side]
+                    continue
+                keep = _ML_FIELDS if len(entries) > 1 else ()
+                if e is not None and side in _SIDE_WORDS:
+                    row["recommendation"] = _SIDE_WORDS[side]
+                    if "betting_recommendation" in row:  # NHL boards read this one
+                        row["betting_recommendation"] = _SIDE_WORDS[side]
+                    row.update(dict.fromkeys(_MODEL_STRENGTH))
+                    row["pick_fair_prob"], row["pick_ev"] = e.fair_prob, e.ev
+                else:
+                    gone = (
+                        (_PICK_FIELDS & row.keys()) | {"recommendation", "edge"}
+                    ) - set(keep)
+                    row.update(dict.fromkeys(gone))
+            result.append(row)
+        return result
+    finally:
+        record_gate._BOUNDS.reset(token)
 
 
 def _strip_row(row: dict[str, Any], entries: tuple, reasons: list) -> dict[str, Any]:

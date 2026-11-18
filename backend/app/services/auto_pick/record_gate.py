@@ -38,6 +38,7 @@ builds). The board applies the same rule to its pick labels (``withheld_keys``).
 import logging
 import os
 from collections import defaultdict
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Callable, Optional
@@ -339,14 +340,41 @@ def current_version_rows(rows, date_field: str):
     return version, [r for r in rows if _field(r, "model_version") == version]
 
 
+# The selector's odds bounds as the run reads them (the admin scoring-config row), set for the
+# duration of one record load so every shadow record and the board use the same numbers as
+# the selector. Outside a load: the defaults.
+_BOUNDS: ContextVar = ContextVar("record_gate_odds_bounds", default=None)
+
+
+def odds_bounds(db):
+    """(odds_min, odds_max) the selector's hard gate uses: the loaded scoring config, the
+    defaults when it cannot be read (orchestrator.run reads cfg.odds_min / cfg.odds_max).
+    """
+    from app.services.auto_pick.config_loader import load_scoring_config
+    from app.services.auto_pick.selector import SelectorConfig
+
+    try:
+        with db.begin_nested():
+            cfg = load_scoring_config(db)
+        return cfg.odds_min, cfg.odds_max
+    except Exception:
+        log.exception("record_gate: scoring config unreadable; default odds bounds")
+        d = SelectorConfig()
+        return d.odds_min, d.odds_max
+
+
+def current_odds_bounds():
+    from app.services.auto_pick.selector import SelectorConfig
+
+    return _BOUNDS.get() or (SelectorConfig().odds_min, SelectorConfig().odds_max)
+
+
 def _priced_shadow_rows(stat: str, proj_field: str, rows):
     """Rows the selector would have considered: priced, not low-sample, with a side, a
     positive edge at the best line, inside the default odds bounds, passing the EV gates.
     Not applied: one pick per game, the daily caps and freshness (the row is its last
     write of the day)."""
-    from app.services.auto_pick.selector import SelectorConfig
-
-    bounds = SelectorConfig()
+    odds_min, odds_max = current_odds_bounds()
     out = []
     for r in rows:
         if r.get("low_sample") is True:  # prop_rows never offers these as candidates
@@ -360,7 +388,7 @@ def _priced_shadow_rows(stat: str, proj_field: str, rows):
         side = str(r.get("fanduel_over_under") or "").strip().lower()[:1]
         if None in (line, price, fair, proj) or side not in ("o", "u"):
             continue
-        if not bounds.odds_min <= price <= bounds.odds_max:
+        if not odds_min <= price <= odds_max:
             continue
         # hard_gate_reason's non_positive_edge, at the shopped line we would publish
         if signed_edge_for_side(proj, line, "over" if side == "o" else "under") <= 0:
@@ -457,19 +485,28 @@ def _candidates(provider_cls, rows) -> list:
     raise RuntimeError("candidate provider suspended")
 
 
-def _passes_gates(c) -> bool:
-    """The selector's clock-free hard gates and the EV gates, on a BetCandidate."""
+def _passes_gates(c, now=None):
+    """The selector's hard gates and the EV gates on a BetCandidate: the EV when it passes,
+    else None. The record passes no ``now``: the clock-free gates only (no freshness, no
+    start time). The live board passes the real clock and gets every gate the selector
+    applies (stale_line, started_or_starting, start_time_unknown too). Odds bounds are the
+    loaded scoring config's (see ``odds_bounds``)."""
     from types import SimpleNamespace
 
-    from app.services.auto_pick.selector import SelectorConfig, hard_gate_reason
+    from app.services.auto_pick.selector import hard_gate_reason
 
-    bounds = SelectorConfig()
+    odds_min, odds_max = current_odds_bounds()
     scored = SimpleNamespace(candidate=c)  # hard_gate_reason reads only .candidate
     if hard_gate_reason(
-        scored, _CLOCKLESS_NOW, bounds.odds_min, bounds.odds_max, fresh=False
+        scored,
+        _CLOCKLESS_NOW if now is None else now,
+        odds_min,
+        odds_max,
+        fresh=now is not None,
     ):
-        return False
-    return ev.candidate_ev(c)[1] is None
+        return None
+    e, reason = ev.candidate_ev(c)
+    return None if reason else e
 
 
 def _shadow(rows, version, *, date_field, build, provider_cls, actual_of, grade):
@@ -494,7 +531,7 @@ def _shadow(rows, version, *, date_field, build, provider_cls, actual_of, grade)
                 continue
             if c.projection_metadata.get("fair_prob") is None:  # no best quote
                 unpriced_n += 1
-            elif _passes_gates(c):
+            elif _passes_gates(c) is not None:
                 n += 1
                 hits += result == "won"
                 units += odds_math.units_for_result(
@@ -891,15 +928,19 @@ def load_projection_records(
     today = utc_to_eastern(now).date()  # slate dates are US Eastern
     start, end = today - timedelta(days=window_days()), today - timedelta(days=1)
     out: dict[RecordKey, tuple] = {}
-    for name, loader in PROJECTION_LOADERS.items():
-        if loaders is not None and name not in loaders:
-            continue
-        try:
-            # Savepoint: on Postgres a failed statement aborts the whole transaction.
-            with db.begin_nested():
-                out.update(loader(db, start, end))
-        except Exception:
-            log.exception("record_gate: projection loader %s failed", name)
+    token = _BOUNDS.set(odds_bounds(db))
+    try:
+        for name, loader in PROJECTION_LOADERS.items():
+            if loaders is not None and name not in loaders:
+                continue
+            try:
+                # Savepoint: on Postgres a failed statement aborts the whole transaction.
+                with db.begin_nested():
+                    out.update(loader(db, start, end))
+            except Exception:
+                log.exception("record_gate: projection loader %s failed", name)
+    finally:
+        _BOUNDS.reset(token)
     return out
 
 
