@@ -19,10 +19,10 @@ from datetime import date, datetime, time, timedelta, timezone
 from statistics import mean, median
 from typing import Any, Callable, Optional
 
-from sqlalchemy import bindparam, func
+from sqlalchemy import bindparam, func, or_
 from sqlalchemy.orm import Session
 
-from app.models.database_models import BetType, YetAIBet
+from app.models.database_models import BetSource, BetType, YetAIBet
 from app.services.accuracy_shared import (
     edge_play_graded_counts,
     ou_call_graded_counts,
@@ -599,22 +599,77 @@ def _fin(rec: dict) -> dict:
     return {**rec, "units": round(rec["units"], 2)}
 
 
+def _et_date(dt: datetime) -> date:
+    """A DB timestamp (naive UTC) -> its US Eastern date."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(EASTERN).date()
+
+
+def _pf(b) -> dict:
+    pf = b.prediction_factors
+    return pf if isinstance(pf, dict) else {}
+
+
+def _is_shadow(b) -> bool:
+    """Never-shown rows are not bets. ponytail: the picks-gate branch's own shadow
+    marker is unknown here; these three cover status, a shadow flag and shown=False."""
+    pf = _pf(b)
+    return (
+        str(b.status or "").startswith("shadow")
+        or bool(pf.get("shadow"))
+        or pf.get("shown") is False
+    )
+
+
+def _game_date(b) -> Optional[date]:
+    """ET date of the game: commence_time, else the slate date, else settled_at."""
+    if b.commence_time:
+        return _et_date(b.commence_time)
+    sd = _pf(b).get("slate_date")
+    if sd:
+        try:
+            return date.fromisoformat(str(sd)[:10])
+        except ValueError:
+            pass
+    return _et_date(b.settled_at) if b.settled_at else None
+
+
+def _settled_bets(db: Session, today: date, days: int) -> list:
+    """Graded, shown bets whose game date is in [today - days, today - 1] ET."""
+    lo, hi = today - timedelta(days=days), today - timedelta(days=1)
+    rows = (
+        db.query(YetAIBet)
+        .filter(
+            YetAIBet.status.in_(["won", "lost", "pushed"]),
+            or_(
+                YetAIBet.commence_time.is_(None),
+                YetAIBet.commence_time >= _day_start_utc(lo) - timedelta(days=1),
+            ),
+        )
+        .all()
+    )
+    return [
+        b
+        for b in rows
+        if not _is_shadow(b)
+        and (_game_date(b) or date.min) >= lo
+        and (_game_date(b) or date.max) <= hi
+    ]
+
+
 def _bets_section(db: Session, today: date) -> dict:
     start_today, end = _day_start_utc(today), _day_start_utc(today + timedelta(days=1))
     windows = {}
     for days in BET_WINDOWS:
-        rows = (
-            db.query(YetAIBet)
-            .filter(
-                YetAIBet.status.in_(["won", "lost", "pushed"]),
-                YetAIBet.settled_at >= start_today - timedelta(days=days),
-                YetAIBet.settled_at < end,
-            )
-            .all()
-        )
-        total, parlays = _empty_rec(), _empty_rec()
+        rows = _settled_bets(db, today, days)
+        total, parlays, other = _empty_rec(), _empty_rec(), _empty_rec()
         by_sport, by_market = defaultdict(_empty_rec), defaultdict(_empty_rec)
         for b in rows:
+            if b.source != BetSource.AUTO:
+                if b.bet_type != BetType.PARLAY:
+                    _add(other, b.status, b.odds)  # manual / legacy: shown apart
+                continue
             if b.bet_type == BetType.PARLAY:
                 _add(parlays, b.status, b.odds)
                 continue  # parlay units are not comparable to straight bets
@@ -625,6 +680,7 @@ def _bets_section(db: Session, today: date) -> dict:
             _add(by_market[b.bet_type.value], b.status, b.odds)
         windows[str(days)] = {
             **_fin(total),
+            "manual_legacy": _fin(other),
             "parlays": {k: parlays[k] for k in ("picks", "w", "l", "p")},
             "by_sport": {k: _fin(v) for k, v in sorted(by_sport.items())},
             "by_market": {k: _fin(v) for k, v in sorted(by_market.items())},
@@ -870,29 +926,39 @@ def _totals_history(tp, db: Session, today: date):
         tp.db = saved
 
 
+def _gate_row(r: dict) -> dict:
+    """One gate-table row from either ``all_key_rows`` or ``gate_report`` (fields
+    read defensively: the two shapes differ)."""
+    state = str(r.get("state") or ("WITHHELD" if r.get("withheld") else "open"))
+    return {
+        "key": r.get("key"),
+        "state": state,
+        "withheld": bool(r.get("withheld")) or state.upper().startswith("WITHHELD"),
+        "n": r.get("n", r.get("proj_n")),
+        "hits": r.get("hits", r.get("proj_hits")),
+        "units": r.get("units", r.get("proj_units")),
+        "n_eff": r.get("n_eff"),
+        "shrunk_roi": r.get("shrunk_roi"),
+        "version": r.get("version"),
+        "bet_n": r.get("bet_n"),
+        "bet_units": r.get("bet_units"),
+    }
+
+
 def _gate_section(db: Session, today: date) -> dict:
     from app.services.etl.nba import totals_baseline as tb
 
     now = _day_start_utc(today) + timedelta(hours=12)  # same ET date for the gate
-    records = record_gate.load_records(db, now)
-    withheld = sorted(
-        (r for r in records.values() if r.withheld), key=lambda r: r.shrunk_roi
-    )
+    all_rows = getattr(record_gate, "all_key_rows", None)
+    keys = [_gate_row(r) for r in (all_rows or record_gate.gate_report)(db, now)]
+    keys.sort(key=lambda k: (not k["withheld"], k["key"]))  # withheld first
+    withheld = [k for k in keys if k["withheld"]]
     out: dict[str, Any] = {
         "enabled": record_gate.gate_enabled(),
-        "keys_tracked": len(records),
-        "withheld": [
-            {
-                "key": record_gate.key_label(r.key),
-                "n_eff": round(r.n_eff, 1),
-                "shrunk_roi": round(r.shrunk_roi, 4),
-                "bet_n": r.bet_n,
-                "bet_units": round(r.bet_units, 2),
-                "proj_n": r.proj_n,
-                "proj_hits": r.proj_hits,
-            }
-            for r in withheld[:WITHHELD_LIMIT]
-        ],
+        "keys_tracked": len(keys),
+        "keys": keys,
+        "withheld": withheld[:WITHHELD_LIMIT],
+        "withheld_count": len(withheld),
     }
     from app.services.etl.nba import _season
     from app.services.etl.nba import market_anchor as ma
@@ -981,25 +1047,51 @@ def _misses_section(db: Session, today: date, cur: Loaded) -> dict:
     return {"date": day.isoformat(), "rows": rows[:MISS_LIMIT]}
 
 
-def _disagreements_section(db: Session, today: date, cur: Loaded) -> dict:
-    index = {r["ident"]: (kind, r) for kind, rs in cur.values() for r in rs}
-    start_today, end = _day_start_utc(today), _day_start_utc(today + timedelta(days=1))
-    bets = (
-        db.query(YetAIBet)
-        .filter(
-            YetAIBet.status.in_(["won", "lost"]),
-            YetAIBet.settled_at >= start_today - timedelta(days=MODEL_WINDOW_DAYS),
-            YetAIBet.settled_at < end,
-        )
-        .all()
+def _bet_snapshot(pf: dict) -> Optional[tuple]:
+    """(line, side) the bet took at pick time, from its own stored snapshot."""
+    g = pf.get("grading") if isinstance(pf.get("grading"), dict) else {}
+    md = (
+        pf.get("projection_metadata")
+        if isinstance(pf.get("projection_metadata"), dict)
+        else {}
     )
-    rows, no_ref, unmatched, skipped = [], 0, 0, 0
-    checked = 0
+    line = next(
+        (v for v in (pf.get("market_line"), md.get("line")) if v is not None), None
+    )
+    if line is None:
+        return None
+    side = str(g.get("side") or md.get("side") or "").strip().lower()
+    side = {"o": "over", "u": "under"}.get(side, side)
+    if side not in ("over", "under"):
+        proj = next(
+            (
+                v
+                for v in (pf.get("our_projection"), md.get("projection"))
+                if v is not None
+            ),
+            None,
+        )
+        if proj is None or float(proj) == float(line):
+            return None
+        side = "over" if float(proj) > float(line) else "under"
+    return float(line), side
+
+
+def _disagreements_section(db: Session, today: date, cur: Loaded) -> dict:
+    """Auto bets vs the actual, graded at each bet's OWN pick-time line and side (the
+    projection row may have been overwritten since, the actual is final)."""
+    index = {r["ident"]: (kind, r) for kind, rs in cur.values() for r in rs}
+    bets = [
+        b
+        for b in _settled_bets(db, today, MODEL_WINDOW_DAYS)
+        if b.source == BetSource.AUTO and b.status in ("won", "lost")
+    ]
+    rows, no_ref, no_snap, unmatched, skipped, checked = [], 0, 0, 0, 0, 0
     for b in bets:
         if b.bet_type in (BetType.PARLAY, BetType.MONEYLINE):
             skipped += 1  # no O/U or spread call to compare with
             continue
-        pf = b.prediction_factors if isinstance(b.prediction_factors, dict) else {}
+        pf = _pf(b)
         ref = pf.get("projection_ref")
         if not isinstance(ref, dict):
             no_ref += 1
@@ -1009,20 +1101,26 @@ def _disagreements_section(db: Session, today: date, cur: Loaded) -> dict:
             unmatched += 1
             continue
         kind, proj = found
-        grade = row_grade(kind, proj)
-        if grade is None:
-            unmatched += 1
+        snap = _bet_snapshot(pf)
+        if snap is None or kind != "ou":
+            no_snap += 1
+            continue
+        line, side = snap
+        res = ou_row_result(line=line, pick=side, actual=proj["actual"])
+        if res not in ("hit", "miss"):
+            unmatched += 1  # no actual yet, or a push at the bet's line
             continue
         checked += 1
-        if grade != (b.status == "won"):
+        if (res == "hit") != (b.status == "won"):
             rows.append(
                 {
                     "bet_id": b.id,
                     "title": b.title,
                     "bet_result": b.status,
                     "projection": proj["label"],
-                    "projection_call": proj["pick"],
-                    "projection_graded": "won" if grade else "lost",
+                    "bet_side": side,
+                    "projection_graded": "won" if res == "hit" else "lost",
+                    "bet_line": line,
                     "line": proj["line"],
                     "actual": proj["actual"],
                     "ref": f'{ref.get("table")}#{ref.get("id")}',
@@ -1034,7 +1132,8 @@ def _disagreements_section(db: Session, today: date, cur: Loaded) -> dict:
         "disagreements": len(rows),
         "rows": rows[:DISAGREE_LIMIT],
         "without_projection_ref": no_ref,
-        "unmatched_or_ungraded": unmatched,
+        "without_snapshot": no_snap,
+        "unmatched": unmatched,
         "skipped_parlay_or_moneyline": skipped,
     }
 
@@ -1066,12 +1165,19 @@ def _versions_section(db: Session, today: date) -> dict:
     from app.models import predictions_models as pm
 
     since = _day_start_utc(today) - timedelta(days=MODEL_WINDOW_DAYS)
-    bets = dict(
-        db.query(YetAIBet.model_version, func.count())
-        .filter(YetAIBet.created_at >= since)
-        .group_by(YetAIBet.model_version)
+    counted = (
+        db.query(YetAIBet.model_version, YetAIBet.status, YetAIBet.prediction_factors)
+        .filter(
+            YetAIBet.created_at >= since,
+            YetAIBet.source == BetSource.AUTO,
+            YetAIBet.status.in_(["active", "won", "lost", "pushed", "void"]),
+        )
         .all()
     )
+    bets: dict = defaultdict(int)
+    for r in counted:  # shown bets only, never shadow rows
+        if not _is_shadow(r):
+            bets[r.model_version] += 1
     tables: dict[str, dict] = {}
     day0 = today - timedelta(days=MODEL_WINDOW_DAYS)
     for name in dir(pm):
@@ -1424,18 +1530,117 @@ def _fair_price_section(db: Session, today: date) -> dict:
 
 
 def _credits_section(db: Session, today: date) -> dict:
+    from app.core.config import settings
+    from app.services import odds_api_budget
     from app.services import odds_credit_report as cr
     from app.services.odds_api_sync import read_live_quota
 
+    missing = [
+        why
+        for why, absent in (
+            ("no Redis", odds_api_budget._usage() is None),
+            ("no Odds API key", not settings.ODDS_API_KEY),
+        )
+        if absent
+    ]
+    if missing:
+        return {
+            "not_available": f"not available in this runner ({', '.join(missing)}); "
+            "production numbers are in the 09:45 ET email"
+        }
     quota = read_live_quota()
     if quota:
         cr.snapshot_quota(quota, today.isoformat())
     return cr.credits_summary(today, quota)
 
 
+ATTENTION_LIMIT = 15
+
+
+def _slice(loaded: Loaded, lo: date, hi: date) -> Loaded:
+    """Rows whose game date (ident[1], ISO) is in [lo, hi]."""
+    lo_s, hi_s = lo.isoformat(), hi.isoformat()
+    return {
+        k: (kind, [r for r in rows if lo_s <= r["ident"][1] <= hi_s])
+        for k, (kind, rows) in loaded.items()
+    }
+
+
+def _attention_section(
+    db: Session, today: date, cur: Loaded, prev: Loaded, board: Any, gate: Any
+) -> dict:
+    """What changed since yesterday's review, from data build_review already has:
+    ``prev`` is the same window shifted one day back."""
+    out: list[str] = []
+    for key in sorted(cur, key=lambda k: tuple(p or "" for p in k)):
+        kind, rows = cur[key]
+        now_s, was = stats(kind, rows), stats(kind, prev.get(key, (kind, []))[1])
+        label, be = (
+            record_gate.key_label(key),
+            now_s.get("breakeven_priced") or BREAKEVEN,
+        )
+        a, b = was["hit_rate"], now_s["hit_rate"]
+        if a is not None and b is not None and (a >= be) != (b >= be):
+            out.append(
+                f"{label}: hit rate {_pct(a)} -> {_pct(b)}, crossed "
+                f"{'above' if b >= be else 'below'} breakeven {_pct(be)}"
+            )
+        if None not in (was["mae"], was["line_mae"], now_s["mae"], now_s["line_mae"]):
+            if (was["mae"] < was["line_mae"]) != (now_s["mae"] < now_s["line_mae"]):
+                better = now_s["mae"] < now_s["line_mae"]
+                out.append(
+                    f"{label}: MAE {_num(now_s['mae'])} now "
+                    f"{'better' if better else 'worse'} than line MAE "
+                    f"{_num(now_s['line_mae'])} (same lined rows)"
+                )
+    if isinstance(gate, dict) and gate.get("withheld_count"):
+        names = [w["key"] for w in gate["withheld"]]
+        more = gate["withheld_count"] - len(names[:8])
+        out.append(
+            f"{gate['withheld_count']} gate keys withheld: {', '.join(names[:8])}"
+            + (f" (+{more} more)" if more > 0 else "")
+        )
+    for k in (board or {}).get("flagged", []) if isinstance(board, dict) else []:
+        exp = "n/a" if k["expected"] is None else f"{k['expected']:g}"
+        out.append(
+            f"board {k['date']} {k['key']}: {k['flag']} ({k['rows']} rows, expected {exp})"
+        )
+    y = today - timedelta(days=1)
+    for sport, sk in BOARD_SPORT_KEYS.items():
+        n_games = _games_by_et_date(db, sk, y, y).get(y, 0)
+        graded = any(
+            r["actual"] is not None and r["ident"][1] == y.isoformat()
+            for key, (_, rows) in cur.items()
+            if key[0] == sport
+            for r in rows
+        )
+        if n_games and not graded:
+            out.append(f"{sport}: {n_games} games on {y} but no graded rows dated {y}")
+    from app.models.predictions_models import OddsLineSnapshot
+
+    if any(
+        _games_by_et_date(db, sk, today, today).get(today)
+        for sk in BOARD_SPORT_KEYS.values()
+    ):
+        latest = db.query(func.max(OddsLineSnapshot.last_seen_at)).scalar()
+        ref = min(datetime.utcnow(), _day_start_utc(today + timedelta(days=1)))
+        if latest is None:
+            out.append("odds_line_snapshots is empty but there are games today")
+        elif ref - latest > timedelta(hours=24):
+            out.append(
+                f"odds_line_snapshots last seen {latest:%Y-%m-%d %H:%M} UTC "
+                f"(> 24h old) and there are games today"
+            )
+    extra = len(out) - ATTENTION_LIMIT
+    return {"lines": out[:ATTENTION_LIMIT], "more": max(extra, 0)}
+
+
 def build_review(db: Session, today: date) -> dict:
     cur_start = today - timedelta(days=MODEL_WINDOW_DAYS)
-    cur = _safe(db, load_rows, db, cur_start, today - timedelta(days=1))
+    # One load of [start - 1, end]: today's view and yesterday's view are slices of it.
+    full = _safe(
+        db, load_rows, db, cur_start - timedelta(days=1), today - timedelta(days=1)
+    )
     prior = _safe(
         db,
         load_rows,
@@ -1443,16 +1648,21 @@ def build_review(db: Session, today: date) -> dict:
         cur_start - timedelta(days=MODEL_WINDOW_DAYS),
         cur_start - timedelta(days=1),
     )
-    if not isinstance(cur, dict) or "unavailable" in cur:
-        cur = {}
+    if not isinstance(full, dict) or "unavailable" in full:
+        full = {}
     if not isinstance(prior, dict) or "unavailable" in prior:
         prior = {}
+    cur = _slice(full, cur_start, today - timedelta(days=1))
+    prev = _slice(full, cur_start - timedelta(days=1), today - timedelta(days=2))
+    board = _safe(db, _board_counts_section, db, today)
+    gate = _safe(db, _gate_section, db, today)
     return {
         "date": today.isoformat(),
+        "attention": _safe(db, _attention_section, db, today, cur, prev, board, gate),
         "bets": _safe(db, _bets_section, db, today),
         "projections": _safe(db, _projection_section, cur, prior),
-        "board_counts": _safe(db, _board_counts_section, db, today),
-        "gate": _safe(db, _gate_section, db, today),
+        "board_counts": board,
+        "gate": gate,
         "misses": _safe(db, _misses_section, db, today, cur),
         "disagreements": _safe(db, _disagreements_section, db, today, cur),
         "model_versions": _safe(db, _versions_section, db, today),
@@ -1522,6 +1732,18 @@ def _credits_lines(c: dict) -> list[str]:
 def render_text(review: dict) -> str:
     L: list[str] = [f"YETAI MODEL REVIEW {review['date']}", ""]
 
+    L.append("== What changed since yesterday / needs attention ==")
+    at = review.get("attention", {"unavailable": "not built"})
+    if _unavailable(at):
+        L.append(_unavailable(at))
+    elif not at["lines"]:
+        L.append("  nothing needs attention")
+    else:
+        L.extend(f"  - {x}" for x in at["lines"])
+        if at["more"]:
+            L.append(f"  (+{at['more']} more)")
+    L.append("")
+
     L.append("== YetAI Bets record ==")
     bets = review["bets"]
     if _unavailable(bets):
@@ -1529,6 +1751,12 @@ def render_text(review: dict) -> str:
     else:
         for days, w in bets["windows"].items():
             L.append(_rec_line(f"last {days}d (straight bets)", w))
+            if w["manual_legacy"]["picks"]:
+                L.append(
+                    _rec_line(
+                        "manual/legacy (not auto picks)", w["manual_legacy"]
+                    ).replace("  ", "    ", 1)
+                )
             p = w["parlays"]
             if p["picks"]:
                 L.append(f"    parlays: {p['w']}-{p['l']}-{p['p']}")
@@ -1605,13 +1833,21 @@ def render_text(review: dict) -> str:
     if _unavailable(bc):
         L.append(_unavailable(bc))
     else:
+        idle: dict[str, list[str]] = defaultdict(list)
         for k in bc["keys"]:
+            if not k["games"] and not k["rows"]:
+                sport = k["key"].split("/")[0]
+                if sport not in idle[k["date"]]:
+                    idle[k["date"]].append(sport)
+                continue
             exp = "n/a" if k["expected"] is None else f"{k['expected']:g}"
             flag = f"  <-- {k['flag'].upper()}" if k["flag"] else ""
             L.append(
                 f"  {k['date']} {k['key']}: rows {k['rows']} / expected {exp} "
                 f"(games {k['games']}){flag}"
             )
+        for day, sports in idle.items():
+            L.append(f"  {day} no games scheduled: {', '.join(sports)}")
     L.append("")
 
     L.append("== Record gate ==")
@@ -1623,11 +1859,20 @@ def render_text(review: dict) -> str:
             f"  gate {'on' if g['enabled'] else 'OFF'}, {g['keys_tracked']} keys tracked, "
             f"{len(g['withheld'])} withheld"
         )
-        for w in g["withheld"]:
+        L.append("  key | state | n | hits | units | n_eff | shrunk ROI | version")
+        f = lambda v, fmt: "n/a" if v is None else format(v, fmt)  # noqa: E731
+        for k in g["keys"]:
+            state = (
+                (k["state"].removeprefix("WITHHELD").strip() or "withheld")
+                if k["withheld"]
+                else k["state"]
+            )
             L.append(
-                f"  WITHHELD {w['key']}: n_eff {w['n_eff']}, shrunk ROI "
-                f"{w['shrunk_roi'] * 100:+.1f}% (bets {w['bet_n']} {w['bet_units']:+.2f}u; "
-                f"projections {w['proj_hits']}/{w['proj_n']})"
+                f"  {'WITHHELD ' if k['withheld'] else ''}{k['key']} | {state} | "
+                f"{f(k['n'], 'd')} | {f(k['hits'], 'd')} | {f(k['units'], '+.2f')} | "
+                f"{f(k['n_eff'], '.1f')} | "
+                f"{'n/a' if k['shrunk_roi'] is None else format(k['shrunk_roi'] * 100, '+.1f') + '%'}"
+                f" | {k['version'] or 'n/a'}"
             )
         for name, label in (("nba_totals", "totals"), ("nba_spread", "spread")):
             t = g.get(name, {})
@@ -1672,16 +1917,22 @@ def render_text(review: dict) -> str:
         L.append(_unavailable(d))
     else:
         L.append(
-            f"  {d['disagreements']} of {d['checked']} compared; "
-            f"{d['without_projection_ref']} bets without projection_ref, "
-            f"{d['unmatched_or_ungraded']} unmatched/ungraded, "
+            f"  checked {d['checked']} auto bets at their own pick-time line, "
+            f"{d['disagreements']} disagreements; {d['without_projection_ref']} without "
+            f"projection_ref, {d['without_snapshot']} without snapshot, "
+            f"{d['unmatched']} unmatched (no actual row), "
             f"{d['skipped_parlay_or_moneyline']} parlay/moneyline skipped"
         )
         for r in d["rows"]:
+            moved = (
+                f"; current row line {r['line']}"
+                if r["line"] is not None and r["line"] != r["bet_line"]
+                else ""
+            )
             L.append(
-                f"  {r['bet_id']} {r['title']}: bet {r['bet_result']}, projection "
-                f"{r['projection_graded']} ({r['projection']} {r['projection_call']} "
-                f"line {r['line']}, actual {r['actual']}) [{r['ref']}]"
+                f"  {r['bet_id']} {r['title']}: bet {r['bet_result']}, bet side "
+                f"{r['bet_side']} at {r['bet_line']} grades {r['projection_graded']} "
+                f"(actual {r['actual']}{moved}) [{r['ref']}]"
             )
     L.append("")
 
@@ -1783,7 +2034,10 @@ def render_text(review: dict) -> str:
 
     L.append("== Odds API credits ==")
     cr = review.get("credits", {"unavailable": "not built"})
-    L.extend([_unavailable(cr)] if _unavailable(cr) else _credits_lines(cr))
+    if "not_available" in cr:
+        L.append(f"  {cr['not_available']}")
+    else:
+        L.extend([_unavailable(cr)] if _unavailable(cr) else _credits_lines(cr))
     return "\n".join(L) + "\n"
 
 

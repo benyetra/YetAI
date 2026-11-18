@@ -5,7 +5,7 @@ stat: error and bias vs the actual, the sportsbook line's own error, how
 over/under picks against the stored line performed by edge size and level, and
 which teams this season's projections run hottest or coldest on.
 
-    PYTHONPATH=. python3 scripts/nba_props_audit.py [--days 120] [--teams 5]
+    PYTHONPATH=. python3 scripts/nba_props_audit.py [--days 120 | --since YYYY-MM-DD] [--teams 5]
 """
 
 from __future__ import annotations
@@ -167,10 +167,19 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=400)
     ap.add_argument(
+        "--since",
+        help="YYYY-MM-DD: rows on or after this date (overrides --days), "
+        "e.g. the current model's first date",
+    )
+    ap.add_argument(
         "--teams", type=int, default=5, help="teams to show at each end of the bias"
     )
     args = ap.parse_args()
-    since = date.today() - timedelta(days=args.days)
+    since = (
+        date.fromisoformat(args.since)
+        if args.since
+        else date.today() - timedelta(days=args.days)
+    )
     db = SessionLocal()
     try:
         team_of = {
