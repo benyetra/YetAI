@@ -2,7 +2,7 @@
  *  (backend/app/api/v1/predictions.py `_withhold_board_picks`). */
 type Row = Record<string, unknown>;
 export type BoardSport = 'nba' | 'nfl' | 'nhl';
-export type BoardState = 'withheld' | 'open' | 'empty';
+export type BoardState = 'withheld' | 'open' | 'empty' | 'openGames';
 
 const WITHHELD_REASON = 'unproven_record';
 // Every field the backend nulls on a withheld row (projections and lines stay).
@@ -34,6 +34,19 @@ function nbaProp(id: number, name: string, team: string, opp: string, projKey: s
 }
 
 const open = (rows: Row[]) => rows;
+
+/** An open game market: the backend sends the pick side with its best quote (the line is the side's own). */
+const picked = (row: Row, side: string, line: number, price: number, book: string): Row => ({
+  ...row, recommendation: side, betting_recommendation: side,
+  best_side: side.toLowerCase(), best_line: line, best_price: price, best_book: book,
+});
+/** An open game market whose row does not pass the EV gates: no pick, and no "not proved" note. */
+const noPick = (row: Row): Row => ({
+  ...row, recommendation: null, betting_recommendation: null, edge: null,
+  best_side: null, best_line: null, best_price: null, best_book: null,
+});
+/** openGames: first game picked, second open but failing; every other market stays withheld. */
+const gameRows = (rows: Row[], pickIt: (r: Row) => Row): Row[] => [pickIt(rows[0]), noPick(rows[1])];
 const shut = (rows: Row[]) => rows.map(withhold);
 
 function nba(state: BoardState): Row {
@@ -66,9 +79,14 @@ function nba(state: BoardState): Row {
     );
   }
   const live = state === 'open';
+  const games = state === 'openGames';
   return {
-    spreads: shut([spread(g1, 4.2), spread(g2, -1.5)]),
-    totals: shut([total(g1, 221.8), total(g2, 229.4)]),
+    spreads: games
+      ? gameRows([spread(g1, 4.2), spread(g2, -1.5)], (r) => picked(r, 'HOME', -3.5, -110, 'fanduel'))
+      : shut([spread(g1, 4.2), spread(g2, -1.5)]),
+    totals: games
+      ? gameRows([total(g1, 221.8), total(g2, 229.4)], (r) => picked(r, 'OVER', 221.5, -108, 'draftkings'))
+      : shut([total(g1, 221.8), total(g2, 229.4)]),
     points: shut(points), assists: live ? open(assists) : shut(assists), rebounds: shut(rebounds),
     three_point: shut(threes), steals: shut(steals), blocks: shut(blocks), pra: shut(pra),
   };
@@ -114,9 +132,14 @@ function nfl(state: BoardState): Row {
     recv(31, "Ja'Marr Chase", 'WR', 'Cincinnati Bengals', 'Pittsburgh Steelers', 94.5, 82.5),
     recv(32, 'Travis Kelce', 'TE', 'Kansas City Chiefs', 'Buffalo Bills', 61.2, 58.5),
   ];
+  const games = state === 'openGames';
   return {
-    spreads: shut([spread(g1), spread(g2)]),
-    totals: shut([total(g1), total(g2)]),
+    spreads: games
+      ? gameRows([spread(g1), spread(g2)], (r) => picked(r, 'HOME', -2.5, -105, 'betmgm'))
+      : shut([spread(g1), spread(g2)]),
+    totals: games
+      ? gameRows([total(g1), total(g2)], (r) => picked(r, 'OVER', 47.5, -108, 'draftkings'))
+      : shut([total(g1), total(g2)]),
     qb_predictions: shut([
       qb(11, 'Josh Allen', 'Buffalo Bills', 'Kansas City Chiefs', 268.4, 255.5),
       qb(12, 'Jared Goff', 'Detroit Lions', 'Green Bay Packers', 247.9, 252.5),
@@ -154,7 +177,13 @@ function nhl(state: BoardState): Row {
     goalie(12, 'Connor Hellebuyck', 'Winnipeg Jets', 'Colorado Avalanche'),
   ];
   return {
-    team_totals: shut([teamTotal(1, 'Boston Bruins', 'New York Rangers'), teamTotal(2, 'Colorado Avalanche', 'Winnipeg Jets')]),
+    team_totals:
+      state === 'openGames'
+        ? gameRows(
+            [teamTotal(1, 'Boston Bruins', 'New York Rangers'), teamTotal(2, 'Colorado Avalanche', 'Winnipeg Jets')],
+            (r) => picked(r, 'OVER', 5.5, -108, 'draftkings'),
+          )
+        : shut([teamTotal(1, 'Boston Bruins', 'New York Rangers'), teamTotal(2, 'Colorado Avalanche', 'Winnipeg Jets')]),
     goalie_predictions: state === 'open' ? open(goalies) : shut(goalies),
     player_shots: shut([shots(21, 'Auston Matthews', 'Toronto Maple Leafs', 'Montreal Canadiens'), shots(22, 'Nathan MacKinnon', 'Colorado Avalanche', 'Winnipeg Jets')]),
   };

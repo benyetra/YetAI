@@ -293,7 +293,14 @@ def _board(db):
     }
     payload = {
         "goalie_predictions": [dict(row)],
-        "team_totals": [dict(row)],
+        # the real stored row of the picked game: the board asks the selector's own gates
+        "team_totals": [
+            api._row_to_dict(
+                db.query(NHLTeamTotalsPredictions)
+                .filter(NHLTeamTotalsPredictions.home_team_id == 6)
+                .one()
+            )
+        ],
         "player_shots": [{"recommendation": "OVER", "edge": 1.0}],
     }
     return api._withhold_board_picks(payload, db, "nhl", None)

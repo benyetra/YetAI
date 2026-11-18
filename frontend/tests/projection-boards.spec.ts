@@ -3,11 +3,17 @@ import { mkdirSync } from 'fs';
 import { boardPayload, type BoardSport, type BoardState } from './fixtures/board-fixtures';
 
 const SPORTS: BoardSport[] = ['nba', 'nfl', 'nhl'];
-const STATES: BoardState[] = ['withheld', 'open', 'empty'];
+const STATES: BoardState[] = ['withheld', 'open', 'openGames', 'empty'];
 const NOTE = 'No pick: this market has not proved itself against the line yet';
 const EMPTY_BEST_EDGES = 'No picks today: no market on this board has proved itself against the line yet';
 /** Only the NBA board has a Best edges strip (and so Gamble It). */
 const HAS_BEST_EDGES: Record<BoardSport, boolean> = { nba: true, nfl: false, nhl: false };
+/** The first game card's pick line in the openGames state (the card's primary market per sport). */
+const OPEN_GAME_PICK: Record<BoardSport, RegExp> = {
+  nba: /Miami Heat\s*Spread \/ ML\s*Line -3\.5\s*at -110, FanDuel/,
+  nfl: /Buffalo Bills\s*Spread \/ ML\s*Line -2\.5\s*at -105, BetMGM/,
+  nhl: /Over\s*5\.5\s*at -108, DraftKings/,
+};
 const GAMBLE = 'a[title="Build a one-click betslip on Gambly"]';
 const SCREENS = process.env.BOARD_SCREENS_DIR || 'test-results/board-screens';
 
@@ -74,6 +80,28 @@ for (const sport of SPORTS) {
       } else {
         await expect(page.locator(GAMBLE)).toHaveCount(0); // these boards have no Gamble It on props
       }
+      expect(errors).toEqual([]);
+    });
+
+    test('open game market: pick with book and price on the game card, Gamble It', async ({ page }) => {
+      const errors = await load(page, sport, 'openGames');
+      const cards = page.locator('.proj-card');
+      await expect(cards).toHaveCount(2);
+      const picked = cards.filter({ hasText: 'Model pick' });
+      const failing = cards.filter({ hasText: 'No play' });
+      await expect(picked).toHaveCount(1);
+      await expect(failing).toHaveCount(1);
+      // The pick states the line, price and book it is good at.
+      await expect(picked.locator('.proj-pick-bet')).toHaveText(OPEN_GAME_PICK[sport]);
+      await expect(picked.locator(GAMBLE)).toBeVisible();
+      await expect(picked.getByText(NOTE)).toHaveCount(0);
+      // An open market whose row failed the EV gates: neutral no pick, not the "not proved" note.
+      await expect(failing.getByText('No play')).toBeVisible();
+      await expect(failing.getByText(NOTE)).toHaveCount(0);
+      await expect(failing.locator(GAMBLE)).toHaveCount(0);
+      // Props are still withheld.
+      await expect(page.getByText(NOTE).first()).toBeVisible();
+      await expect(page.locator('.prop-pick-cell', { hasText: /^OVER/ })).toHaveCount(0);
       expect(errors).toEqual([]);
     });
 

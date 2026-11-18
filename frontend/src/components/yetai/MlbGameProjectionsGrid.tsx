@@ -14,6 +14,7 @@ import {
 import { teamColorStyle, teamPrimaryColor } from '@/lib/team-colors';
 import { gamblyLegFromProjection } from '@/lib/gambly';
 import { isPickWithheld, PICK_WITHHELD_NOTE } from '@/lib/pickWithheld';
+import { pickQuoteOf, quoteNote, type PickQuote } from '@/lib/pickQuote';
 import { resultBadge } from '@/lib/propProjectionDisplay';
 import GambleItButton from './GambleItButton';
 import { TeamGlyph } from './primitives';
@@ -30,6 +31,8 @@ type PrimaryPick = {
   team: string;
   betLabel: string;
   detail?: string;
+  /** The backend's explicit best quote: the pick is only good at this line, price and book. */
+  quote?: PickQuote | null;
 };
 
 export type { GameProjectionsVariant } from '@/lib/gameProjectionsTypes';
@@ -156,25 +159,32 @@ function primaryPick(proj: GameRow, variant: GameProjectionsVariant): PrimaryPic
   if (cfg.primaryPickKind === 'total') {
     const totalRaw = formatString(proj.total_recommendation);
     if (totalRaw !== 'OVER' && totalRaw !== 'UNDER') return null;
-    const line = num(proj.market_total);
+    const quote = pickQuoteOf(proj, 'total');
+    const line = quote?.line ?? num(proj.market_total);
     return {
       kind: 'total',
       team: totalRaw === 'OVER' ? 'Over' : 'Under',
       betLabel: line != null ? line.toFixed(1) : cfg.pickBetSuffix,
       detail: undefined,
+      quote,
     };
   }
 
   const spreadSide = spreadRecommendation(proj);
   if (!spreadSide) return null;
   const marketSpread = num(proj.market_spread);
+  const quote = pickQuoteOf(proj, 'spread');
   return {
     kind: 'spread',
     side: spreadSide,
     team: teamForSide(proj, spreadSide),
     betLabel: cfg.pickBetSuffix,
-    detail:
-      marketSpread != null ? formatSpreadLine(spreadSide, marketSpread) : undefined,
+    detail: quote
+      ? `${quote.line > 0 ? '+' : ''}${quote.line.toFixed(1)}`
+      : marketSpread != null
+        ? formatSpreadLine(spreadSide, marketSpread)
+        : undefined,
+    quote,
   };
 }
 
@@ -422,7 +432,9 @@ function GameCard({
         result={pick && showResults ? pickResult(proj, pick.kind) : null}
         matchup={`${away} @ ${home}`}
         pickOdds={
-          pick?.kind === 'ml' && pick.side
+          pick?.quote?.price != null
+            ? pick.quote.price
+            : pick?.kind === 'ml' && pick.side
             ? num(pick.side === 'HOME' ? proj.market_home_ml : proj.market_away_ml)
             : null
         }
@@ -442,7 +454,9 @@ function GameCard({
                   betType: pick.betLabel,
                   matchup: `${away} @ ${home}`,
                   odds:
-                    pick.kind === 'ml' && pick.side
+                    pick.quote?.price != null
+                      ? pick.quote.price
+                      : pick.kind === 'ml' && pick.side
                       ? (pick.side === 'HOME'
                           ? num(proj.market_home_ml)
                           : num(proj.market_away_ml)) ?? undefined
@@ -673,7 +687,7 @@ function ModelPickModule({
     />
   );
   const marketLine =
-    pick.kind === 'spread' && pick.side && marketSpread != null
+    pick.kind === 'spread' && pick.side && marketSpread != null && !pick.quote
       ? formatSpreadLine(pick.side, marketSpread)
       : pick.detail;
   const whyCopy =
@@ -733,6 +747,11 @@ function ModelPickModule({
               Line {marketLine}
             </span>
           ) : null}
+          {pick.quote && quoteNote(pick.quote) ? (
+            <span className="mono dim" style={{ marginLeft: 8, fontSize: 13 }}>
+              {quoteNote(pick.quote)}
+            </span>
+          ) : null}
         </span>
         {showResults && result != null ? (
           <span className={resultBadge(result).className} style={{ fontSize: 10 }}>
@@ -759,11 +778,12 @@ function ModelPickModule({
                 team: pick.team,
                 line:
                   pick.kind === 'total'
-                    ? marketTotal?.toFixed(1)
+                    ? (pick.quote?.line ?? marketTotal)?.toFixed(1)
                     : pick.kind === 'spread'
                       ? marketLine
                       : null,
                 odds: pickOdds,
+                book: pick.quote?.book,
                 matchup,
               }),
             ]}

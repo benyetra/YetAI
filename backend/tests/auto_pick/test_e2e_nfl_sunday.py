@@ -329,7 +329,14 @@ def _board(db):
         "best_price": 108,
     }
     payload = {
-        "spreads": [{**row, "ml_best_side": "home", "ml_best_price": 108}],
+        # the real stored row of the picked game: the board asks the selector's own gates
+        "spreads": [
+            api._row_to_dict(
+                db.query(NFLSpreadProjections)
+                .filter(NFLSpreadProjections.home_team_name == "Home1")
+                .one()
+            )
+        ],
         "totals": [{**row, "best_side": "over"}],
         "qb_predictions": [{**row, "best_side": "over"}],
         "receiving_yards_predictions": [{**row, "best_side": "over"}],
