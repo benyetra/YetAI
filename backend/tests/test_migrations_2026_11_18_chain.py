@@ -30,7 +30,9 @@ def _load(rev):
 
 def test_one_head_and_the_chain_order():
     script, _ = _load(CHAIN[-1])
-    assert script.get_heads() == [CHAIN[-1]]
+    # The consensus-price migration is the one revision after this chain.
+    assert script.get_heads() == ["20261118_game_best_price"]
+    assert script.get_revision("20261118_game_best_price").down_revision == CHAIN[-1]
     downs = [script.get_revision(r).down_revision for r in CHAIN]
     assert downs == ["20261115_fair_price_shadow", *CHAIN[:-1]]
 
