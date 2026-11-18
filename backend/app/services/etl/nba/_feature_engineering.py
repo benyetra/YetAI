@@ -244,7 +244,11 @@ def _v4_features(db, player_id, game_date, opponent_team_id, games_df, features)
     # Imported here: update_expected_minutes pulls in the database module.
     from app.services.etl.nba.update_expected_minutes import _calc_for
 
-    expected = _calc_for(db, player_id, "", game_date) or {}
+    # Same sample rule as the rest of the vector: last season fills in a short
+    # current season, so a low-sample row does not read as 0 expected minutes.
+    expected = (
+        _calc_for(db, player_id, "", game_date, min_current=MIN_SAMPLE_GAMES) or {}
+    )
     out = team_context(db, player_id, game_date, opponent_team_id)
     out["exp_minutes"] = expected.get("expected_minutes_today", 0)
     out["starter_rate_10"] = expected.get("starter_rate", 0)

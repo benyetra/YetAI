@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 RECENCY_WEIGHTS = [0.25, 0.20, 0.15, 0.10, 0.10, 0.05, 0.05, 0.05, 0.025, 0.025]
 
 
-def _calc_for(db, player_id: int, player_name: str, today: date) -> dict | None:
+def _calc_for(
+    db, player_id: int, player_name: str, today: date, min_current: int = 1
+) -> dict | None:
     games = player_games(
         db,
         player_id,
@@ -38,6 +40,7 @@ def _calc_for(db, player_id: int, player_name: str, today: date) -> dict | None:
         30,
         RecentGames.minutes.isnot(None),
         RecentGames.minutes > 0,
+        min_current=min_current,
     )
     if len(games) < 5:
         return None

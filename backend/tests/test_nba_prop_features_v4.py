@@ -323,6 +323,8 @@ def test_short_current_sample_borrows_last_season_and_is_flagged(db):
     feats = fe.build_features(db, 7, date(2026, 11, 7), OPP, "points")
     assert feats is not None and feats["low_sample"] == 1
     assert feats["sample_games"] == 32
+    # Expected minutes use the same borrowed sample, not 0.
+    assert feats["exp_minutes"] > 0
 
 
 def test_under_five_games_in_total_is_none(db):
@@ -379,3 +381,12 @@ def test_trainer_metadata_records_the_feature_version():
     assert run_train_props._enrich_metadata("points", {})["features_version"] == 4
     kept = run_train_props._enrich_metadata("points", {"features_version": 3})
     assert kept["features_version"] == 3
+
+
+def test_features_version_falls_back_to_the_feature_list(monkeypatch):
+    monkeypatch.setattr(
+        _ml_predict,
+        "get_metadata",
+        lambda stat=None: {"features": ["points_avg_5", "team_out_min_share"]},
+    )
+    assert _ml_predict.features_version("points") == 4
