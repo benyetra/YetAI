@@ -20,7 +20,7 @@ export function isRealPickSide(value: unknown): boolean {
 export function pickWithheldNote(): ReactNode {
   return createElement(
     'span',
-    { className: 'dim', title: PICK_WITHHELD_NOTE, style: { fontSize: 11, whiteSpace: 'normal' } },
+    { className: 'dim', title: PICK_WITHHELD_NOTE, style: { fontSize: 11 } },
     PICK_WITHHELD_NOTE,
   );
 }

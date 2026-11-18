@@ -29,7 +29,7 @@ function nbaProp(id: number, name: string, team: string, opp: string, projKey: s
     id, player_name: name, team_name: team, opponent_team_name: opp, [projKey]: proj,
     fanduel_line: line, edge, recommendation: edge >= 0 ? 'OVER' : 'UNDER',
     fanduel_over_under: edge >= 0 ? 'over' : 'under', pick_confidence: 71, confidence_score: 71,
-    value_tier: Math.abs(edge) >= 2 ? 'strong' : 'lean', news: '',
+    value_tier: Math.abs(edge) >= 2 ? 'strong' : Math.abs(edge) >= 1 ? 'lean' : null, news: '',
   };
 }
 

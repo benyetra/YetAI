@@ -1260,6 +1260,12 @@ input { font: inherit; }
   flex: 1;
   min-width: 0;
 }
+/* Phone: chips drop to their own full-width row instead of a sliver beside the actions. */
+@media (max-width: 640px) {
+  .predictions-toolbar-search { max-width: none; }
+  .predictions-toolbar-actions { flex-wrap: wrap; flex-shrink: 1; }
+  .predictions-toolbar-chips { flex: 1 1 100%; }
+}
 .predictions-discovery {
   padding: 14px 16px 16px;
 }
