@@ -24,10 +24,13 @@ def _utc(hour, minute=0, day=DAY):
 
 
 def test_latest_refresh_start_by_et_time():
-    assert latest_refresh_start(_utc(6, 0)) == datetime(2026, 5, 21, 21, 0)  # 02:00 ET
+    assert latest_refresh_start(_utc(6, 0)) == datetime(
+        2026, 5, 21, 22, 30
+    )  # 02:00 ET -> 18:30
     assert latest_refresh_start(_utc(15, 0)) == _utc(7, 30)  # 11:00 ET -> 03:30 ET
     assert latest_refresh_start(_utc(17, 30)) == _utc(16, 0)  # 13:30 ET -> 12:00 ET
     assert latest_refresh_start(_utc(22, 0)) == _utc(21, 0)  # 18:00 ET -> 17:00 ET
+    assert latest_refresh_start(_utc(23, 0)) == _utc(22, 30)  # 19:00 ET -> 18:30 ET
 
 
 def test_latest_refresh_start_is_exact_at_the_start_and_handles_winter_time():
@@ -86,14 +89,19 @@ def test_fresh_false_skips_the_check():
     assert _gate(_utc(10, 0), fresh=False) is None
 
 
+_NBA_REFRESH_TASKS = (
+    "app.tasks.etl_pipeline.run_nba_update_pipeline",
+    "app.tasks.etl_pipeline.run_nba_pregame_refresh",
+)
+
+
 def _beat(env_flag=None):
     code = (
         "import json; from app.celery_app import celery_app as c; "
         "s = c.conf.beat_schedule; "
         "t = lambda k: [sorted(s[k]['schedule'].hour), sorted(s[k]['schedule'].minute)]; "
         "print(json.dumps({"
-        "'pipeline': t('nba-update-pipeline-daily'), "
-        "'pregame': t('nba-pregame-refresh'), "
+        f"'refreshes': [t(k) for k, e in s.items() if e['task'] in {_NBA_REFRESH_TASKS!r}], "
         "'daily': t('auto_pick_yetai_bets_daily'), 'topup': t('auto_pick_yetai_bets_topup'), "
         "'daily_kwargs': s['auto_pick_yetai_bets_daily']['kwargs'], "
         "'daily_opts': s['auto_pick_yetai_bets_daily']['options'], "
@@ -107,15 +115,26 @@ def _beat(env_flag=None):
     return json.loads(out.stdout.strip().splitlines()[-1])
 
 
-def test_refresh_starts_match_the_nba_beat_entries():
-    beat = _beat()
-    scheduled = {
-        (h, m)
-        for entry in (beat["pipeline"], beat["pregame"])
-        for h in entry[0]
-        for m in entry[1]
-    }
+def _starts(entries):
+    return {(h, m) for hours, minutes in entries for h in hours for m in minutes}
+
+
+def test_refresh_starts_match_every_nba_refresh_beat_entry():
+    # Every entry that runs an NBA refresh task, including the 18:30 late refresh.
+    scheduled = _starts(_beat()["refreshes"])
     assert scheduled == {(t.hour, t.minute) for t in NBA_REFRESH_STARTS_ET}
+    assert (18, 30) in scheduled
+
+
+def test_no_pick_run_starts_inside_an_nba_refresh_window():
+    # A refresh needs up to an hour; a pick run inside that hour would price rows the
+    # refresh has not reached (the freshness rule would drop them all as stale_line).
+    beat = _beat()
+    minutes = lambda h, m: h * 60 + m  # noqa: E731
+    for run in _starts([beat["daily"], beat["topup"]]):
+        for start in _starts(beat["refreshes"]):
+            gap = minutes(*run) - minutes(*start)
+            assert not 0 <= gap < 60, (run, start)
 
 
 def test_auto_pick_runs_at_1330_reserving_one_and_1800():

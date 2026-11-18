@@ -82,7 +82,7 @@ def _pregame(games: list[dict]) -> list[dict]:
 # Pregame refresh window: a game is refreshed only while it is unstarted and starts within
 # this long from now. The beat runs every 2 hours at :45 (10:45 ... 20:45 ET), so a
 # 3h15m window gives every game at least one refresh in the 3 hours before its start (a
-# 12:30 matinee at 10:45; a 19:00 game at 16:45, before the 17:30 auto pick), while a game
+# 12:30 matinee at 10:45; a 19:00 game at 16:45, before the 18:00 auto pick), while a game
 # far ahead is left for a later run. The 15 minutes of slack lets the 19:00 game fall in
 # the 16:45 run even when the beat fires a little late.
 PREGAME_WINDOW = timedelta(hours=3, minutes=15)

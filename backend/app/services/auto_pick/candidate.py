@@ -13,9 +13,10 @@ EASTERN = ZoneInfo("America/New_York")
 MORNING_RUN_ET = time(13, 30)
 EVENING_RUN_ET = time(18, 0)
 
-# ET start times of the NBA projection refreshes (the 03:30 pipeline and the 12:00 / 17:00
-# pregame refreshes). Must equal the beat entries in celery_app.py; a test fails on drift.
-NBA_REFRESH_STARTS_ET = (time(3, 30), time(12, 0), time(17, 0))
+# ET start times of the NBA projection refreshes (the 03:30 pipeline, the 12:00 / 17:00
+# pregame refreshes and the 18:30 late-scratch refresh, which runs after both pick runs).
+# Must equal every NBA refresh beat entry in celery_app.py; a test fails on drift.
+NBA_REFRESH_STARTS_ET = (time(3, 30), time(12, 0), time(17, 0), time(18, 30))
 # A priced projection older than this is not the line on the board any more.
 MAX_LINE_AGE = timedelta(hours=3)
 

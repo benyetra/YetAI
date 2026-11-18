@@ -68,5 +68,6 @@ def _cron(key):
 def test_nfl_mon_thu_refresh_before_last_pick():
     assert _cron("nfl-gameday-availability-mon-pre-pick") == (17, 0, 1)
     assert _cron("nfl-gameday-availability-thu-pre-pick") == (17, 0, 4)
-    assert _cron("nfl-gameday-availability-mon") == (18, 0, 1)
+    # informational MNF run moved off the 18:00 pick run
+    assert _cron("nfl-gameday-availability-mon") == (18, 15, 1)
     assert _cron("nfl-gameday-availability-thu-pm") == (19, 0, 4)
